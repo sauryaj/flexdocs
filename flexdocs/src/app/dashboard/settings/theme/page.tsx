@@ -1,13 +1,20 @@
 'use client';
 
-import { useTheme, ACCENT_COLORS, Theme, AccentColor } from '@/lib/ThemeContext';
-import { Sun, Moon, Monitor, Check } from 'lucide-react';
+import { useTheme, ACCENT_COLORS, Theme, AccentColor, BorderEffect } from '@/lib/ThemeContext';
+import { Sun, Moon, Monitor, Check, Sparkles, Zap, Circle } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { StarBorder } from '@/components/StarBorder';
 
 const themes: { value: Theme; label: string; icon: typeof Sun }[] = [
   { value: 'light', label: 'Light', icon: Sun },
   { value: 'dark', label: 'Dark', icon: Moon },
   { value: 'system', label: 'System', icon: Monitor },
+];
+
+const effects: { value: BorderEffect; label: string; icon: typeof Sparkles; description: string }[] = [
+  { value: 'none', label: 'None', icon: Circle, description: 'Clean card borders' },
+  { value: 'star', label: 'Star Border', icon: Sparkles, description: 'Animated orbiting stars' },
+  { value: 'glow', label: 'Glow', icon: Zap, description: 'Subtle accent glow' },
 ];
 
 const accentLabels: Record<AccentColor, string> = {
@@ -22,7 +29,7 @@ const accentLabels: Record<AccentColor, string> = {
 };
 
 export default function ThemeSettingsPage() {
-  const { theme, accent, setTheme, setAccent, resolvedMode } = useTheme();
+  const { theme, accent, effect, setTheme, setAccent, setEffect, resolvedMode } = useTheme();
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -119,10 +126,78 @@ export default function ThemeSettingsPage() {
         </div>
       </div>
 
+      {/* Border Effect */}
+      <div className="card p-6">
+        <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--foreground)' }}>Card Effect</h2>
+        <p className="text-sm mb-4" style={{ color: 'var(--muted)' }}>Add an animated border effect to cards</p>
+        <div className="grid grid-cols-3 gap-4">
+          {effects.map((e) => {
+            const Icon = e.icon;
+            const isActive = effect === e.value;
+            return (
+              <button
+                key={e.value}
+                onClick={() => setEffect(e.value)}
+                className={cn(
+                  'relative flex flex-col items-center gap-3 p-6 rounded-xl border-2 transition-all',
+                  isActive ? 'ring-2' : 'hover:scale-105'
+                )}
+                style={{
+                  borderColor: isActive ? 'var(--accent)' : 'var(--card-border)',
+                  backgroundColor: isActive ? 'color-mix(in srgb, var(--accent) 8%, var(--card-bg))' : 'var(--card-bg)',
+                  boxShadow: isActive ? '0 0 0 2px var(--accent)' : 'none',
+                }}
+              >
+                {isActive && (
+                  <div
+                    className="absolute top-2 right-2 w-5 h-5 rounded-full flex items-center justify-center text-white"
+                    style={{ backgroundColor: 'var(--accent)' }}
+                  >
+                    <Check className="w-3 h-3" />
+                  </div>
+                )}
+                <Icon className="w-8 h-8" style={{ color: isActive ? 'var(--accent)' : 'var(--muted)' }} />
+                <span className="font-medium" style={{ color: isActive ? 'var(--foreground)' : 'var(--muted)' }}>
+                  {e.label}
+                </span>
+                <span className="text-xs text-center" style={{ color: 'var(--muted)' }}>
+                  {e.description}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Preview */}
       <div className="card p-6">
         <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--foreground)' }}>Preview</h2>
         <div className="space-y-4">
+          {effect === 'star' ? (
+            <StarBorder>
+              <div className="p-4">
+                <p className="font-medium" style={{ color: 'var(--foreground)' }}>Star Border Card</p>
+                <p className="text-sm" style={{ color: 'var(--muted)' }}>This card has the star border animation</p>
+              </div>
+            </StarBorder>
+          ) : effect === 'glow' ? (
+            <div
+              className="rounded-xl p-4"
+              style={{
+                boxShadow: '0 0 20px color-mix(in srgb, var(--accent) 30%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--accent) 30%, var(--card-border))',
+                backgroundColor: 'var(--card-bg)',
+              }}
+            >
+              <p className="font-medium" style={{ color: 'var(--foreground)' }}>Glow Card</p>
+              <p className="text-sm" style={{ color: 'var(--muted)' }}>This card has a subtle accent glow</p>
+            </div>
+          ) : (
+            <div className="rounded-xl p-4" style={{ border: '1px solid var(--card-border)', backgroundColor: 'var(--card-bg)' }}>
+              <p className="font-medium" style={{ color: 'var(--foreground)' }}>Default Card</p>
+              <p className="text-sm" style={{ color: 'var(--muted)' }}>Clean borders with no animation</p>
+            </div>
+          )}
           <div className="flex gap-3">
             <button className="btn-primary">Primary Button</button>
             <button className="btn-secondary">Secondary Button</button>

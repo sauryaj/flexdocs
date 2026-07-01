@@ -4,12 +4,15 @@ import { createContext, useContext, useEffect, useState, ReactNode } from 'react
 
 type Theme = 'light' | 'dark' | 'system';
 type AccentColor = 'blue' | 'purple' | 'teal' | 'green' | 'orange' | 'red' | 'pink' | 'indigo';
+type BorderEffect = 'none' | 'star' | 'glow';
 
 interface ThemeContextType {
   theme: Theme;
   accent: AccentColor;
+  effect: BorderEffect;
   setTheme: (theme: Theme) => void;
   setAccent: (accent: AccentColor) => void;
+  setEffect: (effect: BorderEffect) => void;
   resolvedMode: 'light' | 'dark';
 }
 
@@ -29,13 +32,16 @@ const ACCENT_COLORS: Record<AccentColor, { light: string; dark: string; ring: st
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>('system');
   const [accent, setAccentState] = useState<AccentColor>('blue');
+  const [effect, setEffectState] = useState<BorderEffect>('none');
   const [resolvedMode, setResolvedMode] = useState<'light' | 'dark'>('light');
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') as Theme | null;
     const savedAccent = localStorage.getItem('accent') as AccentColor | null;
+    const savedEffect = localStorage.getItem('effect') as BorderEffect | null;
     if (savedTheme) setThemeState(savedTheme);
     if (savedAccent) setAccentState(savedAccent);
+    if (savedEffect) setEffectState(savedEffect);
   }, []);
 
   useEffect(() => {
@@ -50,12 +56,14 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       const colors = ACCENT_COLORS[accent];
       const accentVal = mode === 'dark' ? colors.dark : colors.light;
       document.documentElement.style.setProperty('--accent', accentVal);
+
+      document.documentElement.setAttribute('data-effect', effect);
     }
 
     resolve();
     mq.addEventListener('change', resolve);
     return () => mq.removeEventListener('change', resolve);
-  }, [theme, accent]);
+  }, [theme, accent, effect]);
 
   function setTheme(t: Theme) {
     setThemeState(t);
@@ -67,8 +75,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     localStorage.setItem('accent', a);
   }
 
+  function setEffect(e: BorderEffect) {
+    setEffectState(e);
+    localStorage.setItem('effect', e);
+  }
+
   return (
-    <ThemeContext.Provider value={{ theme, accent, setTheme, setAccent, resolvedMode }}>
+    <ThemeContext.Provider value={{ theme, accent, effect, setTheme, setAccent, setEffect, resolvedMode }}>
       {children}
     </ThemeContext.Provider>
   );
@@ -81,4 +94,4 @@ export function useTheme() {
 }
 
 export { ACCENT_COLORS };
-export type { Theme, AccentColor };
+export type { Theme, AccentColor, BorderEffect };

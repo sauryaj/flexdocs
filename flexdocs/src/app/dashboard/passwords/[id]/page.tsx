@@ -9,7 +9,7 @@ import {
   Plus, X, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
-import { ConfirmDialog, PasswordField } from '@/components/UIComponents';
+import { ConfirmDialog } from '@/components/UIComponents';
 
 interface PasswordEntry {
   id: string;
@@ -148,6 +148,24 @@ export default function PasswordDetailPage() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Auto-load TOTP info when password loads and has a secret
+  useEffect(() => {
+    if (pass?.totpSecret) {
+      loadTotp();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pass?.totpSecret]);
+
+  // Auto-refresh TOTP code every second when configured
+  useEffect(() => {
+    if (!totpInfo?.configured) return;
+    const interval = setInterval(() => {
+      loadTotp();
+    }, 1000);
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [totpInfo?.configured]);
+
   const handleSave = async () => {
     setSaving(true);
     const tagList = tags.split(',').map((t) => t.trim()).filter(Boolean);
@@ -193,7 +211,6 @@ export default function PasswordDetailPage() {
     if (res.ok) {
       const data = await res.json();
       setTotpInfo(data);
-      setShowTotp(true);
     }
   };
 
@@ -204,11 +221,14 @@ export default function PasswordDetailPage() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ totpSecret, totpIssuer }),
     });
-    fetchData();
-    loadTotp();
+    await fetchData();
+    await loadTotp();
+    setTotpSecret('');
+    setTotpIssuer('');
   };
 
   const removeTotp = async () => {
+    if (!confirm('Remove TOTP secret? This cannot be undone.')) return;
     await fetch(`/api/passwords/${params.id}/totp`, { method: 'DELETE' });
     setTotpInfo(null);
     setShowTotp(false);
@@ -322,7 +342,6 @@ export default function PasswordDetailPage() {
               {copiedField === 'pass' ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
             </button>
           </div>
-          {/* Strength meter */}
           {password && (
             <div className="mt-2">
               <div className="flex items-center justify-between text-xs mb-1">
@@ -334,9 +353,6 @@ export default function PasswordDetailPage() {
               </div>
             </div>
           )}
-          <div className="mt-2">
-            <PasswordField value={password} label="Preview" />
-          </div>
         </div>
 
         <div>
@@ -398,25 +414,49 @@ export default function PasswordDetailPage() {
 
           {/* TOTP/2FA */}
           <button onClick={() => { setShowTotp(!showTotp); if (!showTotp && !totpInfo) loadTotp(); }} className="w-full flex items-center justify-between p-3 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
-            <span className="flex items-center gap-2 font-medium text-sm"><Lock className="w-4 h-4" /> TOTP / 2FA</span>
+            <span className="flex items-center gap-2 font-medium text-sm">
+              <Lock className="w-4 h-4" /> TOTP / 2FA
+              {totpInfo?.configured && (
+                <span className="ml-2 px-2 py-0.5 text-xs bg-green-100 text-green-700 rounded-full">Active</span>
+              )}
+            </span>
             {showTotp ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </button>
           {showTotp && (
             <div className="p-4 bg-slate-50 rounded-lg space-y-3">
               {totpInfo?.configured ? (
-                <div className="text-center">
-                  <p className="text-4xl font-mono font-bold tracking-widest" style={{ letterSpacing: '0.2em' }}>{totpInfo.code}</p>
-                  <p className="text-sm text-slate-500 mt-1">Expires in {totpInfo.remaining}s</p>
-                  <div className="flex justify-center gap-2 mt-3">
+                <div className="text-center space-y-3">
+                  <p className="text-4xl font-mono font-bold tracking-widest text-slate-900" style={{ letterSpacing: '0.2em' }}>
+                    {totpInfo.code}
+                  </p>
+                  <div className="flex items-center justify-center gap-2">
+                    <div className="w-48 h-2 bg-slate-200 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-500 rounded-full transition-all duration-1000"
+                        style={{ width: `${((totpInfo.remaining || 0) / 30) * 100}%` }}
+                      />
+                    </div>
+                    <span className="text-sm text-slate-500 font-mono">{totpInfo.remaining}s</span>
+                  </div>
+                  {totpInfo.uri && (
+                    <p className="text-xs text-slate-400 break-all font-mono">{totpInfo.uri}</p>
+                  )}
+                  <div className="flex justify-center gap-2">
                     <button onClick={() => copyToClipboard(totpInfo.code || '', 'totp')} className="btn-secondary text-sm">
                       {copiedField === 'totp' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} Copy Code
                     </button>
-                    <button onClick={removeTotp} className="btn-secondary text-sm text-red-500">Remove TOTP</button>
+                    {totpInfo.uri && (
+                      <button onClick={() => copyToClipboard(totpInfo.uri || '', 'totp-uri')} className="btn-secondary text-sm">
+                        {copiedField === 'totp-uri' ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />} Copy URI
+                      </button>
+                    )}
+                    <button onClick={removeTotp} className="btn-secondary text-sm text-red-500">Remove</button>
                   </div>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  <input type="text" value={totpSecret} onChange={(e) => setTotpSecret(e.target.value)} className="input-field" placeholder="TOTP Secret (base32)" />
+                  <p className="text-sm text-slate-600">Enter a TOTP secret from your authenticator app or generate one.</p>
+                  <input type="text" value={totpSecret} onChange={(e) => setTotpSecret(e.target.value)} className="input-field font-mono" placeholder="TOTP Secret (base32)" />
                   <input type="text" value={totpIssuer} onChange={(e) => setTotpIssuer(e.target.value)} className="input-field" placeholder="Issuer (e.g., Google)" />
                   <button onClick={saveTotp} className="btn-primary text-sm" disabled={!totpSecret}>Save TOTP</button>
                 </div>

@@ -48,6 +48,17 @@ export async function POST(req: Request) {
       address: address || null,
       logo: logo || null,
     },
+    include: {
+      _count: {
+        select: {
+          documents: true,
+          passwords: true,
+          domains: true,
+          assets: true,
+          checklists: true,
+        },
+      },
+    },
   });
 
   return NextResponse.json(organization, { status: 201 });

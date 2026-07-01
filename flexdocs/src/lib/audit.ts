@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma';
+import logger from '@/lib/logger';
 
 export type AuditAction =
   | 'user.login'
@@ -60,7 +61,7 @@ export async function auditLog(entry: LogEntry): Promise<void> {
     });
   } catch (error) {
     // Don't let audit logging failures break the app
-    console.error('Audit log error:', error);
+    logger.error('Audit log error', { error });
   }
 }
 

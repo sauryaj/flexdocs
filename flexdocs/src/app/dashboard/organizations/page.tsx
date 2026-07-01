@@ -165,35 +165,35 @@ export default function OrganizationsPage() {
                 <div>
                   <FileText className="w-4 h-4 text-slate-400 mx-auto mb-1" />
                   <p className="text-sm font-medium text-slate-900">
-                    {org._count.documents}
+                    {org._count?.documents ?? 0}
                   </p>
                   <p className="text-xs text-slate-400">Docs</p>
                 </div>
                 <div>
                   <Key className="w-4 h-4 text-slate-400 mx-auto mb-1" />
                   <p className="text-sm font-medium text-slate-900">
-                    {org._count.passwords}
+                    {org._count?.passwords ?? 0}
                   </p>
                   <p className="text-xs text-slate-400">Passwords</p>
                 </div>
                 <div>
                   <Globe className="w-4 h-4 text-slate-400 mx-auto mb-1" />
                   <p className="text-sm font-medium text-slate-900">
-                    {org._count.domains}
+                    {org._count?.domains ?? 0}
                   </p>
                   <p className="text-xs text-slate-400">Domains</p>
                 </div>
                 <div>
                   <HardDrive className="w-4 h-4 text-slate-400 mx-auto mb-1" />
                   <p className="text-sm font-medium text-slate-900">
-                    {org._count.assets}
+                    {org._count?.assets ?? 0}
                   </p>
                   <p className="text-xs text-slate-400">Assets</p>
                 </div>
                 <div>
                   <CheckSquare className="w-4 h-4 text-slate-400 mx-auto mb-1" />
                   <p className="text-sm font-medium text-slate-900">
-                    {org._count.checklists}
+                    {org._count?.checklists ?? 0}
                   </p>
                   <p className="text-xs text-slate-400">Checks</p>
                 </div>

@@ -103,13 +103,21 @@ export async function PUT(
 
   if (tags !== undefined) {
     await prisma.$executeRaw`DELETE FROM _PasswordToTag WHERE A = ${id}`;
-    for (const tagName of tags) {
-      const tag = await prisma.tag.upsert({
-        where: { name_userId: { name: tagName, userId: user.id } },
-        update: {},
-        create: { name: tagName, userId: user.id },
-      });
-      await prisma.$executeRaw`INSERT INTO _PasswordToTag (A, B) VALUES (${id}, ${tag.id})`;
+    if (tags.length > 0) {
+      const tagResults = await Promise.all(
+        tags.map((tagName: string) =>
+          prisma.tag.upsert({
+            where: { name_userId: { name: tagName, userId: user.id } },
+            update: {},
+            create: { name: tagName, userId: user.id },
+          })
+        )
+      );
+      await Promise.all(
+        tagResults.map((tag) =>
+          prisma.$executeRaw`INSERT INTO _PasswordToTag (A, B) VALUES (${id}, ${tag.id})`
+        )
+      );
     }
   }
 

@@ -27,11 +27,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
-# Install runtime dependencies for Prisma
-RUN apt-get update && apt-get install -y \
-    openssl \
-    ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+# openssl and ca-certificates already installed in base
 
 RUN groupadd --system --gid 1001 nodejs
 RUN useradd --system --uid 1001 nextjs
@@ -54,5 +50,8 @@ USER nextjs
 EXPOSE 3000
 
 ENV PORT=3000
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3000/api/health', (r) => { process.exit(r.statusCode === 200 ? 0 : 1) })"
 
 CMD ["node", "server.js"]

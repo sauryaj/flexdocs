@@ -2,6 +2,7 @@ import { EC2Client, DescribeInstancesCommand, RunInstancesCommand } from '@aws-s
 import { S3Client, ListBucketsCommand, GetBucketLocationCommand } from '@aws-sdk/client-s3';
 import { RDSClient, DescribeDBInstancesCommand } from '@aws-sdk/client-rds';
 import { CostExplorerClient, GetCostAndUsageCommand } from '@aws-sdk/client-cost-explorer';
+import logger from '@/lib/logger';
 
 interface AwsCreds {
   accessKeyId: string;
@@ -72,7 +73,7 @@ export async function discoverEc2(creds: AwsCreds): Promise<DiscoveredResource[]
       }
     }
   } catch (err: any) {
-    console.error('EC2 discovery error:', err.message);
+    logger.error('EC2 discovery error', { message: err.message });
   }
 
   return resources;
@@ -107,7 +108,7 @@ export async function discoverS3(creds: AwsCreds): Promise<DiscoveredResource[]>
       });
     }
   } catch (err: any) {
-    console.error('S3 discovery error:', err.message);
+    logger.error('S3 discovery error', { message: err.message });
   }
 
   return resources;
@@ -142,7 +143,7 @@ export async function discoverRds(creds: AwsCreds): Promise<DiscoveredResource[]
       });
     }
   } catch (err: any) {
-    console.error('RDS discovery error:', err.message);
+    logger.error('RDS discovery error', { message: err.message });
   }
 
   return resources;
@@ -176,7 +177,7 @@ export async function fetchCosts(
       }
     }
   } catch (err: any) {
-    console.error('Cost Explorer error:', err.message);
+    logger.error('Cost Explorer error', { message: err.message });
   }
 
   return costs;

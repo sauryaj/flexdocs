@@ -46,7 +46,6 @@ const navigation = [
       { name: 'Documents', href: '/dashboard/documents', icon: FileText },
       { name: 'Templates', href: '/dashboard/templates', icon: FileStack },
       { name: 'Passwords', href: '/dashboard/passwords', icon: Key },
-      { name: 'Pw Health', href: '/dashboard/passwords/health', icon: Shield },
       { name: 'Domains', href: '/dashboard/domains', icon: Globe },
       { name: 'SSL Certs', href: '/dashboard/ssl', icon: Lock },
       { name: 'Assets', href: '/dashboard/assets', icon: Box },

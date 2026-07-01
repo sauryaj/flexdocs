@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { randomBytes } from 'crypto';
 import { join } from 'path';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
+import logger from '@/lib/logger';
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || join(process.cwd(), 'uploads');
 
@@ -111,7 +112,7 @@ export async function migrateBase64Attachments() {
       });
       migrated++;
     } catch (err) {
-      console.error(`Failed to migrate attachment ${att.id}:`, err);
+      logger.error(`Failed to migrate attachment ${att.id}`, { err });
     }
   }
 
