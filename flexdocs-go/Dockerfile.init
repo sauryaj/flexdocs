@@ -1,0 +1,10 @@
+FROM node:20-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+COPY ../flexdocs/package.json ../flexdocs/package-lock.json* ./
+RUN npm ci --ignore-scripts 2>/dev/null || npm install
+COPY ../flexdocs/prisma ./prisma
+RUN npx prisma generate
+COPY scripts/init.sh /app/init.sh
+RUN chmod +x /app/init.sh
+CMD ["/app/init.sh"]

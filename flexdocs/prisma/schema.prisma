@@ -1,0 +1,926 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  admin
+  editor
+  viewer
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String?
+  avatar        String?
+  bio           String?
+  phone         String?
+  timezone      String?   @default("UTC")
+  role          UserRole  @default(editor)
+  emailVerified DateTime?
+  mfaEnabled    Boolean   @default(false)
+  mfaSecret     String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  documents     Document[]
+  passwords     Password[]
+  domains       Domain[]
+  folders       Folder[]
+  tags          Tag[]
+  assets        FlexibleAsset[]
+  checklists    Checklist[]
+  activityLogs  ActivityLog[]
+  attachments   Attachment[]
+  sslCertificates SslCertificate[]
+  webhooks      Webhook[]
+  recoveryCodes RecoveryCode[]
+  sessions      Session[]
+  templates     DocumentTemplate[]
+  sharedPasswords PasswordShare[] @relation("SharedWith")
+  passwordShares PasswordShare[] @relation("SharedBy")
+  passwordHistory PasswordHistory[]
+  apiKeys       ApiKey[]
+  invitations   Invitation[] @relation("InvitedBy")
+  invitedUsers  Invitation[] @relation("InvitedUser")
+  emergencyOwned  EmergencyAccess[] @relation("EmergencyOwner")
+  emergencyTrusted EmergencyAccess[] @relation("EmergencyTrusted")
+  networkDocuments NetworkDocument[]
+  servers         Server[]
+  maintenanceWindows MaintenanceWindow[]
+  cloudResources  CloudResource[]
+  statusPages     StatusPage[]
+  scheduledScans  ScheduledScan[]
+  costEntries     CostEntry[]
+  costBudgets     CostBudget[]
+  dockerHosts     DockerHost[]
+  k8sClusters     K8sCluster[]
+  infraChanges    InfraChange[]
+}
+
+model Folder {
+  id        String     @id @default(cuid())
+  name      String
+  color     String     @default("#3b82f6")
+  icon      String     @default("folder")
+  parentId  String?
+  parent    Folder?    @relation("FolderTree", fields: [parentId], references: [id])
+  children  Folder[]   @relation("FolderTree")
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  documents Document[]
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+}
+
+model Document {
+  id          String   @id @default(cuid())
+  title       String
+  content     String   @default("")
+  type        String   @default("markdown")
+  category    String   @default("general")
+  isPinned    Boolean  @default(false)
+  isArchived  Boolean  @default(false)
+  folderId    String?
+  folder      Folder?  @relation(fields: [folderId], references: [id])
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  tags           Tag[]
+  revisions      DocumentRevision[]
+  attachments    Attachment[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([folderId])
+  @@index([category])
+  @@index([isPinned])
+  @@index([isArchived])
+  @@index([createdAt])
+}
+
+model Password {
+  id             String   @id @default(cuid())
+  name           String
+  username       String
+  password       String   // Encrypted at rest
+  url            String?
+  notes          String?
+  category       String   @default("general")
+  isFavorite     Boolean  @default(false)
+  // Expiry & rotation
+  expiresAt      DateTime? // When password should be rotated
+  rotationDays   Int?      // Auto-calculate expiresAt from updatedAt + rotationDays
+  lastRotatedAt  DateTime? // When password was last rotated
+  // TOTP/2FA
+  totpSecret     String?  // Encrypted TOTP secret
+  totpIssuer      String?  // e.g., "Google", "GitHub"
+  totpPeriod     Int      @default(30)
+  totpDigits     Int      @default(6)
+  // Custom fields (JSON array of {key, value, type})
+  customFields   String   @default("[]")
+  // Auto-fill hints
+  autofillSelector String? // CSS selector for auto-fill
+  autofillNotes    String? // Notes about where to use this credential
+  // Breach tracking
+  lastBreachCheck  DateTime?
+  breachCount      Int      @default(0)
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  tags           Tag[]
+  shares         PasswordShare[]
+  history        PasswordHistory[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([category])
+  @@index([isFavorite])
+  @@index([expiresAt])
+  @@index([createdAt])
+}
+
+model Domain {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  registrar   String?
+  nameservers String?
+  expiresAt   DateTime?
+  autoRenew   Boolean  @default(true)
+  status      String   @default("active")
+  notes       String?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  tags        Tag[]
+  whoisCreated    String?    // Registrant organization
+  whoisCountry    String?    // Registrant country
+  whoisState      String?    // Registrant state
+  privacyProtection Boolean @default(false) // WHOIS privacy enabled
+  dnsRecords      String?    // JSON: stored DNS records {A:[], MX:[], NS:[], TXT:[], CAA:[]}
+  lastWhoisCheck  DateTime?  // Last WHOIS fetch timestamp
+  lastDnsCheck    DateTime?  // Last DNS fetch timestamp
+  sslCertId       String?    // Link to SSL certificate
+  sslCertificate  SslCertificate? @relation(fields: [sslCertId], references: [id])
+  revisions       DomainRevision[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SslCertificate {
+  id              String    @id @default(cuid())
+  hostname        String
+  issuer          String?
+  subject         String?
+  serialNumber    String?
+  validFrom       DateTime?
+  validTo         DateTime?
+  signatureAlgo   String?
+  keySize         Int?
+  san             String?   // Subject Alternative Names (comma-separated)
+  isExpired       Boolean   @default(false)
+  isSelfSigned    Boolean   @default(false)
+  certPem         String?   // PEM-encoded certificate (encrypted at rest)
+  chainPem        String?   // Intermediate chain
+  privateKey      String?   // Private key (encrypted at rest)
+  notes           String?
+  userId          String
+  user            User      @relation(fields: [userId], references: [id])
+  organizationId  String?
+  organization    Organization? @relation(fields: [organizationId], references: [id])
+  tags            Tag[]
+  domains         Domain[]
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model DomainRevision {
+  id         String   @id @default(cuid())
+  domainId   String
+  data       String   // JSON snapshot of domain state
+  source     String   @default("manual") // "manual", "whois", "dns"
+  message    String?
+  userId     String?
+  createdAt  DateTime @default(now())
+
+  domain Domain @relation(fields: [domainId], references: [id], onDelete: Cascade)
+
+  @@index([domainId])
+  @@index([createdAt])
+}
+
+model Tag {
+  id        String     @id @default(cuid())
+  name      String
+  color     String     @default("#6366f1")
+  userId    String
+  user      User       @relation(fields: [userId], references: [id])
+  documents Document[]
+  passwords Password[]
+  domains   Domain[]
+  assets    FlexibleAsset[]
+  checklists Checklist[]
+  sslCertificates SslCertificate[]
+  networkDocuments NetworkDocument[]
+  servers   Server[]
+  maintenanceWindows MaintenanceWindow[]
+  cloudResources CloudResource[]
+  createdAt DateTime   @default(now())
+
+  @@unique([name, userId])
+}
+
+model FlexibleAsset {
+  id           String   @id @default(cuid())
+  name         String
+  assetType    String   // e.g., "firewall", "switch", "server", "workstation"
+  fields       String   @default("{}") // JSON: custom field values
+  notes        String?
+  isArchived   Boolean  @default(false)
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  tags         Tag[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([userId])
+  @@index([assetType])
+  @@index([isArchived])
+  @@index([createdAt])
+}
+
+model FlexibleAssetType {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  color     String   @default("#6366f1")
+  icon      String   @default("box")
+  fields    String   @default("[]") // JSON: array of field definitions
+  userId    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+}
+
+model Checklist {
+  id          String         @id @default(cuid())
+  name        String
+  description String?
+  category    String         @default("general")
+  isComplete  Boolean        @default(false)
+  isArchived  Boolean        @default(false)
+  dueDate     DateTime?
+  userId      String
+  user        User           @relation(fields: [userId], references: [id])
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  items       ChecklistItem[]
+  tags        Tag[]
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@index([userId])
+  @@index([category])
+  @@index([isComplete])
+  @@index([dueDate])
+  @@index([createdAt])
+}
+
+model ChecklistItem {
+  id          String    @id @default(cuid())
+  text        String
+  isComplete  Boolean   @default(false)
+  order       Int       @default(0)
+  checklistId String
+  checklist   Checklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+}
+
+model ActivityLog {
+  id           String   @id @default(cuid())
+  userId       String?
+  user         User?    @relation(fields: [userId], references: [id])
+  action       String
+  resourceType String?
+  resourceId   String?
+  resourceName String?
+  details      String?  // JSON: additional context
+  ip           String?
+  userAgent    String?
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([resourceType, resourceId])
+  @@index([createdAt])
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  website     String?
+  phone       String?
+  email       String?
+  address     String?
+  logo        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  documents     Document[]
+  passwords     Password[]
+  domains       Domain[]
+  assets        FlexibleAsset[]
+  checklists    Checklist[]
+  folders       Folder[]
+  sslCertificates SslCertificate[]
+  networkDocuments NetworkDocument[]
+  servers       Server[]
+  maintenanceWindows MaintenanceWindow[]
+  cloudResources CloudResource[]
+  statusPages   StatusPage[]
+  scheduledScans ScheduledScan[]
+  costEntries   CostEntry[]
+  costBudgets   CostBudget[]
+  dockerHosts   DockerHost[]
+  k8sClusters   K8sCluster[]
+  infraChanges  InfraChange[]
+}
+
+model Relationship {
+  id              String   @id @default(cuid())
+  name            String   // e.g., "hosted_on", "managed_by", "uses"
+  sourceType      String   // e.g., "document", "password", "domain", "asset"
+  sourceId        String
+  targetType      String   // e.g., "document", "password", "domain", "asset"
+  targetId        String
+  notes           String?
+  createdAt       DateTime @default(now())
+
+  @@unique([sourceType, sourceId, targetType, targetId, name])
+  @@index([sourceType, sourceId])
+  @@index([targetType, targetId])
+}
+
+model DocumentRevision {
+  id         String   @id @default(cuid())
+  documentId String
+  title      String
+  content    String
+  category   String
+  version    Int
+  message    String?
+  userId     String
+  createdAt  DateTime @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@index([createdAt])
+}
+
+model Attachment {
+  id         String   @id @default(cuid())
+  filename   String
+  mimeType   String
+  size       Int
+  data       String?  // Base64 data (deprecated - for backward compat)
+  filePath   String?  // Path to file on disk
+  storageType String  @default("base64") // base64, filesystem
+  documentId String?
+  userId     String
+  createdAt  DateTime @default(now())
+
+  document Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  user     User     @relation(fields: [userId], references: [id])
+
+  @@index([documentId])
+}
+
+model Webhook {
+  id          String   @id @default(cuid())
+  name        String
+  url         String
+  secret      String?
+  events      String   @default("[]") // JSON array of event types
+  isActive    Boolean  @default(true)
+  lastTriggered DateTime?
+  lastStatus  Int?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model RecoveryCode {
+  id        String   @id @default(cuid())
+  code      String
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  usedAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  token     String   @unique
+  ip        String?
+  userAgent String?
+  lastActive DateTime @default(now())
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@index([token])
+}
+
+model DocumentTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  category    String   @default("general")
+  content     String   @default("")
+  icon        String   @default("file-text")
+  isPublic    Boolean  @default(false)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PasswordShare {
+  id           String   @id @default(cuid())
+  passwordId   String
+  password     Password @relation(fields: [passwordId], references: [id], onDelete: Cascade)
+  sharedWithId String
+  sharedWith   User     @relation("SharedWith", fields: [sharedWithId], references: [id])
+  sharedById   String
+  sharedBy     User     @relation("SharedBy", fields: [sharedById], references: [id])
+  permission   String   @default("read") // read, write
+  expiresAt    DateTime? // Auto-revoke after this time
+  createdAt    DateTime @default(now())
+
+  @@unique([passwordId, sharedWithId])
+  @@index([passwordId])
+  @@index([sharedWithId])
+}
+
+model PasswordHistory {
+  id         String   @id @default(cuid())
+  passwordId String
+  password   Password @relation(fields: [passwordId], references: [id], onDelete: Cascade)
+  oldPassword String  // Encrypted old password
+  newPassword String  // Encrypted new password
+  userId     String
+  user       User     @relation(fields: [userId], references: [id])
+  reason     String?  // "manual", "rotation", "breach", "revert"
+  createdAt  DateTime @default(now())
+
+  @@index([passwordId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model EmergencyAccess {
+  id             String   @id @default(cuid())
+  userId         String   // Owner
+  user           User     @relation("EmergencyOwner", fields: [userId], references: [id])
+  trustedUserId  String   // Trusted contact
+  trustedUser    User     @relation("EmergencyTrusted", fields: [trustedUserId], references: [id])
+  delayHours     Int      @default(24) // Hours to wait before access is granted
+  status         String   @default("pending") // pending, active, expired, revoked
+  requestAt      DateTime? // When access was requested
+  grantAt        DateTime? // When access will be granted (requestAt + delayHours)
+  accessGranted  Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([userId, trustedUserId])
+  @@index([userId])
+  @@index([trustedUserId])
+  @@index([status])
+}
+
+model ApiKey {
+  id          String   @id @default(cuid())
+  name        String
+  key         String   @unique
+  permissions String   @default("read") // read, write, admin
+  isActive    Boolean  @default(true)
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([key])
+  @@index([userId])
+}
+
+model Invitation {
+  id        String   @id @default(cuid())
+  email     String
+  role      UserRole @default(editor)
+  token     String   @unique
+  status    String   @default("pending") // pending, accepted, expired
+  invitedById String
+  invitedBy  User    @relation("InvitedBy", fields: [invitedById], references: [id])
+  invitedUserId String?
+  invitedUser  User?  @relation("InvitedUser", fields: [invitedUserId], references: [id])
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([token])
+  @@index([email])
+}
+
+model WebhookDelivery {
+  id         String   @id @default(cuid())
+  webhookId  String
+  event      String
+  payload    String   // JSON
+  status     String   @default("pending") // pending, success, failed, retrying
+  statusCode Int?
+  attempts   Int      @default(0)
+  maxAttempts Int     @default(5)
+  nextRetryAt DateTime?
+  error      String?
+  createdAt  DateTime @default(now())
+  deliveredAt DateTime?
+
+  @@index([webhookId])
+  @@index([status])
+  @@index([nextRetryAt])
+}
+
+model AuditLogRetention {
+  id           String   @id @default(cuid())
+  daysToKeep   Int      @default(365)
+  lastPurgeAt  DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @default(now())
+}
+
+// ============================================================
+// INFRASTRUCTURE MODULES
+// ============================================================
+
+model NetworkDocument {
+  id             String   @id @default(cuid())
+  name           String
+  type           String   // ip-schema, vlan, firewall-rule, dns-zone, subnet, nat, vpn
+  content        String   @default("{}") // JSON: flexible fields based on type
+  notes          String?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  tags           Tag[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([type])
+}
+
+model Server {
+  id             String   @id @default(cuid())
+  name           String
+  hostname       String?
+  ipAddress      String?
+  macAddress     String?
+  os             String?  // Windows, Ubuntu, CentOS, etc.
+  osVersion      String?
+  cpu            String?  // e.g., "Intel Xeon E5-2680 v4"
+  cpuCores       Int?
+  ramGB          Float?
+  storageGB      Float?
+  storageType    String?  // SSD, HDD, NVMe
+  status         String   @default("active") // active, maintenance, decommissioned
+  location       String?  // Datacenter, rack, room
+  rackPosition   String?
+  serialNumber   String?
+  assetTag       String?
+  purchaseDate   DateTime?
+  warrantyExpiry DateTime?
+  notes          String?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  tags           Tag[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([status])
+}
+
+model MaintenanceWindow {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  startTime      DateTime
+  endTime        DateTime
+  recurrence     String?  // daily, weekly, monthly, yearly, null=once
+  status         String   @default("scheduled") // scheduled, in-progress, completed, cancelled
+  priority       String   @default("medium") // low, medium, high, critical
+  impact         String?  // description of impact
+  affectedSystems String? // JSON array of affected system names
+  notifyEmails   String?  // JSON array of email addresses
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  tags           Tag[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([startTime])
+  @@index([status])
+}
+
+model CloudResource {
+  id             String   @id @default(cuid())
+  name           String
+  provider       String   // aws, azure, gcp, other
+  service        String   // ec2, s3, rds, lambda, etc.
+  resourceId     String?  // AWS resource ID, Azure resource ID, etc.
+  region         String?
+  status         String   @default("active") // active, stopped, terminated, error
+  cost           Float?   // monthly cost estimate
+  costCurrency   String?  @default("USD")
+  cloudTags      String?  // JSON: cloud provider tags
+  metadata       String?  @default("{}") // JSON: provider-specific metadata
+  notes          String?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  tags           Tag[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([provider])
+  @@index([service])
+}
+
+model StatusPage {
+  id             String   @id @default(cuid())
+  name           String
+  slug           String   @unique
+  description    String?
+  isPublic       Boolean  @default(false)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  components     StatusComponent[]
+  incidents      StatusIncident[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([userId])
+  @@index([organizationId])
+  @@index([slug])
+}
+
+model StatusComponent {
+  id             String   @id @default(cuid())
+  name           String
+  status         String   @default("operational") // operational, degraded, partial-outage, major-outage
+  position       Int      @default(0)
+  statusPageId   String
+  statusPage     StatusPage @relation(fields: [statusPageId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([statusPageId])
+}
+
+model StatusIncident {
+  id             String   @id @default(cuid())
+  title          String
+  description    String?
+  status         String   @default("investigating") // investigating, identified, monitoring, resolved, postmortem
+  impact         String   @default("minor") // minor, major, critical
+  statusPageId   String
+  statusPage     StatusPage @relation(fields: [statusPageId], references: [id], onDelete: Cascade)
+  updates        IncidentUpdate[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([statusPageId])
+  @@index([status])
+}
+
+model IncidentUpdate {
+  id             String   @id @default(cuid())
+  message        String
+  status         String   // investigating, identified, monitoring, resolved, postmortem
+  incidentId     String
+  incident       StatusIncident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+  createdAt      DateTime @default(now())
+
+  @@index([incidentId])
+}
+
+// ── Scheduled Automation ─────────────────────────────────────────────
+
+model ScheduledScan {
+  id             String   @id @default(cuid())
+  name           String
+  type           String   // cloud-discovery, network-scan, ssh-discovery, docker-discover, cost-sync
+  config         String   @db.Text // JSON: credentials, CIDR, targets, etc.
+  cronExpression String   // e.g. "0 2 * * 0" for weekly Sunday 2am
+  isActive       Boolean  @default(true)
+  lastRunAt      DateTime?
+  lastResult     String?  @db.Text // JSON: { created, updated, errors }
+  nextRunAt      DateTime?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  runs           ScanRun[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model ScanRun {
+  id            String   @id @default(cuid())
+  scanId        String
+  scan          ScheduledScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+  status        String   // running, completed, failed
+  startedAt     DateTime @default(now())
+  completedAt   DateTime?
+  result        String?  @db.Text // JSON: full result details
+  error         String?  @db.Text
+  duration      Int?     // milliseconds
+
+  @@index([scanId])
+}
+
+// ── Change Detection ─────────────────────────────────────────────────
+
+model InfraChange {
+  id             String   @id @default(cuid())
+  resourceType   String   // server, network, cloud, docker
+  resourceId     String
+  changeType     String   // created, updated, deleted, status_changed
+  field          String?  // which field changed
+  oldValue       String?  @db.Text
+  newValue       String?  @db.Text
+  summary        String
+  detectedAt     DateTime @default(now())
+  acknowledged   Boolean  @default(false)
+  acknowledgedAt DateTime?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  userId         String?
+  user           User?    @relation(fields: [userId], references: [id])
+
+  @@index([resourceType, resourceId])
+  @@index([organizationId])
+  @@index([detectedAt])
+}
+
+// ── Cloud Cost Tracking ──────────────────────────────────────────────
+
+model CostEntry {
+  id             String   @id @default(cuid())
+  provider       String   // aws, azure, gcp
+  service        String   // ec2, s3, rds, lambda, etc.
+  region         String?
+  amount         Float
+  currency       String   @default("USD")
+  period         String   // 2024-01, 2024-01-15, etc.
+  periodType     String   // monthly, daily
+  metadata       String?  @db.Text // JSON: additional cost details
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  fetchedAt      DateTime @default(now())
+
+  @@index([provider, period])
+  @@index([organizationId])
+  @@index([service])
+}
+
+model CostBudget {
+  id             String   @id @default(cuid())
+  name           String
+  provider       String?
+  service        String?
+  monthlyLimit   Float
+  alertThreshold Float   @default(80) // percentage
+  isEnabled      Boolean  @default(true)
+  lastAlertAt    DateTime?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  createdAt      DateTime @default(now())
+
+  @@index([organizationId])
+}
+
+// ── Docker/K8s Discovery ────────────────────────────────────────────
+
+model DockerHost {
+  id             String   @id @default(cuid())
+  name           String
+  endpoint       String   // unix:///var/run/docker.sock or tcp://host:2375
+  type           String   // docker, docker-swarm, kubernetes
+  status         String   @default("active") // active, offline, error
+  version        String?
+  containers     Int      @default(0)
+  images         Int      @default(0)
+  networks       Int      @default(0)
+  volumes        Int      @default(0)
+  metadata       String?  @db.Text // JSON: system info
+  lastScanAt     DateTime?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  containersList DockerContainer[]
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model DockerContainer {
+  id             String   @id @default(cuid())
+  hostId         String
+  host           DockerHost @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  containerId    String   // Docker's container ID
+  name           String
+  image          String
+  status         String   // running, stopped, paused
+  state          String   // running, exited, created
+  ports          String?  @db.Text // JSON: port mappings
+  env            String?  @db.Text // JSON: environment variables (redacted secrets)
+  mounts         String?  @db.Text // JSON: volume mounts
+  networkMode    String?
+  ip             String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([hostId])
+  @@index([containerId])
+}
+
+model K8sCluster {
+  id             String   @id @default(cuid())
+  name           String
+  kubeconfig     String?  @db.Text // encrypted
+  serverUrl      String
+  version        String?
+  namespaces     Int      @default(0)
+  pods           Int      @default(0)
+  services       Int      @default(0)
+  deployments    Int      @default(0)
+  nodes          Int      @default(0)
+  status         String   @default("active")
+  metadata       String?  @db.Text // JSON: cluster info
+  lastScanAt     DateTime?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId])
+  @@index([userId])
+}
