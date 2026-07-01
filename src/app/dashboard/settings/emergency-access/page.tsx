@@ -25,9 +25,15 @@ export default function EmergencyAccessPage() {
   const [showRequestModal, setShowRequestModal] = useState(false);
   const [showRevokeModal, setShowRevokeModal] = useState<string | null>(null);
   const [showApproveModal, setShowApproveModal] = useState<string | null>(null);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    userId: string;
+    accessType: 'view' | 'edit' | 'admin';
+    delayDays: number;
+    delayHours: number;
+    requestReason: string;
+  }>({
     userId: '',
-    accessType: 'view' as const,
+    accessType: 'view',
     delayDays: 7,
     delayHours: 0,
     requestReason: '',

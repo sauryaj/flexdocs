@@ -7,9 +7,10 @@ export async function GET() {
     const user = await auth();
     if (!user) return NextResponse.json({ enabled: false }, { status: 401 });
 
-    const mfaSettings = await (prisma as unknown as Record<string, { findFirst: (args: Record<string, unknown>) => Promise<unknown> }).mfaSettings?.findFirst({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const mfaSettings = await (prisma as any).mfaSettings?.findFirst({
       where: { userId: user.id },
-    }) as Record<string, unknown> | null;
+    });
 
     return NextResponse.json({
       enabled: Boolean(mfaSettings?.enabled),
