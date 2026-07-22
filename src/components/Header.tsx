@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Bell, Moon, Sun, FileText, Key, Globe, Box, CheckSquare, Command } from 'lucide-react';
+import { Search, Bell, Moon, Sun, FileText, Key, Globe, Box, CheckSquare, Command, LogOut } from 'lucide-react';
 import { useTheme } from '@/lib/ThemeContext';
 
 interface SearchResult {
@@ -304,11 +304,15 @@ export function Header() {
           {resolvedMode === 'dark' ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
         </button>
         <button
-          className="p-2 rounded-lg relative transition-all duration-150 hover:bg-[var(--surface-2)]"
-          style={{ color: 'var(--muted)' }}
+          onClick={async () => {
+            await fetch('/api/logout', { method: 'POST' });
+            router.push('/login');
+            router.refresh();
+          }}
+          title="Sign Out"
+          className="p-2 rounded-lg transition-all duration-150 hover:bg-red-50 dark:hover:bg-red-950/50 text-red-500"
         >
-          <Bell className="w-[18px] h-[18px]" />
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-red-500 rounded-full" />
+          <LogOut className="w-[18px] h-[18px]" />
         </button>
       </div>
     </header>
