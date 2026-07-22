@@ -317,79 +317,14 @@ export function Sidebar() {
 
         {/* Settings — bottom */}
         <div className="px-2 pb-3 pt-2" style={{ borderTop: '1px solid var(--sidebar-border)' }}>
-          {!collapsed && <div className="sidebar-label">Settings</div>}
           <div className="space-y-0.5">
             <Link
               href="/dashboard/settings"
-              className={cn('sidebar-nav-item', pathname === '/dashboard/settings' && 'active')}
-              title={collapsed ? 'General' : undefined}
+              className={cn('sidebar-nav-item', pathname.startsWith('/dashboard/settings') && 'active')}
+              title={collapsed ? 'Settings' : undefined}
             >
               <Settings className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span>General</span>}
-            </Link>
-            <Link
-              href="/dashboard/settings/mfa"
-              className={cn('sidebar-nav-item', pathname === '/dashboard/settings/mfa' && 'active')}
-              title={collapsed ? '2FA / MFA' : undefined}
-            >
-              <Shield className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span>2FA / MFA</span>}
-            </Link>
-            <Link
-              href="/dashboard/settings/sessions"
-              className={cn('sidebar-nav-item', pathname === '/dashboard/settings/sessions' && 'active')}
-              title={collapsed ? 'Sessions' : undefined}
-            >
-              <Activity className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span>Sessions</span>}
-            </Link>
-            <Link
-              href="/dashboard/settings/api-keys"
-              className={cn('sidebar-nav-item', pathname === '/dashboard/settings/api-keys' && 'active')}
-              title={collapsed ? 'API Keys' : undefined}
-            >
-              <Key className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span>API Keys</span>}
-            </Link>
-            <Link
-              href="/dashboard/settings/webhooks"
-              className={cn('sidebar-nav-item', pathname === '/dashboard/settings/webhooks' && 'active')}
-              title={collapsed ? 'Webhooks' : undefined}
-            >
-              <Zap className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span>Webhooks</span>}
-            </Link>
-            <Link
-              href="/dashboard/settings/emergency-access"
-              className={cn('sidebar-nav-item', pathname === '/dashboard/settings/emergency-access' && 'active')}
-              title={collapsed ? 'Emergency Access' : undefined}
-            >
-              <Lock className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span>Emergency Access</span>}
-            </Link>
-            <Link
-              href="/dashboard/settings/import-export"
-              className={cn('sidebar-nav-item', pathname === '/dashboard/settings/import-export' && 'active')}
-              title={collapsed ? 'Import / Export' : undefined}
-            >
-              <FileBarChart className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span>Import / Export</span>}
-            </Link>
-            <Link
-              href="/dashboard/settings/health"
-              className={cn('sidebar-nav-item', pathname === '/dashboard/settings/health' && 'active')}
-              title={collapsed ? 'Health Check' : undefined}
-            >
-              <Activity className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span>Health Check</span>}
-            </Link>
-            <Link
-              href="/dashboard/settings/api-docs"
-              className={cn('sidebar-nav-item', pathname === '/dashboard/settings/api-docs' && 'active')}
-              title={collapsed ? 'API Docs' : undefined}
-            >
-              <FileText className="w-4 h-4 flex-shrink-0" />
-              {!collapsed && <span>API Docs</span>}
+              {!collapsed && <span>Settings</span>}
             </Link>
           </div>
         </div>
