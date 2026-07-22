@@ -22,14 +22,34 @@ export default function HealthCheckPage() {
       const res = await fetch('/api/health');
       if (!res.ok) throw new Error('Health check failed');
       const data = await res.json();
-      const checkList = Array.isArray(data.checks) ? data.checks : [];
-      setChecks(checkList.map((c: Record<string, unknown>) => ({
-        name: String(c.name || ''),
-        status: String(c.status || 'unknown') as HealthCheck['status'],
-        latency: typeof c.latency === 'number' ? c.latency : undefined,
-        message: typeof c.message === 'string' ? c.message : undefined,
-        lastChecked: new Date().toISOString(),
-      })));
+      let checkList: HealthCheck[] = [];
+      if (Array.isArray(data.checks)) {
+        checkList = data.checks.map((c: Record<string, unknown>) => ({
+          name: String(c.name || ''),
+          status: String(c.status || 'unknown') as HealthCheck['status'],
+          latency: typeof c.latency === 'number' ? c.latency : undefined,
+          message: typeof c.message === 'string' ? c.message : undefined,
+          lastChecked: new Date().toISOString(),
+        }));
+      } else if (data.checks && typeof data.checks === 'object') {
+        checkList = Object.entries(data.checks as Record<string, unknown>)
+          .filter(([key]) => key !== 'timestamp' && key !== 'uptime')
+          .map(([key, val]) => ({
+            name: key.charAt(0).toUpperCase() + key.slice(1),
+            status: (val === 'ok' ? 'healthy' : val === 'error' ? 'down' : 'degraded') as HealthCheck['status'],
+            message: val === 'ok' ? 'Operational' : String(val),
+            lastChecked: new Date().toISOString(),
+          }));
+        if (data.checks.uptime) {
+          checkList.push({
+            name: 'API Server',
+            status: 'healthy',
+            message: `Uptime: ${data.checks.uptime}`,
+            lastChecked: new Date().toISOString(),
+          });
+        }
+      }
+      setChecks(checkList);
       setLastRefresh(new Date());
     } catch {
       setChecks([
