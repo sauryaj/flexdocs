@@ -8,6 +8,8 @@ export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [mfaRequired, setMfaRequired] = useState(false);
+  const [mfaCode, setMfaCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,15 +19,26 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const res = await fetch('/api/login', {
+      const endpoint = mfaRequired ? '/api/login/verify-mfa' : '/api/login';
+      const payload = mfaRequired 
+        ? { email, code: mfaCode }
+        : { email, password };
+
+      const res = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify(payload),
       });
 
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Login failed');
+      }
+
+      if (data.requiresMfa) {
+        setMfaRequired(true);
+        setLoading(false);
+        return;
       }
 
       router.push('/dashboard');
@@ -65,59 +78,94 @@ export default function LoginPage() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Email Address
-            </label>
-            <div className="relative">
-              <Mail className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
-              <input
-                type="email"
-                required
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="admin@flexdocs.local"
-                className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-              />
-            </div>
-          </div>
+          {!mfaRequired ? (
+            <>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Email Address
+                </label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
+                  <input
+                    type="email"
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="admin@flexdocs.local"
+                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  />
+                </div>
+              </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-300 mb-1">
-              Password
-            </label>
-            <div className="relative">
-              <Key className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
-              <input
-                type="password"
-                required
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••••••"
-                className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-              />
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Password
+                </label>
+                <div className="relative">
+                  <Key className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
+                  <input
+                    type="password"
+                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div>
+              <label className="block text-xs font-semibold text-slate-300 mb-1">
+                Authenticator Code (MFA)
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 absolute left-3 top-3 text-slate-500" />
+                <input
+                  type="text"
+                  required
+                  maxLength={6}
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value)}
+                  placeholder="Enter 6-digit code"
+                  className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-center tracking-widest font-bold"
+                />
+              </div>
+              <p className="text-[10px] text-slate-500 mt-1.5 text-center">
+                Open your Google Authenticator or secondary TOTP app to retrieve code.
+              </p>
             </div>
-          </div>
+          )}
 
           <button
             type="submit"
             disabled={loading}
             className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-sm font-semibold flex items-center justify-center gap-2 transition-all shadow-lg shadow-blue-600/25 disabled:opacity-50"
           >
-            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Sign In'}
+            {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : mfaRequired ? 'Verify & Login' : 'Sign In'}
             {!loading && <ArrowRight className="w-4 h-4" />}
           </button>
         </form>
 
         <div className="pt-2 border-t border-slate-800 text-center space-y-2">
-          <button
-            type="button"
-            onClick={fillDemoAdmin}
-            className="text-xs text-blue-400 hover:text-blue-300 font-medium hover:underline flex items-center justify-center gap-1 mx-auto"
-          >
-            <ShieldCheck className="w-3.5 h-3.5" />
-            Auto-Fill Admin Credentials (`admin@flexdocs.local`)
-          </button>
+          {!mfaRequired ? (
+            <button
+              type="button"
+              onClick={fillDemoAdmin}
+              className="text-xs text-blue-400 hover:text-blue-300 font-medium hover:underline flex items-center justify-center gap-1 mx-auto"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              Auto-Fill Admin Credentials (`admin@flexdocs.local`)
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setMfaRequired(false)}
+              className="text-xs text-slate-400 hover:text-slate-300 font-medium hover:underline flex items-center justify-center gap-1 mx-auto"
+            >
+              Back to Password Login
+            </button>
+          )}
         </div>
       </div>
     </div>

@@ -27,6 +27,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid email or password' }, { status: 401 });
     }
 
+    if (user.mfaEnabled) {
+      return NextResponse.json({
+        requiresMfa: true,
+        email: user.email,
+        message: 'MFA authentication required',
+      });
+    }
+
     const response = NextResponse.json({
       message: 'Login successful',
       user: { id: user.id, name: user.name, email: user.email, role: user.role },
