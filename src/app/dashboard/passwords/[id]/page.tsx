@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/UIComponents';
+import { RelatedItemsPanel } from '@/components/RelatedItemsPanel';
 
 interface PasswordEntry {
   id: string;
@@ -293,7 +294,7 @@ export default function PasswordDetailPage() {
   }
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6">
+    <div className="max-w-6xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <Link href="/dashboard/passwords" className="p-2 hover:bg-slate-100 rounded-lg">
@@ -305,6 +306,24 @@ export default function PasswordDetailPage() {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              const res = await fetch('/api/passwords/share-link', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ passwordId: pass.id, durationHours: 24, oneTimeOnly: true }),
+              });
+              if (res.ok) {
+                const data = await res.json();
+                navigator.clipboard.writeText(data.shareUrl);
+                alert(`QuickShare link copied to clipboard!\n\n${data.shareUrl}\n(Self-destructs after 1 view)`);
+              }
+            }}
+            className="btn-secondary text-xs flex items-center gap-1.5"
+          >
+            <Lock className="w-3.5 h-3.5 text-blue-500" />
+            QuickShare Link
+          </button>
           <button onClick={toggleFavorite} className={`p-2 rounded-lg transition-colors ${pass.isFavorite ? 'bg-amber-100 text-amber-700' : 'hover:bg-slate-100'}`}>
             <Star className={`w-5 h-5 ${pass.isFavorite ? 'fill-current' : ''}`} />
           </button>
@@ -314,7 +333,8 @@ export default function PasswordDetailPage() {
         </div>
       </div>
 
-      <div className="card p-6 space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+        <div className="lg:col-span-2 card p-6 space-y-6">
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
           <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="input-field" />
@@ -559,7 +579,12 @@ export default function PasswordDetailPage() {
         </div>
       </div>
 
-      <ConfirmDialog isOpen={showDelete} onClose={() => setShowDelete(false)} onConfirm={handleDelete} title="Delete Password" message="Are you sure you want to delete this password? This action cannot be undone." />
+      <div className="lg:col-span-1">
+        <RelatedItemsPanel entityType="password" entityId={pass.id} entityName={pass.name} />
+      </div>
     </div>
-  );
+
+    <ConfirmDialog isOpen={showDelete} onClose={() => setShowDelete(false)} onConfirm={handleDelete} title="Delete Password" message="Are you sure you want to delete this password? This action cannot be undone." />
+  </div>
+);
 }

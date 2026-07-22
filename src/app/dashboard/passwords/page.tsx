@@ -103,16 +103,20 @@ export default function PasswordsPage() {
 
   const loadHealth = useCallback(async () => {
     setHealthLoading(true);
-    const res = await fetch('/api/passwords/health');
+    const params = new URLSearchParams();
+    if (selectedOrg?.id) {
+      params.set('organizationId', selectedOrg.id);
+    }
+    const res = await fetch(`/api/passwords/health?${params.toString()}`);
     if (res.ok) setHealth(await res.json());
     setHealthLoading(false);
-  }, []);
+  }, [selectedOrg]);
 
   useEffect(() => {
-    if (viewMode === 'health' && !health) {
+    if (viewMode === 'health') {
       loadHealth();
     }
-  }, [viewMode, health, loadHealth]);
+  }, [viewMode, selectedOrg, loadHealth]);
 
   const handleDelete = async () => {
     if (!deleteId) return;

@@ -56,6 +56,7 @@ const navigation = [
   {
     label: 'Infrastructure',
     items: [
+      { name: 'Configurations & Expiry', href: '/dashboard/configurations', icon: Server },
       { name: 'Network', href: '/dashboard/network', icon: Network },
       { name: 'Servers', href: '/dashboard/servers', icon: Server },
       { name: 'Cloud', href: '/dashboard/cloud', icon: Cloud },
@@ -112,8 +113,41 @@ export function Sidebar() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const isActive = (href: string) =>
-    pathname === href || (href !== '/dashboard' && pathname.startsWith(href));
+  const isActive = (href: string) => {
+    const cleanHref = href.split('?')[0];
+    return pathname === cleanHref || (cleanHref !== '/dashboard' && pathname.startsWith(cleanHref));
+  };
+
+  const activeNavigation = selectedOrg
+    ? [
+        {
+          label: selectedOrg.name,
+          items: [
+            { name: 'Org Overview', href: `/dashboard/organizations/${selectedOrg.id}`, icon: Building2 },
+          ],
+        },
+        {
+          label: 'Core Assets',
+          items: [
+            { name: 'Documents', href: `/dashboard/documents?organizationId=${selectedOrg.id}`, icon: FileText },
+            { name: 'Passwords', href: `/dashboard/passwords?organizationId=${selectedOrg.id}`, icon: Key },
+            { name: 'Flexible Assets', href: `/dashboard/assets?organizationId=${selectedOrg.id}`, icon: Box },
+            { name: 'Domains & SSL', href: `/dashboard/domains?organizationId=${selectedOrg.id}`, icon: Globe },
+            { name: 'Configurations / Servers', href: `/dashboard/servers?organizationId=${selectedOrg.id}`, icon: Server },
+            { name: 'Network', href: `/dashboard/network?organizationId=${selectedOrg.id}`, icon: Network },
+            { name: 'Checklists', href: `/dashboard/checklists?organizationId=${selectedOrg.id}`, icon: CheckSquare },
+          ],
+        },
+        {
+          label: 'Global Admin',
+          items: [
+            { name: 'All Organizations', href: '/dashboard/organizations', icon: Building },
+            { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+            { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart },
+          ],
+        },
+      ]
+    : navigation;
 
   return (
     <>
@@ -260,7 +294,7 @@ export function Sidebar() {
 
         {/* Navigation groups */}
         <nav className="flex-1 px-2 py-3 overflow-y-auto">
-          {navigation.map((group, gi) => (
+          {activeNavigation.map((group, gi) => (
             <div key={group.label}>
               {gi > 0 && <div className="sidebar-divider" />}
               {!collapsed && <div className="sidebar-label">{group.label}</div>}

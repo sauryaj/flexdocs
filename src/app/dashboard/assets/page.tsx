@@ -11,6 +11,7 @@ import {
 import { formatDate, cn } from '@/lib/utils';
 import { EmptyState, ConfirmDialog } from '@/components/UIComponents';
 import { useOrganization } from '@/lib/OrganizationContext';
+import { AssetTypeBuilderModal } from '@/components/AssetTypeBuilderModal';
 
 interface Asset {
   id: string;
@@ -258,48 +259,11 @@ export default function AssetsPage() {
         message="Are you sure you want to delete this asset?"
       />
 
-      {/* New Type Modal */}
-      {showNewType && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center">
-          <div className="absolute inset-0 bg-black/50" onClick={() => setShowNewType(false)} />
-          <div className="relative bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6">
-            <h2 className="text-lg font-semibold mb-4">New Asset Type</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-1">Type Name</label>
-                <input
-                  type="text"
-                  value={newTypeName}
-                  onChange={(e) => setNewTypeName(e.target.value)}
-                  className="input-field"
-                  placeholder="e.g., Firewall, Switch"
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">Color</label>
-                <div className="flex gap-2">
-                  {Object.values(assetTypeColors).map((c) => (
-                    <button
-                      key={c}
-                      onClick={() => setNewTypeColor(c)}
-                      className={cn(
-                        'w-8 h-8 rounded-full border-2',
-                        newTypeColor === c ? 'border-slate-900' : 'border-transparent'
-                      )}
-                      style={{ backgroundColor: c }}
-                    />
-                  ))}
-                </div>
-              </div>
-              <div className="flex justify-end gap-3">
-                <button onClick={() => setShowNewType(false)} className="btn-secondary">Cancel</button>
-                <button onClick={handleCreateType} className="btn-primary">Create</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <AssetTypeBuilderModal
+        isOpen={showNewType}
+        onClose={() => setShowNewType(false)}
+        onSuccess={() => fetchTypes()}
+      />
     </div>
   );
 }

@@ -8,6 +8,7 @@ import {
 import { formatDate, cn } from '@/lib/utils';
 import { EmptyState, ConfirmDialog } from '@/components/UIComponents';
 import { useOrganization } from '@/lib/OrganizationContext';
+import { NetworkTopologyMap } from '@/components/NetworkTopologyMap';
 
 interface NetworkDoc {
   id: string;
@@ -37,13 +38,14 @@ export default function NetworkPage() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'topology' | 'docs'>('topology');
 
   useEffect(() => { fetchItems(); }, [selectedOrg]);
 
   const fetchItems = async () => {
-    const params = new URLSearchParams();
-    if (selectedOrg?.id) params.set('organizationId', selectedOrg.id);
-    const res = await fetch(`/api/network?${params.toString()}`);
+    setLoading(true);
+    const orgParam = selectedOrg?.id ? `?organizationId=${selectedOrg.id}` : '';
+    const res = await fetch(`/api/network${orgParam}`);
     const data = await res.json();
     setItems(data);
     setLoading(false);
@@ -76,80 +78,116 @@ export default function NetworkPage() {
         </Link>
       </div>
 
-      <div className="flex items-center gap-3">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--muted)' }} />
-          <input
-            type="text"
-            placeholder="Search..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="input-field pl-10"
-          />
-        </div>
-        <select
-          value={typeFilter}
-          onChange={(e) => setTypeFilter(e.target.value)}
-          className="input-field w-auto"
+      <div className="flex items-center gap-2 border-b pb-2 dark:border-slate-800">
+        <button
+          type="button"
+          onClick={() => setActiveTab('topology')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            activeTab === 'topology'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
         >
-          <option value="all">All Types</option>
-          {Object.entries(typeConfig).map(([key, cfg]) => (
-            <option key={key} value={key}>{cfg.label}</option>
-          ))}
-        </select>
+          Visual Topology Map
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('docs')}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            activeTab === 'docs'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+          }`}
+        >
+          IP & VLAN Documentation ({items.length})
+        </button>
       </div>
 
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3].map((i) => (
-            <div key={i} className="card p-5 h-32 animate-shimmer" />
-          ))}
-        </div>
-      ) : filtered.length === 0 ? (
-        <EmptyState
-          icon={<Network className="w-10 h-10" />}
-          title="No network documents"
-          description="Add IP schemas, VLANs, firewall rules, and DNS zones."
-        />
+      {activeTab === 'topology' ? (
+        <NetworkTopologyMap />
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((item) => {
-            const cfg = typeConfig[item.type] || typeConfig['ip-schema'];
-            const Icon = cfg.icon;
-            return (
-              <Link
-                key={item.id}
-                href={`/dashboard/network/${item.id}`}
-                className="card card-interactive p-5"
-              >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div
-                      className="w-10 h-10 rounded-lg flex items-center justify-center"
-                      style={{ backgroundColor: `${cfg.color}15` }}
-                    >
-                      <Icon className="w-5 h-5" style={{ color: cfg.color }} />
-                    </div>
-                    <div>
-                      <p className="font-semibold text-sm" style={{ color: 'var(--foreground)' }}>{item.name}</p>
-                      <span className="badge badge-slate mt-1">{cfg.label}</span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={(e) => { e.preventDefault(); setDeleteId(item.id); }}
-                    className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 hover:text-red-600"
-                    style={{ color: 'var(--muted)' }}
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--muted)' }} />
+              <input
+                type="text"
+                placeholder="Search..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="input-field pl-10"
+              />
+            </div>
+            <select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="input-field w-auto"
+            >
+              <option value="all">All Types</option>
+              {Object.entries(typeConfig).map(([key, cfg]) => (
+                <option key={key} value={key}>{cfg.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {loading ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[1, 2, 3].map((i) => (
+                <div key={i} className="card p-5 h-32 animate-shimmer" />
+              ))}
+            </div>
+          ) : filtered.length === 0 ? (
+            <EmptyState
+              icon={<Network className="w-10 h-10" />}
+              title="No network documentation found"
+              description="Document IP schemes, VLAN configurations, and firewall rules."
+              action={
+                <Link href="/dashboard/network/new" className="btn-primary flex items-center gap-2 text-xs">
+                  <Plus className="w-4 h-4" /> Add Network Doc
+                </Link>
+              }
+            />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {filtered.map((item) => {
+                const cfg = typeConfig[item.type] || { label: item.type, icon: Network, color: '#64748b' };
+                const Icon = cfg.icon;
+                return (
+                  <Link
+                    key={item.id}
+                    href={`/dashboard/network/${item.id}`}
+                    className="card card-interactive p-5 group"
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-                {item.notes && (
-                  <p className="text-xs mt-3 line-clamp-2" style={{ color: 'var(--muted)' }}>{item.notes}</p>
-                )}
-                <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>{formatDate(item.updatedAt)}</p>
-              </Link>
-            );
-          })}
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className="w-10 h-10 rounded-lg flex items-center justify-center"
+                          style={{ backgroundColor: `${cfg.color}15` }}
+                        >
+                          <Icon className="w-5 h-5" style={{ color: cfg.color }} />
+                        </div>
+                        <div>
+                          <p className="font-semibold text-sm" style={{ color: 'var(--foreground)' }}>{item.name}</p>
+                          <span className="badge badge-slate mt-1">{cfg.label}</span>
+                        </div>
+                      </div>
+                      <button
+                        onClick={(e) => { e.preventDefault(); setDeleteId(item.id); }}
+                        className="p-1.5 rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-50 hover:text-red-600"
+                        style={{ color: 'var(--muted)' }}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                    {item.notes && (
+                      <p className="text-xs mt-3 line-clamp-2" style={{ color: 'var(--muted)' }}>{item.notes}</p>
+                    )}
+                    <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>{formatDate(item.updatedAt)}</p>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

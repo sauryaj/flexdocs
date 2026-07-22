@@ -27,10 +27,15 @@ export default function NewAssetPage() {
   }, []);
 
   const currentType = assetTypes.find((t) => t.name === assetType);
-  const typeFields: string[] = currentType ? JSON.parse(currentType.fields || '[]') : [];
+  const rawFields = currentType?.fields ? JSON.parse(currentType.fields) : [];
+  const structuredFields: any[] = Array.isArray(rawFields) ? rawFields : [];
 
   const addField = () => {
-    setFields({ ...fields, '': '' });
+    setFields({ ...fields, [`Custom Field ${Object.keys(fields).length + 1}`]: '' });
+  };
+
+  const handleFieldChange = (key: string, value: string) => {
+    setFields((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -67,7 +72,7 @@ export default function NewAssetPage() {
       <form onSubmit={handleSubmit} className="card p-6 space-y-6">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Name</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Name *</label>
             <input
               type="text"
               value={name}
@@ -78,7 +83,7 @@ export default function NewAssetPage() {
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Asset Type</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1">Asset Type *</label>
             <select
               value={assetType}
               onChange={(e) => {
@@ -96,54 +101,116 @@ export default function NewAssetPage() {
           </div>
         </div>
 
-        {/* Dynamic Fields */}
-        <div>
+        {/* Structured Schema Fields */}
+        {structuredFields.length > 0 && (
+          <div className="space-y-4 border-t pt-4">
+            <h3 className="font-semibold text-sm text-slate-800">
+              {assetType} Custom Schema Fields
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {structuredFields.map((f: any, idx: number) => {
+                const isObj = typeof f === 'object' && f !== null;
+                const fieldName = isObj ? f.name : String(f);
+                const fieldType = isObj ? f.type || 'text' : 'text';
+                const options = isObj && Array.isArray(f.options) ? f.options : [];
+
+                return (
+                  <div key={idx}>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      {fieldName} {isObj && f.required && <span className="text-red-500">*</span>}
+                    </label>
+
+                    {fieldType === 'select' ? (
+                      <select
+                        value={fields[fieldName] || ''}
+                        onChange={(e) => handleFieldChange(fieldName, e.target.value)}
+                        className="input-field text-xs py-1.5"
+                        required={isObj && f.required}
+                      >
+                        <option value="">Select option...</option>
+                        {options.map((opt: string) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    ) : fieldType === 'date' ? (
+                      <input
+                        type="date"
+                        value={fields[fieldName] || ''}
+                        onChange={(e) => handleFieldChange(fieldName, e.target.value)}
+                        className="input-field text-xs py-1.5"
+                        required={isObj && f.required}
+                      />
+                    ) : fieldType === 'password' ? (
+                      <input
+                        type="password"
+                        value={fields[fieldName] || ''}
+                        onChange={(e) => handleFieldChange(fieldName, e.target.value)}
+                        className="input-field text-xs py-1.5 font-mono"
+                        placeholder="••••••••"
+                        required={isObj && f.required}
+                      />
+                    ) : (
+                      <input
+                        type={fieldType === 'link' ? 'url' : 'text'}
+                        value={fields[fieldName] || ''}
+                        onChange={(e) => handleFieldChange(fieldName, e.target.value)}
+                        className="input-field text-xs py-1.5"
+                        placeholder={`Enter ${fieldName.toLowerCase()}...`}
+                        required={isObj && f.required}
+                      />
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Freeform Additional Fields */}
+        <div className="border-t pt-4">
           <div className="flex items-center justify-between mb-2">
-            <label className="block text-sm font-medium text-slate-700">Custom Fields</label>
+            <label className="block text-sm font-medium text-slate-700">Additional Fields</label>
             <button type="button" onClick={addField} className="text-sm text-blue-600 hover:underline flex items-center gap-1">
               <Plus className="w-3 h-3" /> Add Field
             </button>
           </div>
-          {Object.entries(fields).map(([key, value], i) => (
-            <div key={i} className="flex gap-2 mb-2">
-              <input
-                type="text"
-                value={key}
-                onChange={(e) => {
-                  const newFields = { ...fields };
-                  const val = newFields[key];
-                  delete newFields[key];
-                  newFields[e.target.value] = val;
-                  setFields(newFields);
-                }}
-                className="input-field flex-1"
-                placeholder="Field name"
-              />
-              <input
-                type="text"
-                value={value}
-                onChange={(e) => setFields({ ...fields, [key]: e.target.value })}
-                className="input-field flex-1"
-                placeholder="Value"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  const newFields = { ...fields };
-                  delete newFields[key];
-                  setFields(newFields);
-                }}
-                className="p-2 hover:bg-red-50 text-red-500 rounded-lg"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          ))}
-          {typeFields.length > 0 && (
-            <div className="mt-2 text-xs text-slate-500">
-              Suggested fields: {typeFields.join(', ')}
-            </div>
-          )}
+          {Object.entries(fields)
+            .filter(([k]) => !structuredFields.some((sf: any) => (typeof sf === 'object' ? sf.name : sf) === k))
+            .map(([key, value], i) => (
+              <div key={i} className="flex gap-2 mb-2">
+                <input
+                  type="text"
+                  value={key}
+                  onChange={(e) => {
+                    const newFields = { ...fields };
+                    const val = newFields[key];
+                    delete newFields[key];
+                    newFields[e.target.value] = val;
+                    setFields(newFields);
+                  }}
+                  className="input-field flex-1"
+                  placeholder="Field name"
+                />
+                <input
+                  type="text"
+                  value={value}
+                  onChange={(e) => setFields({ ...fields, [key]: e.target.value })}
+                  className="input-field flex-1"
+                  placeholder="Value"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newFields = { ...fields };
+                    delete newFields[key];
+                    setFields(newFields);
+                  }}
+                  className="p-2 hover:bg-red-50 text-red-500 rounded-lg"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
         </div>
 
         <div>

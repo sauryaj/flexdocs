@@ -17,9 +17,17 @@ export interface PasswordHealthReport {
   expiring: { name: string; daysUntilExpiry: number }[];
 }
 
-export async function generatePasswordHealth(userId: string): Promise<PasswordHealthReport> {
+export async function generatePasswordHealth(
+  userId: string,
+  organizationId?: string | null
+): Promise<PasswordHealthReport> {
+  const where: any = { userId };
+  if (organizationId) {
+    where.organizationId = organizationId;
+  }
+
   const passwords = await prisma.password.findMany({
-    where: { userId },
+    where,
     orderBy: { updatedAt: 'desc' },
   });
 

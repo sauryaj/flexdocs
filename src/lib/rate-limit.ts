@@ -1,35 +1,35 @@
 import { NextResponse } from 'next/server';
-import Redis from 'ioredis';
 
-const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+const WINDOW_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 10;
 
-let redis: Redis | null = null;
+let redis: any = null;
 
-function getRedis(): Redis | null {
+async function getRedis(): Promise<any> {
   if (redis !== null) return redis;
   const url = process.env.REDIS_URL;
   if (!url) return null;
   try {
+    const { default: Redis } = await import('ioredis');
     redis = new Redis(url, { maxRetriesPerRequest: 3, lazyConnect: true });
-    redis.connect().catch(() => { redis = null; });
+    await redis.connect().catch(() => { redis = null; });
     return redis;
   } catch {
     return null;
   }
 }
-
-// In-memory fallback
+  
+  // In-memory fallback
 const attempts = new Map<string, { count: number; resetAt: number }>();
 
 export async function checkRateLimit(key: string): Promise<{ allowed: boolean; remaining: number; resetAt: number }> {
-  const r = getRedis();
+  const r = await getRedis();
 
   if (r) {
     try {
       const redisKey = `ratelimit:${key}`;
       const now = Date.now();
-      const ttl = await r.ttl(redisKey);
+      const ttl = await r.ttl(redisKey) as number;
 
       if (ttl === -2) {
         // Key doesn't exist
@@ -43,11 +43,11 @@ export async function checkRateLimit(key: string): Promise<{ allowed: boolean; r
       }
 
       if (count > MAX_ATTEMPTS) {
-        const pttl = await r.pttl(redisKey);
+        const pttl = await r.pttl(redisKey) as number;
         return { allowed: false, remaining: 0, resetAt: now + pttl };
       }
 
-      const pttl = await r.pttl(redisKey);
+      const pttl = await r.pttl(redisKey) as number;
       return { allowed: true, remaining: Math.max(0, MAX_ATTEMPTS - count), resetAt: now + pttl };
     } catch {
       // Fall through to in-memory

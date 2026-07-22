@@ -178,15 +178,49 @@ export default function ChecklistDetailPage() {
           <input type="text" value={tags} onChange={(e) => setTags(e.target.value)} className="input-field" />
         </div>
 
+        {/* SOP Runbook Progress Header */}
+        <div className="p-4 rounded-xl border border-blue-200 dark:border-blue-900 bg-blue-50/50 dark:bg-blue-950/40 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-blue-600 text-white font-bold text-sm flex items-center justify-center shadow-md">
+              {Math.round(progress)}%
+            </div>
+            <div>
+              <div className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <span>SOP Runbook Execution</span>
+                <span className="badge badge-blue capitalize">{category}</span>
+              </div>
+              <p className="text-xs text-slate-500">
+                {completedCount} of {items.length} steps completed
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={async () => {
+              const reset = items.map((i) => ({ ...i, isComplete: false }));
+              setItems(reset);
+              await fetch(`/api/checklists/${params.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, items: reset, isComplete: false }),
+              });
+            }}
+            className="btn-secondary text-xs"
+          >
+            Reset Runbook Execution
+          </button>
+        </div>
+
         {/* Progress */}
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <span className="text-sm font-medium text-slate-700">Progress</span>
-            <span className="text-sm text-slate-500">{completedCount}/{items.length} complete</span>
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Runbook Completion</span>
+            <span className="text-sm text-slate-500 font-semibold">{completedCount}/{items.length} complete</span>
           </div>
-          <div className="h-3 bg-slate-100 rounded-full overflow-hidden">
+          <div className="h-3 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
             <div
-              className={cn('h-full rounded-full transition-all', progress === 100 ? 'bg-green-500' : 'bg-blue-500')}
+              className={cn('h-full rounded-full transition-all duration-300', progress === 100 ? 'bg-emerald-500' : 'bg-blue-600')}
               style={{ width: `${progress}%` }}
             />
           </div>

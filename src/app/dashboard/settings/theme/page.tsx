@@ -38,6 +38,92 @@ export default function ThemeSettingsPage() {
         <p style={{ color: 'var(--muted)' }}>Customize the look and feel of FlexDocs</p>
       </div>
 
+      {/* 1-Click IT Glue Theme Presets */}
+      <div className="card p-6 border-l-4 border-blue-600 bg-gradient-to-r from-blue-600/5 to-transparent">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>
+              1-Click Theme Presets
+            </h2>
+            <p className="text-xs" style={{ color: 'var(--muted)' }}>
+              Instantly apply curated MSP & IT Glue design palettes
+            </p>
+          </div>
+          <Sparkles className="w-5 h-5 text-blue-500" />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <button
+            type="button"
+            onClick={() => {
+              setTheme('dark');
+              setAccent('blue');
+              setEffect('none');
+            }}
+            className="p-4 rounded-xl border-2 text-left transition-all hover:scale-[1.02] flex flex-col justify-between space-y-3"
+            style={{
+              borderColor: accent === 'blue' && theme === 'dark' ? 'var(--accent)' : 'var(--card-border)',
+              backgroundColor: 'var(--card-bg)',
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-sm text-blue-400">IT Glue Classic</span>
+              <span className="w-3 h-3 rounded-full bg-blue-600 shadow-sm" />
+            </div>
+            <p className="text-xs text-slate-400">
+              Deep navy sidebar, crisp slate card backgrounds, and electric blue primary accents.
+            </p>
+            <span className="text-[11px] font-medium text-blue-500 hover:underline">Apply Preset →</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setTheme('dark');
+              setAccent('teal');
+              setEffect('glow');
+            }}
+            className="p-4 rounded-xl border-2 text-left transition-all hover:scale-[1.02] flex flex-col justify-between space-y-3"
+            style={{
+              borderColor: accent === 'teal' && effect === 'glow' ? 'var(--accent)' : 'var(--card-border)',
+              backgroundColor: 'var(--card-bg)',
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-sm text-teal-400">Cyberpunk Teal</span>
+              <span className="w-3 h-3 rounded-full bg-teal-500 shadow-sm" />
+            </div>
+            <p className="text-xs text-slate-400">
+              High-tech dark background with glowing cyan borders and technical matrix contrast.
+            </p>
+            <span className="text-[11px] font-medium text-teal-400 hover:underline">Apply Preset →</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setTheme('dark');
+              setAccent('purple');
+              setEffect('star');
+            }}
+            className="p-4 rounded-xl border-2 text-left transition-all hover:scale-[1.02] flex flex-col justify-between space-y-3"
+            style={{
+              borderColor: accent === 'purple' && effect === 'star' ? 'var(--accent)' : 'var(--card-border)',
+              backgroundColor: 'var(--card-bg)',
+            }}
+          >
+            <div className="flex items-center justify-between">
+              <span className="font-semibold text-sm text-purple-400">Enterprise Regal</span>
+              <span className="w-3 h-3 rounded-full bg-purple-600 shadow-sm" />
+            </div>
+            <p className="text-xs text-slate-400">
+              Vibrant purple accents paired with animated orbiting star borders on active components.
+            </p>
+            <span className="text-[11px] font-medium text-purple-400 hover:underline">Apply Preset →</span>
+          </button>
+        </div>
+      </div>
+
       {/* Mode Selection */}
       <div className="card p-6">
         <h2 className="text-lg font-semibold mb-4" style={{ color: 'var(--foreground)' }}>Appearance</h2>
