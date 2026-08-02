@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { encrypt, decrypt } from '@/lib/encryption';
+import { encrypt } from '@/lib/encryption';
 import { auditLog } from '@/lib/audit';
 
 export async function GET(req: Request) {
@@ -13,27 +13,30 @@ export async function GET(req: Request) {
   const page = Math.max(0, parseInt(url.searchParams.get('page') || '0'));
   const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '50')));
 
-  const [passwords, total] = await Promise.all([
-    prisma.password.findMany({
-      where: { userId: user.id, ...(organizationId ? { organizationId } : {}) },
-      include: { tags: true },
-      orderBy: { updatedAt: 'desc' },
-      skip: page * limit,
-      take: limit,
-    }),
-    prisma.password.count({
-      where: { userId: user.id, ...(organizationId ? { organizationId } : {}) },
-    }),
-  ]);
+  const passwords = await prisma.password.findMany({
+    where: { userId: user.id, ...(organizationId ? { organizationId } : {}) },
+    include: { tags: true },
+    orderBy: { updatedAt: 'desc' },
+    skip: page * limit,
+    take: limit,
+  });
 
-  const decrypted = passwords.map((p) => ({
+  const total = await prisma.password.count({
+    where: { userId: user.id, ...(organizationId ? { organizationId } : {}) },
+  });
+
+  // Metadata only — never ship decrypted secrets in list responses.
+  // Secrets are fetched on-demand via GET /api/passwords/[id]/reveal.
+  const sanitized = passwords.map((p) => ({
     ...p,
-    password: decrypt(p.password),
-    totpSecret: p.totpSecret ? decrypt(p.totpSecret) : null,
+    password: undefined,
+    totpSecret: undefined,
+    hasPassword: !!p.password,
+    hasTotp: !!p.totpSecret,
     customFields: JSON.parse(p.customFields || '[]'),
   }));
 
-  return NextResponse.json({ items: decrypted, total, page, limit, hasMore: (page + 1) * limit < total });
+  return NextResponse.json({ items: sanitized, total, page, limit, hasMore: (page + 1) * limit < total });
 }
 
 export async function POST(req: Request) {

@@ -79,6 +79,7 @@ export default function PasswordsPage() {
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
+  const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'list' | 'health'>('list');
 
@@ -140,13 +141,22 @@ export default function PasswordsPage() {
     );
   };
 
-  const copyToClipboard = async (text: string, id: string) => {
-    await navigator.clipboard.writeText(text);
-    setCopiedId(id);
-    setTimeout(() => setCopiedId(null), 2000);
+  const fetchRevealed = async (id: string): Promise<string | null> => {
+    if (revealed[id]) return revealed[id];
+    try {
+      const res = await fetch(`/api/passwords/${id}/reveal`);
+      if (!res.ok) return null;
+      const data = await res.json();
+      setRevealed((prev) => ({ ...prev, [id]: data.password }));
+      return data.password;
+    } catch {
+      return null;
+    }
   };
 
-  const togglePasswordVisibility = (id: string) => {
+  const togglePasswordVisibility = async (id: string) => {
+    const password = await fetchRevealed(id);
+    if (password === null) return;
     const newVisible = new Set(visiblePasswords);
     if (newVisible.has(id)) {
       newVisible.delete(id);
@@ -154,6 +164,14 @@ export default function PasswordsPage() {
       newVisible.add(id);
     }
     setVisiblePasswords(newVisible);
+  };
+
+  const handleCopy = async (password: string, id: string) => {
+    const value = password || (await fetchRevealed(id));
+    if (value === null || value === '') return;
+    await navigator.clipboard.writeText(value);
+    setCopiedId(id);
+    setTimeout(() => setCopiedId(null), 2000);
   };
 
   const filtered = passwords.filter((p) => {
@@ -184,8 +202,8 @@ export default function PasswordsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Password Vault</h1>
-          <p className="text-slate-500">Securely store and manage credentials</p>
+          <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--foreground)' }}>Password Vault</h1>
+          <p className="mt-1 text-sm" style={{ color: 'var(--muted)' }}>Securely store and manage credentials</p>
         </div>
         <Link href="/dashboard/passwords/new" className="btn-primary flex items-center gap-2">
           <Plus className="w-4 h-4" />
@@ -194,15 +212,16 @@ export default function PasswordsPage() {
       </div>
 
       {/* Tab toggle */}
-      <div className="flex gap-1 p-1 bg-slate-100 rounded-lg w-fit">
+      <div className="flex gap-1 p-1 rounded-lg w-fit" style={{ backgroundColor: 'var(--surface-2)' }}>
         <button
           onClick={() => setViewMode('list')}
           className={cn(
             'px-4 py-2 text-sm font-medium rounded-md transition-colors',
             viewMode === 'list'
-              ? 'bg-white text-slate-900 shadow-sm'
+              ? 'text-slate-900 shadow-sm'
               : 'text-slate-500 hover:text-slate-700'
           )}
+          style={viewMode === 'list' ? { backgroundColor: 'var(--card-bg)', color: 'var(--foreground)' } : undefined}
         >
           <Key className="w-4 h-4 inline mr-1.5" />
           All Passwords
@@ -212,9 +231,10 @@ export default function PasswordsPage() {
           className={cn(
             'px-4 py-2 text-sm font-medium rounded-md transition-colors',
             viewMode === 'health'
-              ? 'bg-white text-slate-900 shadow-sm'
+              ? 'text-slate-900 shadow-sm'
               : 'text-slate-500 hover:text-slate-700'
           )}
+          style={viewMode === 'health' ? { backgroundColor: 'var(--card-bg)', color: 'var(--foreground)' } : undefined}
         >
           <Shield className="w-4 h-4 inline mr-1.5" />
           Health
@@ -293,9 +313,10 @@ export default function PasswordsPage() {
                         key={pass.id}
                         pass={pass}
                         visible={visiblePasswords.has(pass.id)}
+                        revealedPassword={revealed[pass.id]}
                         onToggleVisibility={() => togglePasswordVisibility(pass.id)}
                         onToggleFavorite={() => toggleFavorite(pass.id, pass.isFavorite)}
-                        onCopy={copyToClipboard}
+                        onCopy={(id) => handleCopy(revealed[pass.id], id)}
                         onDelete={setDeleteId}
                         copiedId={copiedId}
                       />
@@ -315,9 +336,10 @@ export default function PasswordsPage() {
                         key={pass.id}
                         pass={pass}
                         visible={visiblePasswords.has(pass.id)}
+                        revealedPassword={revealed[pass.id]}
                         onToggleVisibility={() => togglePasswordVisibility(pass.id)}
                         onToggleFavorite={() => toggleFavorite(pass.id, pass.isFavorite)}
-                        onCopy={copyToClipboard}
+                        onCopy={(id) => handleCopy(revealed[pass.id], id)}
                         onDelete={setDeleteId}
                         copiedId={copiedId}
                       />
@@ -478,6 +500,7 @@ export default function PasswordsPage() {
 function PasswordRow({
   pass,
   visible,
+  revealedPassword,
   onToggleVisibility,
   onToggleFavorite,
   onCopy,
@@ -486,30 +509,32 @@ function PasswordRow({
 }: {
   pass: PasswordEntry;
   visible: boolean;
+  revealedPassword?: string;
   onToggleVisibility: () => void;
   onToggleFavorite: () => void;
-  onCopy: (text: string, id: string) => void;
+  onCopy: (id: string) => void;
   onDelete: (id: string) => void;
   copiedId: string | null;
 }) {
   return (
-    <div className="flex items-center gap-4 p-4 hover:bg-slate-50 transition-colors">
+    <div className="flex items-center gap-4 p-4 hover:bg-[var(--surface-1)] transition-colors">
       <button
         onClick={() => onToggleFavorite()}
         className={cn(
           'p-1 rounded transition-colors',
           pass.isFavorite ? 'text-amber-500' : 'text-slate-300 hover:text-amber-500'
         )}
+        aria-label={pass.isFavorite ? 'Remove from favorites' : 'Add to favorites'}
       >
         <Star className={cn('w-5 h-5', pass.isFavorite && 'fill-current')} />
       </button>
 
-      <div
-        className="flex-1 min-w-0 cursor-pointer"
-        onClick={() => window.location.href = `/dashboard/passwords/${pass.id}`}
+      <Link
+        href={`/dashboard/passwords/${pass.id}`}
+        className="flex-1 min-w-0"
       >
-        <div className="flex items-center gap-2 mb-1">
-          <span className="font-semibold text-slate-900">{pass.name}</span>
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
+          <span className="font-semibold truncate" style={{ color: 'var(--foreground)' }}>{pass.name}</span>
           <span className="badge badge-slate">{pass.category}</span>
           {pass.totpSecret && <span className="badge badge-blue"><Lock className="w-3 h-3 inline" /></span>}
           {pass.breachCount > 0 && (
@@ -519,14 +544,15 @@ function PasswordRow({
             <span className="badge badge-amber"><Clock className="w-3 h-3 inline" /> Expiring</span>
           )}
         </div>
-        <div className="flex items-center gap-4 text-sm text-slate-500">
+        <div className="flex items-center gap-4 text-sm" style={{ color: 'var(--muted)' }}>
           <span>{pass.username}</span>
           {pass.url && (
             <a
               href={pass.url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-1 text-blue-500 hover:underline"
+              className="flex items-center gap-1 transition-colors hover:underline"
+              style={{ color: 'var(--accent)' }}
               onClick={(e) => e.stopPropagation()}
             >
               <ExternalLink className="w-3 h-3" />
@@ -534,34 +560,38 @@ function PasswordRow({
             </a>
           )}
         </div>
-      </div>
+      </Link>
 
       <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1 bg-slate-100 rounded-lg px-3 py-1.5">
-          <code className="text-sm font-mono">
-            {visible ? pass.password : '•'.repeat(12)}
+        <div className="flex items-center gap-1 rounded-lg px-3 py-1.5" style={{ backgroundColor: 'var(--surface-2)' }}>
+          <code className="text-sm font-mono" style={{ color: 'var(--foreground)' }}>
+            {visible && revealedPassword ? revealedPassword : '•'.repeat(12)}
           </code>
-          <button onClick={onToggleVisibility} className="p-0.5 hover:bg-slate-200 rounded">
+          <button onClick={onToggleVisibility} className="p-0.5 rounded transition-colors" style={{ color: 'var(--muted)' }} aria-label={visible ? 'Hide password' : 'Show password'}>
             {visible ? (
-              <EyeOff className="w-4 h-4 text-slate-500" />
+              <EyeOff className="w-4 h-4" />
             ) : (
-              <Eye className="w-4 h-4 text-slate-500" />
+              <Eye className="w-4 h-4" />
             )}
           </button>
           <button
-            onClick={() => onCopy(pass.password, pass.id)}
-            className="p-0.5 hover:bg-slate-200 rounded"
+            onClick={() => onCopy(pass.id)}
+            className="p-0.5 rounded transition-colors"
+            style={{ color: 'var(--muted)' }}
+            aria-label="Copy password"
           >
             {copiedId === pass.id ? (
-              <Check className="w-4 h-4 text-green-500" />
+              <Check className="w-4 h-4" style={{ color: 'var(--success)' }} />
             ) : (
-              <Copy className="w-4 h-4 text-slate-500" />
+              <Copy className="w-4 h-4" />
             )}
           </button>
         </div>
         <button
           onClick={() => onDelete(pass.id)}
-          className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg"
+          className="p-1.5 rounded-lg transition-colors hover:bg-red-50 dark:hover:bg-red-950/50"
+          style={{ color: 'var(--danger)' }}
+          aria-label={`Delete ${pass.name}`}
         >
           <Trash2 className="w-4 h-4" />
         </button>

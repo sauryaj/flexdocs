@@ -153,6 +153,7 @@ export function Sidebar() {
     <>
       <button
         onClick={() => setMobileOpen(true)}
+        aria-label="Open navigation menu"
         className="lg:hidden fixed top-4 left-4 z-50 p-2 rounded-lg"
         style={{ backgroundColor: 'var(--accent)', color: 'white' }}
       >

@@ -9,6 +9,13 @@ export async function GET() {
   const sessions = await prisma.session.findMany({
     where: { userId: user.id },
     orderBy: { lastActive: 'desc' },
+    select: {
+      id: true,
+      ip: true,
+      userAgent: true,
+      lastActive: true,
+      createdAt: true,
+    },
   });
 
   return NextResponse.json(sessions);

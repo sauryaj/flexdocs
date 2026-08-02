@@ -6,9 +6,9 @@ const KEY_LENGTH = 32;
 const ITERATIONS = 100000;
 
 function getEncryptionKey(): Buffer {
-  const secret = process.env.ENCRYPTION_KEY || process.env.NEXTAUTH_SECRET || '';
+  const secret = process.env.ENCRYPTION_KEY;
   if (!secret) {
-    throw new Error('ENCRYPTION_KEY or NEXTAUTH_SECRET must be set');
+    throw new Error('ENCRYPTION_KEY must be set — refusing to derive key from other secrets');
   }
   const salt = process.env.ENCRYPTION_SALT || 'flexdocs-salt-v1';
   return crypto.pbkdf2Sync(secret, salt, ITERATIONS, KEY_LENGTH, 'sha512');
@@ -31,9 +31,9 @@ export function encrypt(plaintext: string): string {
 
 export function decrypt(ciphertext: string): string {
   if (!ciphertext) return ciphertext;
-  // Check if it's already encrypted (contains two colons with hex parts)
+  // Legacy plaintext or non-standard values are returned as-is for backward compat
   const parts = ciphertext.split(':');
-  if (parts.length !== 3) return ciphertext; // Not encrypted, return as-is
+  if (parts.length !== 3) return ciphertext;
 
   try {
     const key = getEncryptionKey();
@@ -49,7 +49,8 @@ export function decrypt(ciphertext: string): string {
 
     return decrypted;
   } catch {
-    return ciphertext; // Decryption failed, return as-is (backward compat)
+    // Surface key-rotation or tampering issues instead of leaking ciphertext
+    throw new Error('Failed to decrypt value: invalid ciphertext or encryption key mismatch');
   }
 }
 

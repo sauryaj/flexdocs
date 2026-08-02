@@ -8,27 +8,28 @@
    DESIGN TOKENS
    ============================================================ */
 :root {
-  /* Core palette */
-  --background: #f8fafc;
-  --foreground: #0f172a;
-  --muted: #64748b;
-  --muted-foreground: #94a3b8;
+  /* Core palette — refined cool neutrals */
+  --background: #f6f8fb;
+  --foreground: #0b1220;
+  --muted: #5b6b83;
+  --muted-foreground: #8a99b0;
 
   /* Surface hierarchy */
   --surface-0: #ffffff;
-  --surface-1: #f8fafc;
-  --surface-2: #f1f5f9;
+  --surface-1: #f6f8fb;
+  --surface-2: #eef2f7;
   --surface-3: #e2e8f0;
 
   /* Borders */
-  --border: #e2e8f0;
-  --border-subtle: #f1f5f9;
+  --border: #dfe6ee;
+  --border-subtle: #edf1f6;
 
   /* Cards */
   --card-bg: #ffffff;
-  --card-border: #e2e8f0;
-  --card-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.03), 0 1px 3px 0 rgb(0 0 0 / 0.04);
-  --card-shadow-hover: 0 4px 16px 0 rgb(0 0 0 / 0.06), 0 2px 4px -2px rgb(0 0 0 / 0.04);
+  --card-border: #e6ebf2;
+  --card-shadow: 0 1px 2px 0 rgb(16 24 40 / 0.04), 0 1px 3px 0 rgb(16 24 40 / 0.05);
+  --card-shadow-hover: 0 8px 24px -6px rgb(16 24 40 / 0.12), 0 4px 8px -4px rgb(16 24 40 / 0.06);
+  --card-ring: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
 
   /* Inputs */
   --input-bg: #ffffff;
@@ -36,26 +37,26 @@
   --input-focus: var(--accent);
 
   /* Accent */
-  --accent: #3b82f6;
-  --accent-hover: #2563eb;
-  --accent-light: #eff6ff;
-  --accent-muted: rgba(59, 130, 246, 0.08);
+  --accent: #2563eb;
+  --accent-hover: #1d4ed8;
+  --accent-light: #eef4ff;
+  --accent-muted: rgba(37, 99, 235, 0.09);
 
   /* Sidebar */
-  --sidebar-bg: #0f172a;
+  --sidebar-bg: #0b1220;
   --sidebar-text: #94a3b8;
   --sidebar-text-active: #ffffff;
   --sidebar-bg-active: #1e293b;
-  --sidebar-bg-hover: #1a2332;
-  --sidebar-border: rgba(255, 255, 255, 0.06);
+  --sidebar-bg-hover: #111a2c;
+  --sidebar-border: rgba(255, 255, 255, 0.07);
 
   /* Status colors */
-  --success: #10b981;
-  --success-light: rgba(16, 185, 129, 0.08);
-  --warning: #f59e0b;
-  --warning-light: rgba(245, 158, 11, 0.08);
-  --danger: #ef4444;
-  --danger-light: rgba(239, 68, 68, 0.08);
+  --success: #059669;
+  --success-light: rgba(5, 150, 105, 0.1);
+  --warning: #d97706;
+  --warning-light: rgba(217, 119, 6, 0.1);
+  --danger: #dc2626;
+  --danger-light: rgba(220, 38, 38, 0.1);
 
   /* Typography scale */
   --text-xs: 0.75rem;
@@ -81,52 +82,53 @@
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
   --radius-lg: 0.75rem;
-  --radius-xl: 0.875rem;
+  --radius-xl: 1rem;
 }
 
 /* ============================================================
    DARK MODE — refined warm grays
    ============================================================ */
 .dark {
-  --background: #0c0e14;
-  --foreground: #e2e8f0;
+  --background: #0a0e16;
+  --foreground: #e5eaf1;
   --muted: #94a3b8;
   --muted-foreground: #64748b;
 
-  --surface-0: #131620;
-  --surface-1: #181c28;
-  --surface-2: #1e2231;
-  --surface-3: #262b3c;
+  --surface-0: #111827;
+  --surface-1: #141c2c;
+  --surface-2: #1a2338;
+  --surface-3: #223048;
 
-  --border: #262b3c;
-  --border-subtle: #1e2231;
+  --border: #232f45;
+  --border-subtle: #1a2338;
 
-  --card-bg: #131620;
-  --card-border: #1e2231;
-  --card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.3), 0 1px 2px -1px rgb(0 0 0 / 0.2);
-  --card-shadow-hover: 0 8px 24px 0 rgb(0 0 0 / 0.4), 0 4px 8px -2px rgb(0 0 0 / 0.3);
+  --card-bg: #101726;
+  --card-border: #1e2940;
+  --card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.35), 0 1px 2px -1px rgb(0 0 0 / 0.25);
+  --card-shadow-hover: 0 12px 32px -8px rgb(0 0 0 / 0.55), 0 4px 8px -4px rgb(0 0 0 / 0.35);
+  --card-ring: 0 0 0 1px color-mix(in srgb, var(--accent) 40%, transparent);
 
-  --input-bg: #131620;
-  --input-border: #262b3c;
+  --input-bg: #101726;
+  --input-border: #2a3852;
 
   --accent: #60a5fa;
   --accent-hover: #93c5fd;
-  --accent-light: rgba(96, 165, 250, 0.08);
-  --accent-muted: rgba(96, 165, 250, 0.06);
+  --accent-light: rgba(96, 165, 250, 0.12);
+  --accent-muted: rgba(96, 165, 250, 0.1);
 
-  --sidebar-bg: #0a0c12;
+  --sidebar-bg: #070b13;
   --sidebar-text: #64748b;
   --sidebar-text-active: #f1f5f9;
-  --sidebar-bg-active: #1a1f2e;
-  --sidebar-bg-hover: #141825;
-  --sidebar-border: rgba(255, 255, 255, 0.04);
+  --sidebar-bg-active: #1a2338;
+  --sidebar-bg-hover: #0f1728;
+  --sidebar-border: rgba(255, 255, 255, 0.05);
 
   --success: #34d399;
-  --success-light: rgba(52, 211, 153, 0.08);
+  --success-light: rgba(52, 211, 153, 0.12);
   --warning: #fbbf24;
-  --warning-light: rgba(251, 191, 36, 0.08);
+  --warning-light: rgba(251, 191, 36, 0.12);
   --danger: #f87171;
-  --danger-light: rgba(248, 113, 113, 0.08);
+  --danger-light: rgba(248, 113, 113, 0.12);
 }
 
 /* ============================================================
@@ -140,6 +142,11 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
 }
 
 body {
@@ -156,6 +163,11 @@ h1, h2, h3, h4, h5, h6 {
   letter-spacing: -0.025em;
   line-height: 1.25;
   font-weight: 600;
+  text-wrap: balance;
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
 }
 
 /* ============================================================
@@ -219,16 +231,26 @@ h1, h2, h3, h4, h5, h6 {
   .btn-primary {
     @apply text-white px-4 py-2 rounded-lg font-medium transition-all duration-150;
     background-color: var(--accent);
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05), inset 0 1px 0 0 rgba(255,255,255,0.1);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08), inset 0 1px 0 0 rgba(255,255,255,0.15);
   }
   .btn-primary:hover {
     background-color: var(--accent-hover);
-    box-shadow: 0 2px 6px 0 rgb(0 0 0 / 0.12), inset 0 1px 0 0 rgba(255,255,255,0.1);
-    transform: translateY(-0.5px);
+    box-shadow: 0 3px 10px -2px color-mix(in srgb, var(--accent) 45%, transparent), inset 0 1px 0 0 rgba(255,255,255,0.15);
+    transform: translateY(-1px);
   }
   .btn-primary:active {
     transform: translateY(0);
     box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+  }
+  .btn-primary:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--card-bg), 0 0 0 4px var(--accent);
+  }
+  .btn-primary:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
   }
 
   .btn-secondary {
@@ -236,23 +258,31 @@ h1, h2, h3, h4, h5, h6 {
     background-color: var(--card-bg);
     color: var(--foreground);
     border: 1px solid var(--card-border);
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.02);
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.03);
   }
   .btn-secondary:hover {
     background-color: var(--surface-2);
     border-color: var(--input-border);
-    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.06);
+    box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.08);
+  }
+  .btn-secondary:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--card-bg), 0 0 0 4px var(--accent);
   }
 
   .btn-danger {
     @apply text-white px-4 py-2 rounded-lg font-medium transition-all duration-150;
-    background-color: #ef4444;
-    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+    background-color: #dc2626;
+    box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.08);
   }
   .btn-danger:hover {
-    background-color: #dc2626;
-    box-shadow: 0 2px 6px 0 rgb(239, 68, 68, 0.3);
-    transform: translateY(-0.5px);
+    background-color: #b91c1c;
+    box-shadow: 0 3px 10px -2px rgb(220, 38, 38, 0.4);
+    transform: translateY(-1px);
+  }
+  .btn-danger:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px var(--card-bg), 0 0 0 4px var(--danger);
   }
 
   .input-field {
@@ -266,6 +296,9 @@ h1, h2, h3, h4, h5, h6 {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 3px var(--accent-muted);
+  }
+  .input-field:hover:not(:focus) {
+    border-color: color-mix(in srgb, var(--input-border) 70%, var(--muted));
   }
   .input-field::placeholder {
     color: var(--muted);
@@ -290,6 +323,7 @@ h1, h2, h3, h4, h5, h6 {
   .badge {
     @apply inline-flex items-center px-2 py-0.5 rounded-md font-medium;
     font-size: var(--text-xs);
+    line-height: 1.4;
   }
 
   .badge-green { background-color: var(--success-light); color: var(--success); }
@@ -297,6 +331,19 @@ h1, h2, h3, h4, h5, h6 {
   .badge-red { background-color: var(--danger-light); color: var(--danger); }
   .badge-blue { background-color: var(--accent-light); color: var(--accent); }
   .badge-slate { background-color: var(--surface-2); color: var(--muted); }
+  .badge-amber { background-color: var(--warning-light); color: var(--warning); }
+}
+
+/* ============================================================
+   REDUCED MOTION
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ============================================================
@@ -311,7 +358,7 @@ h1, h2, h3, h4, h5, h6 {
   font-size: var(--text-sm);
   font-weight: 500;
   color: var(--sidebar-text);
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, color 0.15s ease;
   position: relative;
   text-decoration: none;
 }
@@ -320,9 +367,9 @@ h1, h2, h3, h4, h5, h6 {
   color: #cbd5e1;
 }
 .sidebar-nav-item.active {
-  background-color: var(--accent);
-  color: #ffffff;
-  box-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.2);
+  background-color: var(--sidebar-bg-active);
+  color: var(--sidebar-text-active);
+  box-shadow: inset 0 1px 0 0 rgb(255 255 255 / 0.04);
 }
 .sidebar-nav-item.active::before {
   content: '';
@@ -332,8 +379,9 @@ h1, h2, h3, h4, h5, h6 {
   transform: translateY(-50%);
   width: 3px;
   height: 60%;
-  background: #ffffff;
+  background: var(--accent);
   border-radius: 0 2px 2px 0;
+  box-shadow: 0 0 8px 0 color-mix(in srgb, var(--accent) 50%, transparent);
 }
 
 /* Sidebar divider */
@@ -376,7 +424,7 @@ h1, h2, h3, h4, h5, h6 {
    FOCUS & ACCESSIBILITY
    ============================================================ */
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid color-mix(in srgb, var(--accent) 80%, transparent);
   outline-offset: 2px;
   border-radius: 4px;
 }

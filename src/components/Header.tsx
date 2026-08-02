@@ -159,11 +159,12 @@ export function Header() {
             ref={inputRef}
             type="text"
             placeholder="Search anything (Cmd + K)..."
+            aria-label="Search"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             onFocus={() => results.length > 0 && setShowDropdown(true)}
-            className="w-full pl-10 pr-12 py-2 rounded-lg text-sm transition-all duration-150"
+            className="w-full pl-10 pr-12 py-2 rounded-lg text-sm transition-all duration-150 focus:outline-none focus:ring-2 focus:ring-[var(--accent-muted)] focus:border-[var(--accent)]"
             style={{
               backgroundColor: 'var(--input-bg)',
               color: 'var(--foreground)',
@@ -227,7 +228,9 @@ export function Header() {
         <div className="relative" ref={quickAddRef}>
           <button
             onClick={() => setQuickAddOpen(!quickAddOpen)}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition-all hover:opacity-90"
+            aria-expanded={quickAddOpen}
+            aria-haspopup="menu"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white shadow-sm transition-all hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-[var(--accent-muted)]"
             style={{ backgroundColor: 'var(--accent)' }}
           >
             <span>+ Quick Add</span>
@@ -298,7 +301,8 @@ export function Header() {
 
         <button
           onClick={toggleTheme}
-          className="p-2 rounded-lg transition-all duration-150 hover:bg-[var(--surface-2)]"
+          aria-label={resolvedMode === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+          className="p-2 rounded-lg transition-all duration-150 hover:bg-[var(--surface-2)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-muted)]"
           style={{ color: 'var(--muted)' }}
         >
           {resolvedMode === 'dark' ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}

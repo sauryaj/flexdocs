@@ -12,17 +12,21 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const q = searchParams.get('q')?.trim();
+  const organizationId = searchParams.get('organizationId') || undefined;
 
   if (!q) {
     return NextResponse.json({ error: 'Query parameter "q" is required' }, { status: 400 });
   }
 
   const contains = { contains: q };
+  // Restrict to user-owned records, optionally within a single organization
+  const orgScope = organizationId ? { organizationId } : {};
 
   const [documents, passwords, domains, assets, checklists] = await Promise.all([
     prisma.document.findMany({
       where: {
         userId: user.id,
+        ...orgScope,
         OR: [{ title: contains }, { content: contains }],
       },
       take: MAX_PER_TYPE,
@@ -31,6 +35,7 @@ export async function GET(req: Request) {
     prisma.password.findMany({
       where: {
         userId: user.id,
+        ...orgScope,
         OR: [{ name: contains }, { username: contains }, { url: contains }],
       },
       take: MAX_PER_TYPE,
@@ -39,6 +44,7 @@ export async function GET(req: Request) {
     prisma.domain.findMany({
       where: {
         userId: user.id,
+        ...orgScope,
         OR: [{ name: contains }, { registrar: contains }],
       },
       take: MAX_PER_TYPE,
@@ -47,6 +53,7 @@ export async function GET(req: Request) {
     prisma.flexibleAsset.findMany({
       where: {
         userId: user.id,
+        ...orgScope,
         OR: [{ name: contains }, { assetType: contains }],
       },
       take: MAX_PER_TYPE,
@@ -55,6 +62,7 @@ export async function GET(req: Request) {
     prisma.checklist.findMany({
       where: {
         userId: user.id,
+        ...orgScope,
         OR: [{ name: contains }, { description: contains }],
       },
       take: MAX_PER_TYPE,

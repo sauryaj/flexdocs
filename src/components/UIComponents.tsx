@@ -18,7 +18,11 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
   useEffect(() => {
     if (isOpen) {
       document.addEventListener('keydown', handleKeyDown);
-      return () => document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'hidden';
+      return () => {
+        document.removeEventListener('keydown', handleKeyDown);
+        document.body.style.overflow = '';
+      };
     }
   }, [isOpen, handleKeyDown]);
 
@@ -26,15 +30,21 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" role="dialog" aria-modal="true" aria-label={title}>
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative bg-white rounded-xl shadow-xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold">{title}</h2>
-          <button onClick={onClose} className="p-1 hover:bg-slate-100 rounded-lg" aria-label="Close">
-            <X className="w-5 h-5" />
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-slide-in"
+        onClick={onClose}
+      />
+      <div
+        className="relative rounded-2xl shadow-2xl max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto page-enter"
+        style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)', overscrollBehavior: 'contain' }}
+      >
+        <div className="flex items-center justify-between p-4 border-b sticky top-0" style={{ borderColor: 'var(--card-border)', backgroundColor: 'var(--card-bg)' }}>
+          <h2 className="text-lg font-semibold" style={{ color: 'var(--foreground)' }}>{title}</h2>
+          <button onClick={onClose} className="p-1.5 hover:bg-[var(--surface-2)] rounded-lg transition-colors" aria-label="Close">
+            <X className="w-5 h-5" style={{ color: 'var(--muted)' }} />
           </button>
         </div>
-        <div className="p-4">{children}</div>
+        <div className="p-4" style={{ color: 'var(--foreground)' }}>{children}</div>
       </div>
     </div>
   );
@@ -58,16 +68,24 @@ export function PasswordField({ value, label, showCopy = true }: PasswordFieldPr
 
   return (
     <div className="flex items-center gap-2">
-      {label && <span className="text-sm text-slate-600">{label}:</span>}
-      <code className="bg-slate-100 px-2 py-1 rounded text-sm font-mono">
+      {label && <span className="text-sm" style={{ color: 'var(--muted)' }}>{label}:</span>}
+      <code className="px-2 py-1 rounded text-sm font-mono" style={{ backgroundColor: 'var(--surface-2)', color: 'var(--foreground)' }}>
         {visible ? value : '•'.repeat(Math.min(value.length, 20))}
       </code>
-      <button onClick={() => setVisible(!visible)} className="p-1 hover:bg-slate-100 rounded">
-        {visible ? <EyeOff className="w-4 h-4 text-slate-500" /> : <Eye className="w-4 h-4 text-slate-500" />}
+      <button
+        onClick={() => setVisible(!visible)}
+        className="p-1.5 hover:bg-[var(--surface-2)] rounded-lg transition-colors"
+        aria-label={visible ? 'Hide password' : 'Show password'}
+      >
+        {visible ? <EyeOff className="w-4 h-4" style={{ color: 'var(--muted)' }} /> : <Eye className="w-4 h-4" style={{ color: 'var(--muted)' }} />}
       </button>
       {showCopy && (
-        <button onClick={handleCopy} className="p-1 hover:bg-slate-100 rounded">
-          {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-slate-500" />}
+        <button
+          onClick={handleCopy}
+          className="p-1.5 hover:bg-[var(--surface-2)] rounded-lg transition-colors"
+          aria-label="Copy password"
+        >
+          {copied ? <Check className="w-4 h-4" style={{ color: 'var(--success)' }} /> : <Copy className="w-4 h-4" style={{ color: 'var(--muted)' }} />}
         </button>
       )}
     </div>
@@ -105,7 +123,7 @@ interface ConfirmDialogProps {
 export function ConfirmDialog({ isOpen, onClose, onConfirm, title, message }: ConfirmDialogProps) {
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title}>
-      <p className="text-slate-600 mb-4">{message}</p>
+      <p className="mb-4" style={{ color: 'var(--muted)' }}>{message}</p>
       <div className="flex justify-end gap-3">
         <button onClick={onClose} className="btn-secondary">Cancel</button>
         <button

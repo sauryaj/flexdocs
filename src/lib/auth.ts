@@ -1,21 +1,35 @@
 import { cookies } from 'next/headers';
 import { prisma } from '@/lib/prisma';
+import { COOKIE_NAME, verifySessionToken } from '@/lib/session';
 
 export async function auth() {
   try {
     const cookieStore = await cookies();
-    const sessionUserId = cookieStore.get('flexdocs_session')?.value;
+    const signed = cookieStore.get(COOKIE_NAME)?.value;
 
-    if (sessionUserId) {
-      const user = await prisma.user.findUnique({
-        where: { id: sessionUserId },
-      });
-      if (user) return user;
+    if (!signed) return null;
+
+    const token = verifySessionToken(signed);
+    if (!token) return null;
+
+    const session = await prisma.session.findUnique({
+      where: { token },
+      include: { user: true },
+    });
+
+    if (!session) return null;
+
+    // Update lastActive periodically (avoid a write on every request)
+    const stale = Date.now() - session.lastActive.getTime() > 5 * 60 * 1000;
+    if (stale) {
+      prisma.session.update({
+        where: { id: session.id },
+        data: { lastActive: new Date() },
+      }).catch(() => {});
     }
 
-    // Fallback to first user for seamless operations if session not yet set
-    return prisma.user.findFirst();
+    return session.user;
   } catch {
-    return prisma.user.findFirst();
+    return null;
   }
 }
