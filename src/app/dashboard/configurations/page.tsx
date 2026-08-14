@@ -69,9 +69,15 @@ export default function ConfigurationsPage() {
         fetch(`/api/domains${orgParam}`),
       ]);
 
-      if (serversRes.ok) setServers(await serversRes.json());
+      if (serversRes.ok) {
+        const data = await serversRes.json();
+        setServers(data.items || data);
+      }
       if (sslRes.ok) setSslCerts(await sslRes.json());
-      if (domainsRes.ok) setDomains(await domainsRes.json());
+      if (domainsRes.ok) {
+        const data = await domainsRes.json();
+        setDomains(data.items || data);
+      }
     } catch {
       // Error loading configurations
     } finally {

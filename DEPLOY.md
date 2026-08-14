@@ -15,6 +15,7 @@ A complete, step-by-step guide to deploy FlexDocs on your computer using Docker.
 7. [Common Commands](#7-common-commands)
 8. [Troubleshooting](#8-troubleshooting)
 9. [FAQ](#9-faq)
+10. [Production Deployment (Real Server)](#10-production-deployment-real-server)
 
 ---
 
@@ -460,3 +461,120 @@ docker-compose up -d
 
 # Open http://localhost:3001
 ```
+
+---
+
+## 10. Production Deployment (Real Server)
+
+This guide walks through deploying FlexDocs on a VPS with a real domain, HTTPS via Caddy, and auto-deploys from GitHub tags.
+
+### 10.1 Provision a server
+
+Recommended minimums: 2 vCPU / 4 GB RAM / 30 GB disk on Ubuntu 22.04+.
+
+```bash
+# As root or a user with sudo
+sudo apt update && sudo apt install -y docker.io docker-compose-v2 git
+sudo systemctl enable --now docker
+```
+
+### 10.2 Configure the app
+
+```bash
+git clone https://github.com/sauryaj/flexdocs.git
+cd flexdocs
+cp .env.example .env
+# Generate strong secrets
+NEXTAUTH_SECRET=$(openssl rand -hex 32)
+ENCRYPTION_KEY=$(openssl rand -hex 32)
+```
+
+Edit `.env` and set:
+
+```env
+NEXTAUTH_URL="https://flexdocs.yourdomain.com"
+DB_PASSWORD="$(openssl rand -hex 16)"
+# Use the two generated values above
+NEXTAUTH_SECRET="..."
+ENCRYPTION_KEY="..."
+```
+
+> **Security note:** `ENCRYPTION_KEY` encrypts all stored passwords at rest. Back it up somewhere safe — losing it means you can never decrypt existing passwords. Rotate it only as part of a planned key-rotation procedure.
+
+### 10.3 Run the app with a reverse proxy (HTTPS)
+
+FlexDocs uses **Caddy** for automatic HTTPS. Two options:
+
+**Option A — Caddy container (simple):** add a `proxy` service to `docker-compose.yml` and set `Caddyfile` hostnames:
+
+```
+flexdocs.yourdomain.com {
+  reverse_proxy app:3000
+}
+```
+
+**Option B — Host Caddy:** install Caddy on the host and reverse proxy to `localhost:3001`. Caddy issues Let's Encrypt certificates automatically — no certbot needed.
+
+```bash
+# Caddyfile on the host
+flexdocs.yourdomain.com {
+  reverse_proxy 127.0.0.1:3001
+}
+```
+
+Point DNS `A` (and `AAAA`) records for `flexdocs.yourdomain.com` at your server IP, then start Caddy. HTTPS will be provisioned automatically on first request.
+
+### 10.4 Stop exposing ports directly
+
+Edit `docker-compose.yml` so only the proxy sees the app (recommended for production):
+
+```yaml
+app:
+  ports:
+    - "127.0.0.1:3001:3000"   # localhost only — Caddy on the host proxies in
+```
+
+### 10.5 Backups
+
+Schedule automatic backups with cron:
+
+```bash
+# Daily 2am backup, keep 30 days (see BACKUP_RETENTION_DAYS in .env)
+crontab -e
+0 2 * * * cd /opt/flexdocs && make backup
+```
+
+Test restores periodically:
+
+```bash
+cd /opt/flexdocs && make restore-drill   # validates a backup restores cleanly
+```
+
+### 10.6 Auto-deploy from GitHub (CI/CD)
+
+The repo ships a GitHub Actions workflow. On a `v*` tag push it runs lint → typecheck → tests → build, then SSHes to your server and deploys.
+
+Configure GitHub secrets (Settings → Secrets → Actions):
+
+| Secret | Value |
+|---|---|
+| `DEPLOY_HOST` | Your server IP/hostname |
+| `DEPLOY_USER` | SSH user (must be able to `sudo docker` or be in `docker` group) |
+| `DEPLOY_SSH_KEY` | Private SSH key allowed to log in to the server |
+| `DEPLOY_PORT` | SSH port (usually `22`) |
+
+And a repository variable (Settings → Variables → Actions):
+
+| Variable | Value |
+|---|---|
+| `DEPLOY_ENABLED` | `true` |
+| `DEPLOY_PATH` | Path to the clone on the server, e.g. `/opt/flexdocs` |
+
+Then release a new version:
+
+```bash
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+The workflow deploys automatically. To disable, set `DEPLOY_ENABLED` to anything but `true`.
