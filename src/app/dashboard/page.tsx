@@ -35,7 +35,10 @@ export default function DashboardPage() {
     }
     fetch(`/api/dashboard?${params.toString()}`)
       .then((res) => res.json())
-      .then(setData)
+      .then((d) => {
+        if (d && d.error) throw new Error(d.error);
+        setData(d);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [selectedOrg]);
