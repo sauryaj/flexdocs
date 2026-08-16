@@ -27,7 +27,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { MentionPicker } from '@/components/MentionPicker';
-import { MentionRenderer } from '@/components/MentionRenderer';
+import { MarkdownPreview } from '@/components/MarkdownPreview';
 
 const categories = [
   'general',
@@ -679,7 +679,7 @@ function NewDocumentForm() {
             {viewMode === 'preview' && (
               <div className="min-h-[420px] p-6 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 overflow-y-auto">
                 {content.trim() ? (
-                  <MentionRenderer content={content} />
+                  <MarkdownPreview content={content} />
                 ) : (
                   <div className="text-slate-400 italic text-center py-16">
                     Nothing to preview. Write some documentation content above.
@@ -699,7 +699,7 @@ function NewDocumentForm() {
                 />
                 <div className="min-h-[420px] p-4 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 overflow-y-auto max-h-[500px]">
                   {content.trim() ? (
-                    <MentionRenderer content={content} />
+                    <MarkdownPreview content={content} />
                   ) : (
                     <div className="text-slate-400 italic text-center py-16">
                       Live preview pane...

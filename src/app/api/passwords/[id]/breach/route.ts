@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { decrypt } from '@/lib/encryption';
 import { checkPasswordBreach } from '@/lib/breach-check';
+import { createNotification } from '@/lib/notifications';
 
 export async function POST(
   req: Request,
@@ -27,6 +28,17 @@ export async function POST(
       breachCount: result.count,
     },
   });
+
+  if (result.breached) {
+    await createNotification({
+      userId: user.id,
+      type: 'breach',
+      title: 'Password found in breach',
+      message: `${password.name} has appeared in ${result.count.toLocaleString()} known breach${result.count !== 1 ? 'es' : ''}. Consider rotating it.`,
+      severity: 'danger',
+      link: `/dashboard/passwords/${id}`,
+    });
+  }
 
   return NextResponse.json(result);
 }

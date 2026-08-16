@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useOrganization } from '@/lib/OrganizationContext';
 import { useToast } from '@/components/Toast';
 import { DollarSign, TrendingUp, AlertTriangle, Plus, Loader2, RefreshCw } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 
 interface CostEntry {
   id: string;
@@ -74,6 +75,13 @@ export default function CloudCostsPage() {
 
   const sortedServices = Object.entries(byService).sort((a, b) => b[1] - a[1]);
   const maxCost = sortedServices[0]?.[1] || 1;
+
+  const CHART_COLORS = ['#60a5fa', '#34d399', '#fbbf24', '#f87171', '#c084fc', '#22d3ee', '#f472b6', '#a3e635'];
+  const pieData = sortedServices.slice(0, 8).map(([name, value], i) => ({
+    name,
+    value: Math.round(value * 100) / 100,
+    color: CHART_COLORS[i % CHART_COLORS.length],
+  }));
 
   return (
     <div className="space-y-6 page-enter">
@@ -183,18 +191,46 @@ export default function CloudCostsPage() {
           <p className="text-sm text-[var(--text-muted)]">Click "Fetch from AWS" to pull cost data</p>
         </div>
       ) : (
-        <div className="card p-4">
-          <h3 className="font-semibold mb-3">Cost by Service</h3>
-          <div className="space-y-2">
-            {sortedServices.map(([service, cost]) => (
-              <div key={service} className="flex items-center gap-3">
-                <span className="text-sm w-48 truncate">{service}</span>
-                <div className="flex-1 bg-[var(--surface-2)] rounded-full h-4">
-                  <div className="h-4 rounded-full bg-[var(--accent)]" style={{ width: `${(cost / maxCost) * 100}%` }} />
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="card p-4">
+            <h3 className="font-semibold mb-3">Cost by Service</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={pieData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={55}
+                    outerRadius={85}
+                    paddingAngle={2}
+                    label={({ name, value }) => `${name}: $${value}`}
+                  >
+                    {pieData.map((entry) => (
+                      <Cell key={entry.name} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => [`$${Number(value ?? 0).toLocaleString()}`, 'Cost']} />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <div className="card p-4">
+            <h3 className="font-semibold mb-3">Breakdown</h3>
+            <div className="space-y-2">
+              {sortedServices.map(([service, cost]) => (
+                <div key={service} className="flex items-center gap-3">
+                  <span className="text-sm w-48 truncate">{service}</span>
+                  <div className="flex-1 bg-[var(--surface-2)] rounded-full h-4">
+                    <div className="h-4 rounded-full bg-[var(--accent)]" style={{ width: `${(cost / maxCost) * 100}%` }} />
+                  </div>
+                  <span className="text-sm font-mono w-24 text-right">${cost.toLocaleString()}</span>
                 </div>
-                <span className="text-sm font-mono w-24 text-right">${cost.toLocaleString()}</span>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         </div>
       )}

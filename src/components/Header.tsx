@@ -2,8 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, Bell, Moon, Sun, FileText, Key, Globe, Box, CheckSquare, Command, LogOut } from 'lucide-react';
+import { Search, Moon, Sun, FileText, Key, Globe, Box, CheckSquare, Command, LogOut } from 'lucide-react';
 import { useTheme } from '@/lib/ThemeContext';
+import { NotificationBell } from '@/components/NotificationBell';
 
 interface SearchResult {
   id: string;
@@ -298,6 +299,8 @@ export function Header() {
             </div>
           )}
         </div>
+
+        <NotificationBell />
 
         <button
           onClick={toggleTheme}

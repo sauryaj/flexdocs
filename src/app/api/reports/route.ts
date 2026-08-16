@@ -2,7 +2,8 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/rbac';
 import { prisma } from '@/lib/prisma';
-import { generateComplianceReport, reportToCsv } from '@/lib/compliance';
+import { generateComplianceReport, reportToCsv, type ReportData } from '@/lib/compliance';
+import PDFDocument from 'pdfkit';
 
 const REPORT_TYPES = ['documents', 'passwords', 'domains', 'assets', 'organizations', 'activity', 'compliance', 'health'] as const;
 type ReportType = (typeof REPORT_TYPES)[number];
@@ -15,14 +16,14 @@ function toIso(d: Date | null | undefined): string {
   return d ? new Date(d).toISOString() : '';
 }
 
-async function generateReport(userId: string, type: ReportType, format: string): Promise<{ content: string; contentType: string; filename: string }> {
+async function generateReport(userId: string, type: ReportType, format: string): Promise<{ content: string | Buffer; contentType: string; filename: string }> {
   const filenameBase = `${type}-report-${new Date().toISOString().slice(0, 10)}`;
 
   if (type === 'compliance') {
     const report = await generateComplianceReport(userId);
     if (format === 'pdf') {
-      const body = buildPdf(reportToCsv(report));
-      return { content: body, contentType: 'application/pdf', filename: `${filenameBase}.pdf` };
+      const content = await buildPdf(report);
+      return { content, contentType: 'application/pdf', filename: `${filenameBase}.pdf` };
     }
     const csvContent = reportToCsv(report);
     return { content: csvContent, contentType: 'text/csv', filename: `${filenameBase}.csv` };
@@ -110,35 +111,86 @@ async function generateReport(userId: string, type: ReportType, format: string):
   throw new Error('Unknown report type');
 }
 
-function buildPdf(text: string): string {
-  const esc = (s: string) => s.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
-  const lines: string[] = [];
-  let offset = 800;
-  for (const raw of text.split('\n')) {
-    lines.push(`BT /F1 9 Tf ${offset} Td (${esc(raw.slice(0, 110))}) Tj ET`);
-    offset -= 14;
-    if (offset < 40) break;
-  }
-  const objects = [
-    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj',
-    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj',
-    `3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 842] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>\nendobj`,
-    `4 0 obj\n<< /Length ${lines.join('\n').length} >>\nstream\n${lines.join('\n')}\nendstream\nendobj`,
-    '5 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>\nendobj',
-  ];
-  let pdf = '%PDF-1.4\n';
-  const offsets: number[] = [];
-  for (const obj of objects) {
-    offsets.push(pdf.length);
-    pdf += `${obj}\n`;
-  }
-  const xrefStart = pdf.length;
-  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
-  for (const off of offsets) {
-    pdf += `${String(off).padStart(10, '0')} 00000 n \n`;
-  }
-  pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefStart}\n%%EOF`;
-  return pdf;
+function buildPdf(report: ReportData): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true });
+    const chunks: Buffer[] = [];
+    doc.on('data', (c) => chunks.push(c));
+    doc.on('end', () => resolve(Buffer.concat(chunks)));
+    doc.on('error', reject);
+
+    const drawHeading = (title: string) => {
+      doc.moveDown(0.4);
+      doc.font('Helvetica-Bold').fontSize(14).fillColor('#1f2937').text(title);
+      doc.moveDown(0.2);
+      doc.strokeColor('#d1d5db').lineWidth(0.8).moveTo(doc.x, doc.y).lineTo(doc.page.width - doc.page.margins.right, doc.y).stroke();
+      doc.moveDown(0.4);
+    };
+
+    const drawTable = (headers: string[], rows: (string | number | null | undefined)[][]) => {
+      const cellPad = 5;
+      const colWidth = (doc.page.width - doc.page.margins.left - doc.page.margins.right) / headers.length;
+      const drawRow = (cells: (string | number | null | undefined)[], isHeader: boolean) => {
+        const cellFont = isHeader ? 'Helvetica-Bold' : 'Helvetica';
+        const fontSize = isHeader ? 8.5 : 8;
+        doc.font(cellFont).fontSize(fontSize);
+        const lineHeight = fontSize + 3;
+        cells.forEach((cell, i) => {
+          const x = doc.page.margins.left + i * colWidth;
+          const y = doc.y;
+          if (isHeader) {
+            doc.fillColor('#374151').rect(x, y, colWidth, lineHeight + 4).fill('#f3f4f6');
+          }
+          doc.fillColor(isHeader ? '#111827' : '#4b5563');
+          doc.text(String(cell ?? ''), x + cellPad, y + 2, { width: colWidth - cellPad * 2, lineBreak: false, ellipsis: true });
+        });
+        doc.y += lineHeight + 4;
+        if (doc.y > doc.page.height - doc.page.margins.bottom) {
+          doc.addPage();
+          doc.y = doc.page.margins.top + 10;
+        }
+      };
+      drawRow(headers, true);
+      rows.forEach((r) => drawRow(r, false));
+    };
+
+    doc.font('Helvetica-Bold').fontSize(18).fillColor('#111827').text('Compliance Report');
+    doc.font('Helvetica').fontSize(9).fillColor('#6b7280').text(`Generated: ${report.generatedAt}`);
+    doc.moveDown(0.8);
+
+    drawHeading('Summary');
+    const s = report.summary;
+    drawTable(
+      ['Documents', 'Passwords', 'Domains', 'Assets', 'Checklists', 'SSL Certificates'],
+      [[s.totalDocuments, s.totalPasswords, s.totalDomains, s.totalAssets, s.totalChecklists, s.totalSslCerts]],
+    );
+
+    drawHeading('Domain Expiry');
+    drawTable(
+      ['Name', 'Registrar', 'Status', 'Expires', 'Days Left'],
+      report.domainExpiry.map((d) => [d.name, d.registrar, d.status, d.expiresAt ? new Date(d.expiresAt).toISOString().slice(0, 10) : 'N/A', d.daysUntilExpiry ?? 'N/A']),
+    );
+
+    drawHeading('Password Age');
+    drawTable(
+      ['Name', 'Username', 'Category', 'Updated', 'Days Old'],
+      report.passwordAge.map((p) => [p.name, p.username, p.category, new Date(p.updatedAt).toISOString().slice(0, 10), p.daysOld]),
+    );
+
+    drawHeading('SSL Certificates');
+    drawTable(
+      ['Hostname', 'Issuer', 'Valid From', 'Valid To', 'Status', 'Days Left'],
+      report.sslCertificates.map((c) => [c.hostname, c.issuer, c.validFrom ? new Date(c.validFrom).toISOString().slice(0, 10) : 'N/A', c.validTo ? new Date(c.validTo).toISOString().slice(0, 10) : 'N/A', c.isExpired ? 'EXPIRED' : 'Valid', c.daysUntilExpiry ?? 'N/A']),
+    );
+
+    drawHeading('Recent Activity');
+    drawTable(
+      ['Action', 'Resource', 'User', 'Created'],
+      report.recentActivity.map((a) => [a.action, a.resourceName ?? '', a.userName ?? '', new Date(a.createdAt).toISOString().slice(0, 16)]),
+    );
+
+    doc.end();
+  });
 }
 
 export async function GET(req: Request) {
@@ -153,7 +205,8 @@ export async function GET(req: Request) {
   const format = searchParams.get('format') || 'csv';
 
   const report = await generateReport(user.id, type, format);
-  return new NextResponse(report.content, {
+  const body: BodyInit = typeof report.content === 'string' ? report.content : new Uint8Array(report.content);
+  return new NextResponse(body, {
     headers: {
       'Content-Type': report.contentType,
       'Content-Disposition': `attachment; filename="${report.filename}"`,
@@ -173,7 +226,8 @@ export async function POST(req: Request) {
   const fmt: string = format === 'pdf' ? 'pdf' : 'csv';
 
   const report = await generateReport(user.id, reportType, fmt);
-  return new NextResponse(report.content, {
+  const body: BodyInit = typeof report.content === 'string' ? report.content : new Uint8Array(report.content);
+  return new NextResponse(body, {
     headers: {
       'Content-Type': report.contentType,
       'Content-Disposition': `attachment; filename="${report.filename}"`,

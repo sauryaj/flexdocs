@@ -23,6 +23,8 @@ import {
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/UIComponents';
+import { MarkdownPreview } from '@/components/MarkdownPreview';
+import { Eye, Edit3, Columns } from 'lucide-react';
 
 const categories = [
   'general',
@@ -113,6 +115,7 @@ export default function DocumentDetailPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
+  const [viewMode, setViewMode] = useState<'write' | 'preview' | 'split'>('write');
 
   // Version History
   const [revisions, setRevisions] = useState<Revision[]>([]);
@@ -494,8 +497,59 @@ export default function DocumentDetailPage() {
             </div>
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Content</label>
-            <textarea value={content} onChange={(e) => setContent(e.target.value)} className="input-field min-h-[500px] font-mono text-sm" />
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-sm font-medium text-slate-700">Content</label>
+              <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-lg text-xs font-medium">
+                <button
+                  onClick={() => setViewMode('write')}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${
+                    viewMode === 'write' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-semibold' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Edit3 className="w-3 h-3" /> Write
+                </button>
+                <button
+                  onClick={() => setViewMode('preview')}
+                  className={`flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${
+                    viewMode === 'preview' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-semibold' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Eye className="w-3 h-3" /> Preview
+                </button>
+                <button
+                  onClick={() => setViewMode('split')}
+                  className={`hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-md transition-all ${
+                    viewMode === 'split' ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-white shadow-sm font-semibold' : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <Columns className="w-3 h-3" /> Split
+                </button>
+              </div>
+            </div>
+            {viewMode === 'write' && (
+              <textarea value={content} onChange={(e) => setContent(e.target.value)} className="input-field min-h-[500px] font-mono text-sm" />
+            )}
+            {viewMode === 'preview' && (
+              <div className="min-h-[500px] p-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 overflow-y-auto">
+                {content.trim() ? (
+                  <MarkdownPreview content={content} />
+                ) : (
+                  <div className="text-slate-400 italic text-center py-16">No content to preview.</div>
+                )}
+              </div>
+            )}
+            {viewMode === 'split' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-h-[500px]">
+                <textarea value={content} onChange={(e) => setContent(e.target.value)} className="input-field min-h-[500px] font-mono text-sm" />
+                <div className="min-h-[500px] p-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 overflow-y-auto max-h-[500px]">
+                  {content.trim() ? (
+                    <MarkdownPreview content={content} />
+                  ) : (
+                    <div className="text-slate-400 italic text-center py-16">Live preview</div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
           <div className="flex justify-end gap-3">
             <Link href="/dashboard/documents" className="btn-secondary">Cancel</Link>

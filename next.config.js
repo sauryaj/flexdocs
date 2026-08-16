@@ -9,7 +9,7 @@ const nextConfig = {
       bodySizeLimit: '5mb',
     },
   },
-  serverExternalPackages: ['ssh2', 'dockerode'],
+  serverExternalPackages: ['ssh2', 'dockerode', 'pdfkit'],
   images: {
     remotePatterns: [
       { protocol: 'https', hostname: '**' },

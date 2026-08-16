@@ -335,6 +335,80 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* ============================================================
+   MARKDOWN PREVIEW
+   ============================================================ */
+.md-preview {
+  font-size: var(--text-base);
+  line-height: 1.7;
+  color: var(--foreground);
+}
+.md-preview > :first-child { margin-top: 0; }
+.md-preview h1, .md-preview h2, .md-preview h3, .md-preview h4 {
+  margin: 1.25em 0 0.5em;
+  font-weight: 600;
+}
+.md-preview h1 { font-size: 1.5em; border-bottom: 1px solid var(--border); padding-bottom: 0.3em; }
+.md-preview h2 { font-size: 1.25em; border-bottom: 1px solid var(--border-subtle); padding-bottom: 0.25em; }
+.md-preview h3 { font-size: 1.1em; }
+.md-preview h4 { font-size: 1em; }
+.md-preview p { margin: 0.6em 0; }
+.md-preview ul, .md-preview ol { margin: 0.6em 0; padding-left: 1.5em; }
+.md-preview ul { list-style: disc; }
+.md-preview ol { list-style: decimal; }
+.md-preview li { margin: 0.25em 0; }
+.md-preview li > ul, .md-preview li > ol { margin: 0.2em 0; }
+.md-preview a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.md-preview strong { font-weight: 600; }
+.md-preview hr { border: none; border-top: 1px solid var(--border); margin: 1.5em 0; }
+.md-preview blockquote {
+  border-left: 3px solid var(--accent);
+  padding: 0.25em 1em;
+  margin: 0.8em 0;
+  color: var(--muted);
+  background: var(--surface-1);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+}
+.md-preview code {
+  background: var(--surface-2);
+  padding: 0.15em 0.4em;
+  border-radius: var(--radius-sm);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875em;
+}
+.md-preview pre {
+  background: var(--sidebar-bg);
+  color: var(--sidebar-text-active);
+  padding: 1em;
+  border-radius: var(--radius-lg);
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+.md-preview pre code {
+  background: transparent;
+  padding: 0;
+  color: inherit;
+  font-size: 0.875em;
+  line-height: 1.6;
+}
+.md-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: var(--text-sm);
+}
+.md-preview th, .md-preview td {
+  border: 1px solid var(--border);
+  padding: 0.5em 0.75em;
+  text-align: left;
+}
+.md-preview th {
+  background: var(--surface-1);
+  font-weight: 600;
+}
+.md-preview img { max-width: 100%; border-radius: var(--radius-md); }
+.md-preview input[type="checkbox"] { margin-right: 0.4em; accent-color: var(--accent); }
+
+/* ============================================================
    REDUCED MOTION
    ============================================================ */
 @media (prefers-reduced-motion: reduce) {

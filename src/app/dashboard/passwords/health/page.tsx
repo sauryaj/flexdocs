@@ -6,6 +6,7 @@ import {
   Shield, AlertTriangle, RefreshCw, Clock, Copy, Key, Lock, ArrowLeft,
   TrendingDown,
 } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip, Cell } from 'recharts';
 
 interface PasswordHealth {
   totalPasswords: number;
@@ -49,6 +50,14 @@ export default function PasswordHealthPage() {
   const healthScore = health.totalPasswords > 0
     ? Math.round(((health.totalPasswords - health.weakPasswords - health.reusedPasswords - health.breachedPasswords) / health.totalPasswords) * 100)
     : 100;
+
+  const riskChart = [
+    { name: 'Weak', value: health.weakPasswords, color: '#f87171' },
+    { name: 'Reused', value: health.reusedPasswords, color: '#fb923c' },
+    { name: 'Breached', value: health.breachedPasswords, color: '#ef4444' },
+    { name: 'Old 90d+', value: health.oldPasswords, color: '#fbbf24' },
+    { name: 'Expiring', value: health.expiringPasswords, color: '#facc15' },
+  ].filter((d) => d.value > 0);
 
   return (
     <div className="max-w-5xl mx-auto space-y-6">
@@ -94,6 +103,27 @@ export default function PasswordHealthPage() {
           {healthScore >= 80 ? 'Good' : healthScore >= 50 ? 'Needs Improvement' : 'Poor'} Password Health
         </p>
       </div>
+
+      {/* Risk Distribution Chart */}
+      {riskChart.length > 0 && (
+        <div className="card p-6">
+          <h2 className="text-lg font-semibold mb-4">Risk Distribution</h2>
+          <div className="h-56">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={riskChart} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+                <XAxis dataKey="name" tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <YAxis allowDecimals={false} tick={{ fontSize: 12 }} stroke="#94a3b8" />
+                <Tooltip cursor={{ fill: 'rgba(148,163,184,0.1)' }} />
+                <Bar dataKey="value" radius={[6, 6, 0, 0]}>
+                  {riskChart.map((entry) => (
+                    <Cell key={entry.name} fill={entry.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

@@ -61,6 +61,7 @@ model User {
   dockerHosts     DockerHost[]
   k8sClusters     K8sCluster[]
   infraChanges    InfraChange[]
+  notifications   Notification[]
 }
 
 model Folder {
@@ -344,6 +345,23 @@ model ActivityLog {
   @@index([userId])
   @@index([action])
   @@index([resourceType, resourceId])
+  @@index([createdAt])
+}
+
+model Notification {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id])
+  type         String   // domain_expiring, cert_expiring, breach, maintenance, system, share, emergency
+  title        String
+  message      String
+  severity     String   @default("info") // info, warning, danger, success
+  link         String?
+  read         Boolean  @default(false)
+  createdAt    DateTime @default(now())
+
+  @@index([userId])
+  @@index([userId, read])
   @@index([createdAt])
 }
 

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { createNotification } from '@/lib/notifications';
 
 export async function GET() {
   const user = await auth();
@@ -72,6 +73,15 @@ export async function POST(req: Request) {
       status: 'pending',
     },
     include: { trustedUser: { select: { id: true, name: true, email: true } } },
+  });
+
+  await createNotification({
+    userId: trustedUser.id,
+    type: 'emergency',
+    title: 'Emergency access request',
+    message: `${user.name || user.email} has requested emergency access to their account (granted after ${delay} hour${delay !== 1 ? 's' : ''}).`,
+    severity: 'info',
+    link: '/dashboard/settings/emergency-access',
   });
 
   return NextResponse.json(access, { status: 201 });

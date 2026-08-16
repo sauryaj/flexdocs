@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { fetchWhoisData, fetchDnsRecords } from '@/lib/whois-dns';
 import { sendDomainExpiryAlert } from '@/lib/email';
 import { triggerWebhooks } from '@/lib/webhooks';
+import { createNotification } from '@/lib/notifications';
 import logger from '@/lib/logger';
 
 export interface MonitoringResult {
@@ -62,6 +63,19 @@ export async function checkDomain(domainId: string): Promise<MonitoringResult> {
           await sendDomainExpiryAlert(domain.userId, domain.name, daysUntilExpiry);
         } catch (err) {
           logger.warn('Failed to send expiry alert', { domainId, error: String(err) });
+        }
+
+        try {
+          await createNotification({
+            userId: domain.userId,
+            type: 'domain_expiring',
+            title: 'Domain expiring soon',
+            message: `${domain.name} expires in ${daysUntilExpiry} day${daysUntilExpiry !== 1 ? 's' : ''}`,
+            severity: daysUntilExpiry <= 14 ? 'danger' : 'warning',
+            link: `/dashboard/domains/${domainId}`,
+          });
+        } catch {
+          // notification failure shouldn't break monitoring
         }
 
         try {
