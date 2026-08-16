@@ -298,7 +298,7 @@ export function Sidebar() {
           {activeNavigation.map((group, gi) => (
             <div key={group.label}>
               {gi > 0 && <div className="sidebar-divider" />}
-              {!collapsed && <div className="sidebar-label">{group.label}</div>}
+              {!collapsed && gi > 0 && <div className="sidebar-label">{group.label}</div>}
               <div className="space-y-0.5">
                 {group.items.map((item) => (
                   <Link
