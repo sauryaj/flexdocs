@@ -121,9 +121,10 @@ export function Sidebar() {
   const activeNavigation = selectedOrg
     ? [
         {
-          label: selectedOrg.name,
+          label: 'Overview',
           items: [
-            { name: 'Org Overview', href: `/dashboard/organizations/${selectedOrg.id}`, icon: Building2 },
+            { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+            { name: selectedOrg.name, href: `/dashboard/organizations/${selectedOrg.id}`, icon: Building2 },
           ],
         },
         {
@@ -142,7 +143,6 @@ export function Sidebar() {
           label: 'Global Admin',
           items: [
             { name: 'All Organizations', href: '/dashboard/organizations', icon: Building },
-            { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
             { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart },
           ],
         },
