@@ -97,6 +97,12 @@ export async function POST(req: Request) {
         { status: 500 }
       );
     }
+    if (msg.includes('EACCES')) {
+      return NextResponse.json(
+        { error: 'Docker socket permission denied. The app container user is not in the Docker group. Add `group_add: ["${DOCKER_GROUP_GID:-991}"]` to the app service in docker-compose.yml and recreate the container.' },
+        { status: 500 }
+      );
+    }
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

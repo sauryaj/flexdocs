@@ -45,6 +45,7 @@ export default function DockerPage() {
   };
 
   const scanDocker = async () => {
+    if (scanning) return;
     setScanning(true);
     try {
       const res = await fetch('/api/automation/docker', {
@@ -52,11 +53,14 @@ export default function DockerPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ endpoint: endpoint || undefined, organizationId: selectedOrg?.id }),
       });
-      if (!res.ok) throw new Error('Scan failed');
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Scan failed');
+      }
       toast('success', 'Docker scan complete');
       fetchHosts();
-    } catch {
-      toast('error', 'Failed to scan Docker');
+    } catch (err) {
+      toast('error', err instanceof Error ? err.message : 'Failed to scan Docker');
     } finally {
       setScanning(false);
     }

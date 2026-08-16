@@ -4,17 +4,10 @@ import { useState, useEffect } from 'react';
 import { Database, Download, Loader2, HardDrive } from 'lucide-react';
 
 interface BackupFile {
-  name: string;
-  size: number;
-  created: string;
-}
-
-function formatBytes(bytes: number) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  id: string;
+  filename: string;
+  size: string;
+  createdAt: string;
 }
 
 export default function BackupSection() {
@@ -31,10 +24,14 @@ export default function BackupSection() {
   };
 
   const handleCreateBackup = async () => {
+    if (creating) return;
     setCreating(true);
-    await fetch('/api/backups', { method: 'POST' });
-    await fetchBackups();
-    setCreating(false);
+    try {
+      await fetch('/api/backups', { method: 'POST' });
+      await fetchBackups();
+    } finally {
+      setCreating(false);
+    }
   };
 
   return (
@@ -63,12 +60,12 @@ export default function BackupSection() {
       ) : (
         <div className="space-y-2">
           {backups.map((b) => (
-            <div key={b.name} className="flex items-center justify-between p-3 bg-white border rounded-lg">
+            <div key={b.id} className="flex items-center justify-between p-3 bg-white border rounded-lg">
               <div className="flex items-center gap-3">
                 <Database className="w-4 h-4 text-purple-400" />
                 <div>
-                  <p className="font-medium text-slate-900 text-sm">{b.name}</p>
-                  <p className="text-xs text-slate-500">{formatBytes(b.size)} &middot; {new Date(b.created).toLocaleString()}</p>
+                  <p className="font-medium text-slate-900 text-sm">{b.filename}</p>
+                  <p className="text-xs text-slate-500">{b.size} &middot; {new Date(b.createdAt).toLocaleString()}</p>
                 </div>
               </div>
             </div>

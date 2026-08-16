@@ -35,6 +35,7 @@ export default function BackupsPage() {
   useEffect(() => { loadBackups(); }, [loadBackups]);
 
   const createBackup = async () => {
+    if (creating) return;
     try {
       setCreating(true);
       setError(null);

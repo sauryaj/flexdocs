@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
 
 interface EmergencyAccessGrant {
   id: string;
@@ -19,7 +18,6 @@ interface EmergencyAccessGrant {
 }
 
 export default function EmergencyAccessPage() {
-  const router = useRouter();
   const [grants, setGrants] = useState<EmergencyAccessGrant[]>([]);
   const [loading, setLoading] = useState(true);
   const [showRequestModal, setShowRequestModal] = useState(false);
@@ -40,6 +38,7 @@ export default function EmergencyAccessPage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [requesting, setRequesting] = useState(false);
 
   const loadGrants = useCallback(async () => {
     try {
@@ -58,8 +57,10 @@ export default function EmergencyAccessPage() {
   useEffect(() => { loadGrants(); }, [loadGrants]);
 
   const handleRequest = async () => {
+    if (requesting) return;
     try {
       setError(null);
+      setRequesting(true);
       if (!form.userId.trim()) {
         setError('User ID is required');
         return;
@@ -83,6 +84,8 @@ export default function EmergencyAccessPage() {
       await loadGrants();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create request');
+    } finally {
+      setRequesting(false);
     }
   };
 
@@ -318,9 +321,10 @@ export default function EmergencyAccessPage() {
               </button>
               <button
                 onClick={handleRequest}
-                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                disabled={requesting}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Request Access
+                {requesting ? 'Requesting...' : 'Request Access'}
               </button>
             </div>
           </div>

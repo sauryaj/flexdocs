@@ -35,6 +35,7 @@ export default function WebhooksPage() {
   });
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
   const loadWebhooks = useCallback(async () => {
     try {
@@ -53,8 +54,10 @@ export default function WebhooksPage() {
   useEffect(() => { loadWebhooks(); }, [loadWebhooks]);
 
   const saveWebhook = async () => {
+    if (saving) return;
     try {
       setError(null);
+      setSaving(true);
       if (!form.name.trim() || !form.url.trim()) {
         setError('Name and URL are required');
         return;
@@ -74,6 +77,8 @@ export default function WebhooksPage() {
       await loadWebhooks();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save webhook');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -294,9 +299,10 @@ export default function WebhooksPage() {
               </button>
               <button
                 onClick={saveWebhook}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                disabled={saving}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {editingId ? 'Update' : 'Create'}
+                {saving ? 'Saving...' : (editingId ? 'Update' : 'Create')}
               </button>
             </div>
           </div>

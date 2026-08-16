@@ -25,15 +25,44 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem('selectedOrg');
-    if (stored) {
+    let cancelled = false;
+
+    async function init() {
+      let storedOrg: Organization | null = null;
+      const stored = localStorage.getItem('selectedOrg');
+      if (stored) {
+        try {
+          storedOrg = JSON.parse(stored);
+        } catch {
+          localStorage.removeItem('selectedOrg');
+        }
+      }
+
       try {
-        setSelectedOrgState(JSON.parse(stored));
+        const res = await fetch('/api/organizations');
+        if (res.ok) {
+          const orgs = (await res.json()) as Organization[];
+          const valid = storedOrg ? orgs.some((o) => o.id === storedOrg?.id) : true;
+          if (storedOrg && !valid) {
+            localStorage.removeItem('selectedOrg');
+            storedOrg = null;
+          }
+        }
       } catch {
-        localStorage.removeItem('selectedOrg');
+        // Network error: keep the stored selection as-is
+      }
+
+      if (!cancelled) {
+        setSelectedOrgState(storedOrg);
+        setIsLoading(false);
       }
     }
-    setIsLoading(false);
+
+    init();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const setSelectedOrg = useCallback((org: Organization | null) => {

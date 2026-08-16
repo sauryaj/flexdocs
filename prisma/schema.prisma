@@ -529,6 +529,8 @@ model EmergencyAccess {
   user           User     @relation("EmergencyOwner", fields: [userId], references: [id])
   trustedUserId  String   // Trusted contact
   trustedUser    User     @relation("EmergencyTrusted", fields: [trustedUserId], references: [id])
+  accessType     String   @default("view") // view, edit, admin
+  requestReason  String?  // Why access was requested
   delayHours     Int      @default(24) // Hours to wait before access is granted
   status         String   @default("pending") // pending, active, expired, revoked
   requestAt      DateTime? // When access was requested

@@ -33,19 +33,23 @@ export default function WebhooksSection() {
   };
 
   const handleCreate = async () => {
+    if (saving) return;
     setSaving(true);
-    const res = await fetch('/api/webhooks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: formName, url: formUrl, secret: formSecret, events: formEvents }),
-    });
-    if (res.ok) {
-      const newWebhook = await res.json();
-      setWebhooks((prev) => [...prev, newWebhook]);
-      setFormName(''); setFormUrl(''); setFormSecret(''); setFormEvents([]);
-      setShowForm(false);
+    try {
+      const res = await fetch('/api/webhooks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: formName, url: formUrl, secret: formSecret, events: formEvents }),
+      });
+      if (res.ok) {
+        const newWebhook = await res.json();
+        setWebhooks((prev) => [...prev, newWebhook]);
+        setFormName(''); setFormUrl(''); setFormSecret(''); setFormEvents([]);
+        setShowForm(false);
+      }
+    } finally {
+      setSaving(false);
     }
-    setSaving(false);
   };
 
   const handleDelete = async (id: string) => {

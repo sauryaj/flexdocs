@@ -27,6 +27,7 @@ export default function ReportsPage() {
   const [success, setSuccess] = useState<string | null>(null);
 
   const generateReport = async (report: ReportType) => {
+    if (generating === report.id) return;
     try {
       setGenerating(report.id);
       setError(null);
