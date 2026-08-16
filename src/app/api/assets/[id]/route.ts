@@ -57,14 +57,14 @@ export async function PUT(
   });
 
   if (tags !== undefined) {
-    await prisma.$executeRaw`DELETE FROM _FlexibleAssetToTag WHERE A = ${id}`;
+    await prisma.$executeRaw`DELETE FROM "_FlexibleAssetToTag" WHERE "A" = ${id}`;
     for (const tagName of tags) {
       const tag = await prisma.tag.upsert({
         where: { name_userId: { name: tagName, userId: user.id } },
         update: {},
         create: { name: tagName, userId: user.id },
       });
-      await prisma.$executeRaw`INSERT INTO _FlexibleAssetToTag (A, B) VALUES (${id}, ${tag.id})`;
+      await prisma.$executeRaw`INSERT INTO "_FlexibleAssetToTag" ("A", "B") VALUES (${id}, ${tag.id})`;
     }
   }
 

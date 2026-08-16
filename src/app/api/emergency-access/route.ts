@@ -6,7 +6,7 @@ export async function GET() {
   const user = await auth();
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const access = await prisma.emergencyAccess.findMany({
+  const owned = await prisma.emergencyAccess.findMany({
     where: { userId: user.id },
     include: { trustedUser: { select: { id: true, name: true, email: true } } },
     orderBy: { createdAt: 'desc' },
@@ -18,18 +18,40 @@ export async function GET() {
     orderBy: { createdAt: 'desc' },
   });
 
-  return NextResponse.json({ owned: access, granted });
+  const map = (a: { id: string; delayHours: number; status: string; grantAt: Date | null; createdAt: Date; updatedAt: Date }, target: { id: string; name: string | null; email: string }, userId: string) => ({
+    id: a.id,
+    userId,
+    userName: target.name || undefined,
+    userEmail: target.email || undefined,
+    accessType: 'view' as const,
+    delayDays: Math.floor(a.delayHours / 24),
+    delayHours: a.delayHours % 24,
+    status: a.status,
+    requestReason: undefined,
+    createdAt: a.createdAt.toISOString(),
+    expiresAt: a.grantAt ? a.grantAt.toISOString() : undefined,
+    updatedAt: a.updatedAt.toISOString(),
+  });
+
+  return NextResponse.json([
+    ...owned.map((a) => map(a, a.trustedUser, a.userId)),
+    ...granted.map((a) => map(a, a.user, a.userId)),
+  ]);
 }
 
 export async function POST(req: Request) {
   const user = await auth();
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { email, delayHours } = await req.json();
-  if (!email) return NextResponse.json({ error: 'Email required' }, { status: 400 });
+  const { userId, email, delayDays, delayHours } = await req.json();
+
+  const identifier = userId || email;
+  if (!identifier) return NextResponse.json({ error: 'User ID or email required' }, { status: 400 });
 
   // Find the trusted user
-  const trustedUser = await prisma.user.findUnique({ where: { email } });
+  const trustedUser = identifier.includes('@')
+    ? await prisma.user.findUnique({ where: { email: identifier } })
+    : await prisma.user.findUnique({ where: { id: identifier } });
   if (!trustedUser) return NextResponse.json({ error: 'User not found' }, { status: 404 });
   if (trustedUser.id === user.id) return NextResponse.json({ error: 'Cannot add yourself' }, { status: 400 });
 
@@ -38,11 +60,14 @@ export async function POST(req: Request) {
   });
   if (existing) return NextResponse.json({ error: 'Already configured' }, { status: 409 });
 
+  const delay = ((delayDays || 0) * 24 + (delayHours || 0)) || 24;
+
   const access = await prisma.emergencyAccess.create({
     data: {
       userId: user.id,
       trustedUserId: trustedUser.id,
-      delayHours: delayHours || 24,
+      delayHours: delay,
+      status: 'pending',
     },
     include: { trustedUser: { select: { id: true, name: true, email: true } } },
   });

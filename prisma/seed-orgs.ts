@@ -32,12 +32,9 @@ const orgs = [
 async function main() {
   const createdOrgs = [];
   for (const org of orgs) {
-    const created = await prisma.organization.upsert({
-      where: { id: org.name.replace(/\s/g, '-').toLowerCase() },
-      update: {},
-      create: org,
-    });
-    console.log(`Created org: ${created.name} (${created.id})`);
+    const existing = await prisma.organization.findFirst({ where: { name: org.name } });
+    const created = existing ?? (await prisma.organization.create({ data: org }));
+    console.log(`Org ready: ${created.name} (${created.id})`);
     createdOrgs.push(created);
   }
 

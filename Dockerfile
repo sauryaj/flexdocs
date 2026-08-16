@@ -1,10 +1,17 @@
 FROM node:20-slim AS base
 
-# Install system dependencies for Prisma and builds
+# Install system dependencies for Prisma, builds, and backups
 RUN apt-get update && apt-get install -y \
     openssl \
     libssl-dev \
     ca-certificates \
+    gnupg \
+    wget \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && wget -qO /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] http://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y postgresql-client-16 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install dependencies only when needed
@@ -42,8 +49,8 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 
-# Create uploads and logs directories
-RUN mkdir -p /app/uploads /app/logs && chown nextjs:nodejs /app/uploads /app/logs
+# Create uploads, logs, and backups directories
+RUN mkdir -p /app/uploads /app/logs /backups && chown nextjs:nodejs /app/uploads /app/logs /backups
 
 USER nextjs
 

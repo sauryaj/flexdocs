@@ -91,7 +91,11 @@ export default function SslCertificatesPage() {
     setCheckLoading(true);
     setCheckResult(null);
     try {
-      const res = await fetch(`/api/ssl/check?hostname=${encodeURIComponent(checkHostname.trim())}`);
+      const res = await fetch('/api/ssl/check', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ hostname: checkHostname.trim() }),
+      });
       if (res.ok) {
         const data = await res.json();
         setCheckResult(data);

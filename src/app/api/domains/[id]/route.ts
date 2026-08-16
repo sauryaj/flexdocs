@@ -58,7 +58,7 @@ export async function PUT(
   });
 
   if (tags !== undefined) {
-    await prisma.$executeRaw`DELETE FROM _DomainToTag WHERE A = ${id}`;
+    await prisma.$executeRaw`DELETE FROM "_DomainToTag" WHERE "A" = ${id}`;
     if (tags.length > 0) {
       const tagResults = await Promise.all(
         tags.map((tagName: string) =>
@@ -71,7 +71,7 @@ export async function PUT(
       );
       await Promise.all(
         tagResults.map((tag) =>
-          prisma.$executeRaw`INSERT INTO _DomainToTag (A, B) VALUES (${id}, ${tag.id})`
+          prisma.$executeRaw`INSERT INTO "_DomainToTag" ("A", "B") VALUES (${id}, ${tag.id})`
         )
       );
     }

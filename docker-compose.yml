@@ -30,6 +30,8 @@ services:
       - SMTP_FROM=${SMTP_FROM:-FlexDocs <noreply@flexdocs.local>}
       - SMTP_SECURE=${SMTP_SECURE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - BACKUP_DIR=${BACKUP_DIR:-/backups}
+      - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
     depends_on:
       db:
         condition: service_healthy
@@ -39,6 +41,7 @@ services:
         condition: service_completed_successfully
     volumes:
       - uploads:/app/uploads
+      - backups:/backups
       - /var/run/docker.sock:/var/run/docker.sock:ro
 
   db:
@@ -76,3 +79,4 @@ volumes:
   postgres_data:
   redis_data:
   uploads:
+  backups:

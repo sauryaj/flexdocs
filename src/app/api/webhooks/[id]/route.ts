@@ -29,7 +29,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
       url: data.url,
       secret: data.secret,
       events: data.events ? JSON.stringify(data.events) : undefined,
-      isActive: data.isActive,
+      isActive: data.isActive ?? data.active,
     },
   });
 

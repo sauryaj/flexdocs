@@ -11,7 +11,19 @@ export async function GET() {
     orderBy: { createdAt: 'desc' },
   });
 
-  return NextResponse.json(webhooks);
+  return NextResponse.json(
+    webhooks.map((w) => ({
+      id: w.id,
+      name: w.name,
+      url: w.url,
+      events: JSON.parse(w.events || '[]') as string[],
+      active: w.isActive,
+      secret: w.secret || '',
+      createdAt: w.createdAt.toISOString(),
+      lastTriggered: w.lastTriggered ? w.lastTriggered.toISOString() : null,
+      failureCount: w.lastStatus && w.lastStatus >= 500 ? 1 : 0,
+    }))
+  );
 }
 
 export async function POST(request: Request) {

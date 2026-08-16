@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { auth } from '@/lib/auth';
 
@@ -18,7 +19,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: 'Query parameter "q" is required' }, { status: 400 });
   }
 
-  const contains = { contains: q };
+  const contains: Prisma.StringFilter = { contains: q, mode: 'insensitive' };
   // Restrict to user-owned records, optionally within a single organization
   const orgScope = organizationId ? { organizationId } : {};
 
