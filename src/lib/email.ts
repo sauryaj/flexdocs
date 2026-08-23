@@ -67,3 +67,64 @@ export async function sendPasswordRotationReminder(
     text: `Password ${passwordName} was last updated on ${lastUpdated}. Consider rotating.`,
   });
 }
+
+export async function sendEmergencyAccessEmail(
+  to: string,
+  ownerName: string,
+  action: 'requested' | 'approved' | 'revoked',
+  delayHours?: number
+): Promise<boolean> {
+  const subjects: Record<typeof action, string> = {
+    requested: `[Action Required] Emergency Access Request from ${ownerName}`,
+    approved: `Emergency Access Approved for ${ownerName}`,
+    revoked: `Emergency Access Revoked for ${ownerName}`,
+  };
+  const bodies: Record<typeof action, { html: string; text: string }> = {
+    requested: {
+      html: `
+        <h2>Emergency Access Request</h2>
+        <p><strong>${ownerName}</strong> has requested emergency access to their account.</p>
+        ${delayHours ? `<p>Access would be granted automatically after a <strong>${delayHours} hour</strong> delay window.</p>` : ''}
+        <p>If you did not expect this, contact them or review your emergency access settings.</p>
+        <p><a href="${process.env.NEXTAUTH_URL || 'http://localhost:3001'}/dashboard/settings/emergency-access">Review Emergency Access</a></p>
+      `,
+      text: `${ownerName} requested emergency access to their account${delayHours ? ` (granted after ${delayHours}h)` : ''}.`,
+    },
+    approved: {
+      html: `
+        <h2>Emergency Access Approved</h2>
+        <p><strong>${ownerName}</strong> approved your emergency access request.</p>
+        ${delayHours ? `<p>Access will be granted after the <strong>${delayHours} hour</strong> delay window.</p>` : ''}
+        <p><a href="${process.env.NEXTAUTH_URL || 'http://localhost:3001'}/dashboard/settings/emergency-access">View Emergency Access</a></p>
+      `,
+      text: `${ownerName} approved your emergency access request.`,
+    },
+    revoked: {
+      html: `
+        <h2>Emergency Access Revoked</h2>
+        <p>Your emergency access to <strong>${ownerName}</strong>'s account was revoked.</p>
+        <p><a href="${process.env.NEXTAUTH_URL || 'http://localhost:3001'}/dashboard/settings/emergency-access">View Emergency Access</a></p>
+      `,
+      text: `Your emergency access to ${ownerName}'s account was revoked.`,
+    },
+  };
+  return sendEmail({ to, subject: subjects[action], ...bodies[action] });
+}
+
+export async function sendBreachAlert(
+  to: string,
+  passwordName: string,
+  breachCount: number
+): Promise<boolean> {
+  return sendEmail({
+    to,
+    subject: `[URGENT] Password Found in Data Breach: ${passwordName}`,
+    html: `
+      <h2>Password Breach Alert</h2>
+      <p>The password for <strong>${passwordName}</strong> appeared in <strong>${breachCount.toLocaleString()}</strong> known data breach${breachCount === 1 ? '' : 'es'}.</p>
+      <p>Please change this password immediately and enable two-factor authentication where available.</p>
+      <p><a href="${process.env.NEXTAUTH_URL || 'http://localhost:3001'}/dashboard/passwords">Change Password</a></p>
+    `,
+    text: `Password for ${passwordName} was found in ${breachCount} breaches. Change it immediately.`,
+  });
+}

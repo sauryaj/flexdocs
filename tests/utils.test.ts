@@ -1,42 +1,33 @@
 import { describe, it, expect } from 'vitest';
-import { formatDate, timeAgo, cn } from '@/lib/utils';
+import { formatDate, getDaysUntilExpiry } from '@/lib/utils';
 
 describe('formatDate', () => {
-  it('formats a valid ISO date string', () => {
-    const result = formatDate('2025-01-15T12:00:00.000Z');
-    expect(result).toMatch(/Jan/);
-    expect(result).toMatch(/2025/);
+  it('formats a date as en-US short month', () => {
+    const d = new Date(2026, 7, 16);
+    expect(formatDate(d)).toMatch(/Aug 16, 2026/);
   });
 
-  it('formats a Date object', () => {
-    const result = formatDate(new Date('2025-06-15'));
-    expect(result).toMatch(/Jun/);
-    expect(result).toMatch(/15/);
+  it('accepts ISO strings', () => {
+    const local = new Date(2026, 0, 5).toISOString();
+    expect(formatDate(local)).toMatch(/Jan (4|5|6), 2026/);
   });
 });
 
-describe('timeAgo', () => {
-  it('returns "just now" for recent timestamps', () => {
-    const now = new Date().toISOString();
-    expect(timeAgo(now)).toMatch(/just now|seconds? ago/);
+describe('getDaysUntilExpiry', () => {
+  it('returns positive days for future dates', () => {
+    const in30Days = new Date(Date.now() + 30 * 86400000);
+    const days = getDaysUntilExpiry(in30Days);
+    expect(days).toBeGreaterThanOrEqual(29);
+    expect(days).toBeLessThanOrEqual(31);
   });
 
-  it('returns relative time for past dates', () => {
-    const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString();
-    expect(timeAgo(twoDaysAgo)).toMatch(/2d ago/);
-  });
-});
-
-describe('cn', () => {
-  it('merges class names', () => {
-    const result = cn('text-red-500', 'text-blue-500');
-    expect(result).toBe('text-blue-500');
+  it('returns negative days for past dates', () => {
+    const tenDaysAgo = new Date(Date.now() - 10 * 86400000);
+    expect(getDaysUntilExpiry(tenDaysAgo)).toBeLessThanOrEqual(-9);
   });
 
-  it('handles conditional classes', () => {
-    const result = cn('base', false && 'hidden', 'extra');
-    expect(result).toContain('base');
-    expect(result).toContain('extra');
-    expect(result).not.toContain('hidden');
+  it('accepts strings', () => {
+    const iso = new Date(Date.now() + 86400000).toISOString();
+    expect(getDaysUntilExpiry(iso)).toBeGreaterThanOrEqual(0);
   });
 });

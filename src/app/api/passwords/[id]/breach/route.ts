@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma';
 import { decrypt } from '@/lib/encryption';
 import { checkPasswordBreach } from '@/lib/breach-check';
 import { createNotification } from '@/lib/notifications';
+import { sendBreachAlert } from '@/lib/email';
 
 export async function POST(
   req: Request,
@@ -38,6 +39,10 @@ export async function POST(
       severity: 'danger',
       link: `/dashboard/passwords/${id}`,
     });
+
+    if (user.email) {
+      sendBreachAlert(user.email, password.name, result.count).catch(() => {});
+    }
   }
 
   return NextResponse.json(result);

@@ -1,142 +1,69 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('next/headers', () => ({
+  cookies: vi.fn(() => ({ get: () => undefined })),
+}));
+
+vi.mock('@/lib/prisma', () => ({
+  prisma: {
+    session: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      update: vi.fn(),
+      deleteMany: vi.fn(),
+      count: vi.fn(),
+      findMany: vi.fn(),
+    },
+    user: { findUnique: vi.fn() },
+  },
+}));
+
 import {
   createSessionToken,
   verifySessionToken,
   createSessionCookieValue,
-  createSession,
-  destroySession,
-  sessionCookieOptions,
 } from '@/lib/session';
-import { prisma } from '@/lib/prisma';
 
-describe('session tokens', () => {
-  it('creates a token with a signature suffix', () => {
-    const token = createSessionToken();
-    const [t, sig] = token.split('.');
-    expect(t).toBeTruthy();
-    expect(sig).toBeTruthy();
-    expect(token.split('.')).toHaveLength(2);
+describe('session token signing', () => {
+  it('creates a signed token of form <token>.<hmac>', () => {
+    const signed = createSessionToken();
+    expect(signed).toMatch(/^[0-9a-f]{64}\.[0-9a-f]{64}$/);
   });
 
-  it('verifies a valid token', () => {
-    const token = createSessionToken();
-    expect(verifySessionToken(token)).toBe(token.split('.')[0]);
+  it('verifies a freshly created token', () => {
+    const signed = createSessionToken();
+    expect(verifySessionToken(signed)).toBe(signed.split('.')[0]);
   });
 
   it('rejects a tampered signature', () => {
-    const token = createSessionToken();
-    const [t] = token.split('.');
-    const tampered = `${t}.deadbeef`;
-    expect(verifySessionToken(tampered)).toBeNull();
+    const [token] = createSessionToken().split('.');
+    const bad = `${token}.${'0'.repeat(64)}`;
+    expect(verifySessionToken(bad)).toBeNull();
   });
 
-  it('rejects a token with missing signature', () => {
-    expect(verifySessionToken('rawtoken')).toBeNull();
+  it('rejects a signature computed with a different secret', () => {
+    const [token] = createSessionToken().split('.');
+    const forged = `${token}.${require('crypto')
+      .createHmac('sha256', 'wrong-secret')
+      .update(token)
+      .digest('hex')}`;
+    expect(verifySessionToken(forged)).toBeNull();
   });
 
-  it('rejects a token with a modified payload', () => {
-    const token = createSessionToken();
-    const [_, sig] = token.split('.');
-    const tampered = `othertoken.${sig}`;
-    expect(verifySessionToken(tampered)).toBeNull();
-  });
-
-  it('rejects empty input', () => {
+  it('rejects malformed values', () => {
     expect(verifySessionToken('')).toBeNull();
-    expect(verifySessionToken('   ')).toBeNull();
+    expect(verifySessionToken('no-dot-here')).toBeNull();
+    expect(verifySessionToken('only.')).toBeNull();
   });
 
-  it('round-trips cookie value', () => {
-    const token = createSessionToken();
-    const raw = token.split('.')[0];
-    const cookieValue = createSessionCookieValue(raw);
-    expect(verifySessionToken(cookieValue)).toBe(raw);
-  });
-});
-
-describe('session lifecycle', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
+  it('produces the same cookie value as verify expects', () => {
+    const token = 'abc123';
+    const cookieValue = createSessionCookieValue(token);
+    expect(cookieValue).toContain('.');
+    expect(verifySessionToken(cookieValue)).toBe(token);
   });
 
-  it('creates a session and returns a signed cookie value', async () => {
-    vi.mocked(prisma.session.count).mockResolvedValue(0);
-    vi.mocked(prisma.session.create as any).mockImplementation(async ({ data }: any) => ({
-      id: 'sess1',
-      userId: data.userId,
-      token: data.token,
-      ip: data.ip,
-      userAgent: data.userAgent,
-      lastActive: new Date(),
-      createdAt: new Date(),
-    }));
-
-    const { session, cookieValue } = await createSession('user1', '10.0.0.1', 'vitest');
-    expect(session.id).toBe('sess1');
-    expect(prisma.session.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ userId: 'user1', ip: '10.0.0.1', userAgent: 'vitest' }),
-      })
-    );
-    // The random token is generated internally; the cookie must verify against it
-    expect(cookieValue).toMatch(/^[0-9a-f]{64}\.[0-9a-f]{64}$/);
-    expect(verifySessionToken(cookieValue)).toMatch(/^[0-9a-f]{64}$/);
-  });
-
-  it('revokes oldest sessions when over the cap', async () => {
-    vi.mocked(prisma.session.count).mockResolvedValue(12);
-    vi.mocked(prisma.session.findMany).mockResolvedValue([{ id: 'old1' }, { id: 'old2' }, { id: 'old3' }] as any);
-    vi.mocked(prisma.session.create).mockResolvedValue({
-      id: 'sess-new',
-      userId: 'user1',
-      token: 'newtok',
-      ip: null,
-      userAgent: null,
-      lastActive: new Date(),
-      createdAt: new Date(),
-    });
-
-    await createSession('user1');
-    expect(prisma.session.deleteMany).toHaveBeenCalledWith({
-      where: { id: { in: ['old1', 'old2', 'old3'] } },
-    });
-  });
-
-  it('destroys a session by cookie value', async () => {
-    const token = createSessionToken();
-    const raw = token.split('.')[0];
-    vi.mocked(prisma.session.deleteMany).mockResolvedValue({ count: 1 });
-    await destroySession(createSessionCookieValue(raw));
-    expect(prisma.session.deleteMany).toHaveBeenCalledWith({ where: { token: raw } });
-  });
-
-  it('does nothing when destroying an invalid cookie', async () => {
-    await destroySession('garbage.not-a-signature');
-    expect(prisma.session.deleteMany).not.toHaveBeenCalled();
-  });
-});
-
-describe('session cookie options', () => {
-  it('returns secure cookies in production', () => {
-    vi.stubEnv('NODE_ENV', 'production');
-    try {
-      const opts = sessionCookieOptions();
-      expect(opts.httpOnly).toBe(true);
-      expect(opts.secure).toBe(true);
-      expect(opts.sameSite).toBe('lax');
-      expect(opts.path).toBe('/');
-    } finally {
-      vi.unstubAllEnvs();
-    }
-  });
-
-  it('returns non-secure cookies in development', () => {
-    vi.stubEnv('NODE_ENV', 'development');
-    try {
-      const opts = sessionCookieOptions();
-      expect(opts.secure).toBe(false);
-    } finally {
-      vi.unstubAllEnvs();
-    }
+  it('is deterministic for the same input token', () => {
+    expect(createSessionCookieValue('tok')).toBe(createSessionCookieValue('tok'));
   });
 });

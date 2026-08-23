@@ -89,10 +89,12 @@ export default function LoginPage() {
                   <input
                     type="email"
                     required
+                    autoComplete="email"
+                    spellCheck={false}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="admin@flexdocs.local"
-                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
                   />
                 </div>
               </div>
@@ -106,10 +108,11 @@ export default function LoginPage() {
                   <input
                     type="password"
                     required
+                    autoComplete="current-password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••••••"
-                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                    className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors"
                   />
                 </div>
               </div>
@@ -125,10 +128,13 @@ export default function LoginPage() {
                   type="text"
                   required
                   maxLength={6}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  spellCheck={false}
                   value={mfaCode}
                   onChange={(e) => setMfaCode(e.target.value)}
                   placeholder="Enter 6-digit code"
-                  className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all text-center tracking-widest font-bold"
+                  className="w-full pl-9 pr-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500 transition-colors text-center tracking-widest font-bold"
                 />
               </div>
               <p className="text-[10px] text-slate-500 mt-1.5 text-center">

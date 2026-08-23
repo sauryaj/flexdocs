@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { formatDate, getDaysUntilExpiry, cn } from '@/lib/utils';
 import { EmptyState, Modal } from '@/components/UIComponents';
+import { useOrganization } from '@/lib/OrganizationContext';
 
 interface SslCertificate {
   id: string;
@@ -34,6 +35,7 @@ interface SslCertificate {
 }
 
 export default function SslCertificatesPage() {
+  const { selectedOrg } = useOrganization();
   const [certs, setCerts] = useState<SslCertificate[]>([]);
   const [search, setSearch] = useState('');
   const [organizationFilter, setOrganizationFilter] = useState('all');
@@ -56,14 +58,18 @@ export default function SslCertificatesPage() {
 
   useEffect(() => {
     fetchCerts();
-  }, []);
+  }, [selectedOrg]);
 
   const fetchCerts = async () => {
-    const res = await fetch('/api/ssl');
+    const params = new URLSearchParams();
+    if (selectedOrg?.id) params.set('organizationId', selectedOrg.id);
+    const res = await fetch(`/api/ssl?${params.toString()}`);
     const data = await res.json();
-    setCerts(data);
+    setCerts(Array.isArray(data) ? data : []);
     setLoading(false);
   };
+
+  const effectiveOrgFilter = selectedOrg?.id || organizationFilter;
 
   const organizations = useMemo(() => {
     const map = new Map<string, string>();
@@ -81,10 +87,10 @@ export default function SslCertificatesPage() {
         c.hostname.toLowerCase().includes(search.toLowerCase()) ||
         (c.issuer && c.issuer.toLowerCase().includes(search.toLowerCase()));
       const matchesOrg =
-        organizationFilter === 'all' || (c.organizationId ?? 'none') === organizationFilter;
+        effectiveOrgFilter === 'all' || (c.organizationId ?? 'none') === effectiveOrgFilter;
       return matchesSearch && matchesOrg;
     });
-  }, [certs, search, organizationFilter]);
+  }, [certs, search, effectiveOrgFilter]);
 
   const handleCheck = async () => {
     if (!checkHostname.trim()) return;
@@ -182,8 +188,10 @@ export default function SslCertificatesPage() {
           />
         </div>
         <select
-          value={organizationFilter}
+          value={effectiveOrgFilter}
           onChange={(e) => setOrganizationFilter(e.target.value)}
+          disabled={!!selectedOrg}
+          title={selectedOrg ? `Filtered to ${selectedOrg.name} — switch organization in the sidebar` : undefined}
           className="input-field w-auto"
         >
           <option value="all">All Organizations</option>

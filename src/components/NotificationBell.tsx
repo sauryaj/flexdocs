@@ -60,6 +60,29 @@ export function NotificationBell() {
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 
+  // Realtime updates via SSE; falls back to the 60s poll above on error
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('EventSource' in window)) return;
+    const es = new EventSource('/api/notifications/stream');
+    es.onmessage = (e) => {
+      let data: { unreadCount?: number; bye?: boolean };
+      try {
+        data = JSON.parse(e.data);
+      } catch {
+        return;
+      }
+      if (data.bye) {
+        es.close();
+        return;
+      }
+      if (typeof data.unreadCount === 'number') {
+        setUnread(data.unreadCount);
+        fetchNotifications();
+      }
+    };
+    return () => es.close();
+  }, [fetchNotifications]);
+
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (ref.current && !ref.current.contains(e.target as Node)) {
@@ -100,7 +123,7 @@ export function NotificationBell() {
           if (!open) fetchNotifications();
         }}
         aria-label={`Notifications${unread ? ` (${unread} unread)` : ''}`}
-        className="relative p-2 rounded-lg transition-all duration-150 hover:bg-[var(--surface-2)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-muted)]"
+        className="relative p-2 rounded-lg transition-colors duration-150 hover:bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-muted)]"
         style={{ color: 'var(--muted)' }}
       >
         <Bell className="w-[18px] h-[18px]" />
@@ -142,7 +165,7 @@ export function NotificationBell() {
 
           <div className="max-h-96 overflow-y-auto">
             {loading ? (
-              <div className="p-8 text-center text-sm" style={{ color: 'var(--muted)' }}>Loading...</div>
+              <div className="p-8 text-center text-sm" style={{ color: 'var(--muted)' }}>Loading…</div>
             ) : notifications.length === 0 ? (
               <div className="p-8 text-center">
                 <Inbox className="w-8 h-8 mx-auto mb-2 opacity-40" style={{ color: 'var(--muted)' }} />
@@ -195,7 +218,7 @@ export function NotificationBell() {
                         onClick={() => markRead([n.id])}
                         aria-label="Mark as read"
                         title="Mark as read"
-                        className="absolute right-9 top-3 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-[var(--surface-2)]"
+                        className="absolute right-9 top-3 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity p-0.5 rounded hover:bg-[var(--surface-2)]"
                         style={{ color: 'var(--muted)' }}
                       >
                         <Check className="w-3.5 h-3.5" />
@@ -205,7 +228,7 @@ export function NotificationBell() {
                       onClick={() => dismiss(n.id)}
                       aria-label="Dismiss notification"
                       title="Dismiss"
-                      className="absolute right-2.5 top-3 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-[var(--surface-2)]"
+                      className="absolute right-2.5 top-3 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100 transition-opacity p-0.5 rounded hover:bg-[var(--surface-2)]"
                       style={{ color: 'var(--muted)' }}
                     >
                       <X className="w-3.5 h-3.5" />

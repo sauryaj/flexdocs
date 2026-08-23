@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { createNotification } from '@/lib/notifications';
+import { sendEmergencyAccessEmail } from '@/lib/email';
 
 export async function GET() {
   const user = await auth();
@@ -83,6 +84,8 @@ export async function POST(req: Request) {
     severity: 'info',
     link: '/dashboard/settings/emergency-access',
   });
+
+  sendEmergencyAccessEmail(trustedUser.email, user.name || user.email, 'requested', delay).catch(() => {});
 
   return NextResponse.json(access, { status: 201 });
 }

@@ -14,24 +14,25 @@ export function MarkdownToolbar({ onFormat, children }: MarkdownToolbarProps) {
   const divider = <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-1" />;
 
   return (
-    <div className="flex flex-wrap items-center gap-1">
-      <button type="button" onClick={() => onFormat('**', '**', 'bold text')} title="Bold" className={btn}>
+    <div className="flex flex-wrap items-center gap-1" role="toolbar" aria-label="Formatting">
+      <button type="button" onClick={() => onFormat('**', '**', 'bold text')} title="Bold" aria-label="Bold" className={btn}>
         <Bold className="w-4 h-4" />
       </button>
-      <button type="button" onClick={() => onFormat('*', '*', 'italic text')} title="Italic" className={btn}>
+      <button type="button" onClick={() => onFormat('*', '*', 'italic text')} title="Italic" aria-label="Italic" className={btn}>
         <Italic className="w-4 h-4" />
       </button>
       {divider}
-      <button type="button" onClick={() => onFormat('## ', '', 'Heading 2')} title="Heading" className={btn}>
+      <button type="button" onClick={() => onFormat('## ', '', 'Heading 2')} title="Heading" aria-label="Heading" className={btn}>
         <Heading className="w-4 h-4" />
       </button>
-      <button type="button" onClick={() => onFormat('- ', '', 'List item')} title="Bullet List" className={btn}>
+      <button type="button" onClick={() => onFormat('- ', '', 'List item')} title="Bullet List" aria-label="Bullet List" className={btn}>
         <List className="w-4 h-4" />
       </button>
       <button
         type="button"
         onClick={() => onFormat('[', '](https://example.com)', 'link text')}
         title="Link"
+        aria-label="Insert Link"
         className={btn}
       >
         <LinkIcon className="w-4 h-4" />
@@ -40,6 +41,7 @@ export function MarkdownToolbar({ onFormat, children }: MarkdownToolbarProps) {
         type="button"
         onClick={() => onFormat('```bash\n', '\n```', '# bash commands here')}
         title="Code Block"
+        aria-label="Code Block"
         className={btn}
       >
         <Code className="w-4 h-4" />
@@ -50,14 +52,16 @@ export function MarkdownToolbar({ onFormat, children }: MarkdownToolbarProps) {
           onFormat('\n| Feature | Status | Notes |\n| :--- | :--- | :--- |\n| Service A | Active | Primary |\n')
         }
         title="Insert Table"
+        aria-label="Insert Table"
         className={btn}
       >
         <Table className="w-4 h-4" />
       </button>
       <button
         type="button"
-        onClick={() => onFormat('> [!NOTE]\n> ', '', 'Important note details...')}
+        onClick={() => onFormat('> [!NOTE]\n> ', '', 'Important note details…')}
         title="Callout Box"
+        aria-label="Callout Box"
         className={btn}
       >
         <AlertCircle className="w-4 h-4" />

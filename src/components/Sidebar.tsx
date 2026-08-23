@@ -197,7 +197,7 @@ export function Sidebar() {
 
       <aside
         className={cn(
-          'fixed left-0 top-0 h-full z-50 transition-all duration-300 flex flex-col',
+          'fixed left-0 top-0 h-full z-50 transition-[width,transform] duration-300 flex flex-col',
           collapsed ? 'w-[60px]' : 'w-60',
           mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         )}
@@ -254,7 +254,7 @@ export function Sidebar() {
           <div className="px-2 pt-3 pb-1" ref={dropdownRef}>
             <button
               onClick={() => setOrgDropdownOpen(!orgDropdownOpen)}
-              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm font-medium transition-all duration-150 hover:bg-white/5"
+              className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-sm font-medium transition-colors duration-150 hover:bg-white/5"
               style={{ color: 'var(--sidebar-text)' }}
             >
               <div

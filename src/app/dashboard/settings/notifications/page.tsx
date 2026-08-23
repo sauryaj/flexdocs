@@ -89,6 +89,8 @@ export default function NotificationSettingsPage() {
             <button
               key={type}
               onClick={() => toggle(type)}
+              role="switch"
+              aria-checked={!muted}
               className="w-full flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200 dark:border-slate-800 hover:border-blue-400 dark:hover:border-blue-600 transition-colors text-left"
             >
               <div>
@@ -98,13 +100,14 @@ export default function NotificationSettingsPage() {
                 </p>
               </div>
               <span
+                aria-hidden="true"
                 className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
                   muted ? 'bg-slate-300 dark:bg-slate-700' : 'bg-blue-600'
                 }`}
               >
                 <span
                   className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                    muted ? 'translate-x-0.5' : 'translate-x-4.5'
+                    muted ? 'translate-x-0.5' : 'translate-x-4'
                   }`}
                 />
               </span>
@@ -122,7 +125,7 @@ export default function NotificationSettingsPage() {
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
           Save preferences
         </button>
-        {saved && <span className="text-sm text-green-600">Preferences saved</span>}
+                {saved && <span className="text-sm text-green-600" aria-live="polite">Preferences saved</span>}
       </div>
     </div>
   );

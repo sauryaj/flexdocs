@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { createNotification } from '@/lib/notifications';
+import { sendEmergencyAccessEmail } from '@/lib/email';
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await auth();
@@ -36,6 +37,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       severity: 'warning',
       link: '/dashboard/settings/emergency-access',
     });
+
+    sendEmergencyAccessEmail(access.trustedUser.email, user.name || user.email, 'approved', access.delayHours).catch(() => {});
   } else if (status === 'revoked') {
     await prisma.emergencyAccess.update({
       where: { id },
@@ -50,6 +53,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
       severity: 'info',
       link: '/dashboard/settings/emergency-access',
     });
+
+    sendEmergencyAccessEmail(access.trustedUser.email, user.name || user.email, 'revoked').catch(() => {});
   }
 
   return NextResponse.json({ success: true });

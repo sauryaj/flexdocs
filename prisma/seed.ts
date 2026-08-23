@@ -48,7 +48,11 @@ async function main() {
 
   console.log('Created tags:', tags.length);
 
-  await prisma.document.createMany({
+  const skipIfDocExists = await prisma.document.findFirst({
+    where: { userId: user.id, title: 'Server Setup Guide' },
+  });
+  if (!skipIfDocExists) {
+    await prisma.document.createMany({
     data: [
       {
         title: 'Server Setup Guide',
@@ -69,11 +73,17 @@ async function main() {
         userId: user.id,
       },
     ],
+    });
+    console.log('Created sample documents');
+  } else {
+    console.log('Sample documents already exist, skipping');
+  }
+
+  const skipIfPassExists = await prisma.password.findFirst({
+    where: { userId: user.id, name: 'Production Server SSH' },
   });
-
-  console.log('Created sample documents');
-
-  await prisma.password.createMany({
+  if (!skipIfPassExists) {
+    await prisma.password.createMany({
     data: [
       {
         name: 'Production Server SSH',
@@ -100,11 +110,17 @@ async function main() {
         userId: user.id,
       },
     ],
+    });
+    console.log('Created sample passwords');
+  } else {
+    console.log('Sample passwords already exist, skipping');
+  }
+
+  const skipIfDomainExists = await prisma.domain.findFirst({
+    where: { userId: user.id, name: 'company.com' },
   });
-
-  console.log('Created sample passwords');
-
-  await prisma.domain.createMany({
+  if (!skipIfDomainExists) {
+    await prisma.domain.createMany({
     data: [
       {
         name: 'company.com',
@@ -132,9 +148,12 @@ async function main() {
         userId: user.id,
       },
     ],
-  });
+    });
+    console.log('Created sample domains');
+  } else {
+    console.log('Sample domains already exist, skipping');
+  }
 
-  console.log('Created sample domains');
   console.log('Seed completed!');
 }
 
