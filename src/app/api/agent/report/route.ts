@@ -21,6 +21,10 @@ interface AgentReport {
   diskUsage: { mount: string; used: number; total: number; percent: number }[];
   runningServices: string[];
   networkInterfaces: { name: string; ip: string; mac: string }[];
+  agentVersion?: string;
+  pendingUpdates?: number;
+  patchesCurrent?: boolean;
+  software?: { name: string; version?: string }[];
 }
 
 export async function POST(req: Request) {
@@ -63,6 +67,15 @@ export async function POST(req: Request) {
       storageGB: report.storageGB,
       storageType: report.storageType,
       status: 'active',
+      lastHeartbeatAt: new Date(),
+      agentVersion: report.agentVersion || null,
+      softwareInventory: JSON.stringify(report.software || []),
+      patchStatus:
+        report.patchesCurrent !== undefined
+          ? report.patchesCurrent
+            ? 'current'
+            : `${report.pendingUpdates ?? 0} pending`
+          : null,
     };
 
     if (server) {

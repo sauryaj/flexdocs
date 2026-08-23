@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useOrganization } from '@/lib/OrganizationContext';
 
 interface ReportType {
   id: string;
@@ -25,6 +26,7 @@ export default function ReportsPage() {
   const [generating, setGenerating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const { selectedOrg } = useOrganization();
 
   const generateReport = async (report: ReportType) => {
     if (generating === report.id) return;
@@ -59,6 +61,35 @@ export default function ReportsPage() {
     }
   };
 
+  const generateQbr = async () => {
+    if (!selectedOrg?.id) {
+      setError('Select an organization in the sidebar to generate its QBR');
+      return;
+    }
+    if (generating === 'qbr') return;
+    try {
+      setGenerating('qbr');
+      setError(null);
+      setSuccess(null);
+      const res = await fetch(`/api/reports/qbr?organizationId=${selectedOrg.id}`);
+      if (!res.ok) throw new Error('Failed to generate QBR');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `qbr-${selectedOrg.name.toLowerCase().replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setSuccess(`QBR for ${selectedOrg.name} generated successfully`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate QBR');
+    } finally {
+      setGenerating(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -79,6 +110,22 @@ export default function ReportsPage() {
           <p className="text-green-600 dark:text-green-400 text-sm">{success}</p>
         </div>
       )}
+
+      <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 flex items-center justify-between gap-4">
+        <div>
+          <h2 className="font-semibold text-gray-900 dark:text-white">Client QBR (PDF)</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+            Quarterly review for the selected organization: assets, expiries, renewals, health.
+          </p>
+        </div>
+        <button
+          onClick={generateQbr}
+          disabled={generating === 'qbr' || !selectedOrg}
+          className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+        >
+          {generating === 'qbr' ? 'Generating…' : 'Generate QBR'}
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {REPORT_TYPES.map((report) => (

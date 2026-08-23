@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { auditLog } from '@/lib/audit';
+import { getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
 
 export async function GET(req: Request) {
   const user = await auth();
@@ -12,11 +13,17 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const organizationId = url.searchParams.get('organizationId') || undefined;
 
+  const scope = await getOrgScope(user.id, user.role);
+  const orgWhere = scopeOrgWhere(scope, organizationId);
+
   const certificates = await prisma.sslCertificate.findMany({
-    where: {
-      userId: user.id,
-      ...(organizationId ? { organizationId } : {}),
-    },
+    where:
+      scope.mode === 'limited'
+        ? orgWhere
+        : {
+            userId: user.id,
+            ...(organizationId ? { organizationId } : {}),
+          },
     include: {
       _count: { select: { domains: true } },
     },

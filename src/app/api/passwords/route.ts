@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { encrypt } from '@/lib/encryption';
 import { auditLog } from '@/lib/audit';
+import { getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
 
 export async function GET(req: Request) {
   const user = await auth();
@@ -13,17 +14,22 @@ export async function GET(req: Request) {
   const page = Math.max(0, parseInt(url.searchParams.get('page') || '0'));
   const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '50')));
 
+  const scope = await getOrgScope(user.id, user.role);
+  const orgWhere = scopeOrgWhere(scope, organizationId);
+  const where =
+    scope.mode === 'limited'
+      ? orgWhere
+      : { userId: user.id, ...(organizationId ? { organizationId } : {}) };
+
   const passwords = await prisma.password.findMany({
-    where: { userId: user.id, ...(organizationId ? { organizationId } : {}) },
+    where,
     include: { tags: true },
     orderBy: { updatedAt: 'desc' },
     skip: page * limit,
     take: limit,
   });
 
-  const total = await prisma.password.count({
-    where: { userId: user.id, ...(organizationId ? { organizationId } : {}) },
-  });
+  const total = await prisma.password.count({ where });
 
   // Metadata only — never ship decrypted secrets in list responses.
   // Secrets are fetched on-demand via GET /api/passwords/[id]/reveal.

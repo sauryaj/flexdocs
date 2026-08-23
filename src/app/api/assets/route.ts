@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { auditLog } from '@/lib/audit';
+import { getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
 
 export async function GET(req: Request) {
   const user = await auth();
@@ -12,17 +13,22 @@ export async function GET(req: Request) {
   const page = Math.max(0, parseInt(url.searchParams.get('page') || '0'));
   const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '50')));
 
+  const scope = await getOrgScope(user.id, user.role);
+  const orgWhere = scopeOrgWhere(scope, organizationId);
+  const where =
+    scope.mode === 'limited'
+      ? orgWhere
+      : { userId: user.id, ...(organizationId ? { organizationId } : {}) };
+
   const [assets, total] = await Promise.all([
     prisma.flexibleAsset.findMany({
-      where: { userId: user.id, ...(organizationId ? { organizationId } : {}) },
+      where,
       include: { tags: true },
       orderBy: { updatedAt: 'desc' },
       skip: page * limit,
       take: limit,
     }),
-    prisma.flexibleAsset.count({
-      where: { userId: user.id, ...(organizationId ? { organizationId } : {}) },
-    }),
+    prisma.flexibleAsset.count({ where }),
   ]);
 
   return NextResponse.json({ items: assets, total, page, limit, hasMore: (page + 1) * limit < total });

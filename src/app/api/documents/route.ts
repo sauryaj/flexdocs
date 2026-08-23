@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
 
 export async function GET(req: Request) {
   const user = await auth();
@@ -11,17 +12,22 @@ export async function GET(req: Request) {
   const page = Math.max(0, parseInt(url.searchParams.get('page') || '0'));
   const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get('limit') || '50')));
 
+  const scope = await getOrgScope(user.id, user.role);
+  const orgWhere = scopeOrgWhere(scope, organizationId);
+  const where =
+    scope.mode === 'limited'
+      ? { ...orgWhere, isArchived: false, visibility: 'org' }
+      : { userId: user.id, ...(organizationId ? { organizationId } : {}) };
+
   const [documents, total] = await Promise.all([
     prisma.document.findMany({
-      where: { userId: user.id, ...(organizationId ? { organizationId } : {}) },
+      where,
       include: { tags: true, folder: true },
       orderBy: { updatedAt: 'desc' },
       skip: page * limit,
       take: limit,
     }),
-    prisma.document.count({
-      where: { userId: user.id, ...(organizationId ? { organizationId } : {}) },
-    }),
+    prisma.document.count({ where }),
   ]);
 
   return NextResponse.json({ items: documents, total, page, limit, hasMore: (page + 1) * limit < total });

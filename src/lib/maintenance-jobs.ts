@@ -15,6 +15,8 @@ export interface MaintenanceSummary {
   rotationReminders: number;
   stalenessDigests: number;
   docReviewsDue: number;
+  renewalsDue: number;
+  agentsOffline: number;
 }
 
 async function wasNotifiedRecently(userId: string, title: string, link: string): Promise<boolean> {
@@ -181,6 +183,66 @@ async function runDocReviewSweep(): Promise<number> {
   return notified;
 }
 
+/**
+ * Licenses & contracts renewing within 30 days -> notification (deduped).
+ */
+async function runRenewalsSweep(): Promise<number> {
+  const horizon = new Date(Date.now() + 30 * 86400000);
+  const items = await prisma.renewalItem.findMany({
+    where: { renewsAt: { lte: horizon, gte: new Date() } },
+    select: { id: true, name: true, renewsAt: true, userId: true },
+  });
+
+  let alerted = 0;
+  for (const r of items) {
+    const title = 'Renewal coming up';
+    const link = '/dashboard/renewals';
+    if (await wasNotifiedRecently(r.userId, title, `${link}?id=${r.id}`)) continue;
+
+    const days = Math.ceil((r.renewsAt.getTime() - Date.now()) / 86400000);
+    await createNotification({
+      userId: r.userId,
+      type: 'system',
+      title,
+      message: `"${r.name}" renews in ${days} day${days === 1 ? '' : 's'} (${r.renewsAt.toISOString().slice(0, 10)}).`,
+      severity: days <= 7 ? 'warning' : 'info',
+      link,
+    });
+    alerted++;
+  }
+  return alerted;
+}
+
+/**
+ * Servers whose agent hasn't reported within 24h -> offline alert (deduped).
+ */
+async function runAgentHeartbeatCheck(): Promise<number> {
+  const cutoff = new Date(Date.now() - 24 * 3600000);
+  const staleAgents = await prisma.server.findMany({
+    where: { lastHeartbeatAt: { not: null, lt: cutoff } },
+    select: { id: true, name: true, userId: true },
+    take: 200,
+  });
+
+  let alerted = 0;
+  for (const s of staleAgents) {
+    const title = 'Agent offline';
+    const link = `/dashboard/servers/${s.id}`;
+    if (await wasNotifiedRecently(s.userId, title, link)) continue;
+
+    await createNotification({
+      userId: s.userId,
+      type: 'system',
+      title,
+      message: `The agent on "${s.name}" hasn't reported in over 24 hours.`,
+      severity: 'warning',
+      link,
+    });
+    alerted++;
+  }
+  return alerted;
+}
+
 export async function runDailyMaintenance(): Promise<MaintenanceSummary> {
   logger.info('Daily maintenance starting');
   const summary: MaintenanceSummary = {
@@ -189,6 +251,8 @@ export async function runDailyMaintenance(): Promise<MaintenanceSummary> {
     rotationReminders: 0,
     stalenessDigests: 0,
     docReviewsDue: 0,
+    renewalsDue: 0,
+    agentsOffline: 0,
   };
 
   const jobs: [string, () => Promise<number>, keyof MaintenanceSummary][] = [
@@ -197,6 +261,8 @@ export async function runDailyMaintenance(): Promise<MaintenanceSummary> {
     ['rotation reminders', runRotationReminders, 'rotationReminders'],
     ['staleness digest', runStalenessDigest, 'stalenessDigests'],
     ['document review sweep', runDocReviewSweep, 'docReviewsDue'],
+    ['renewals sweep', runRenewalsSweep, 'renewalsDue'],
+    ['agent heartbeat check', runAgentHeartbeatCheck, 'agentsOffline'],
   ];
 
   for (const [name, job, key] of jobs) {

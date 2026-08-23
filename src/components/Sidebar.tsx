@@ -27,9 +27,10 @@ import {
   CalendarClock,
   Zap,
   HardDrive,
+  BookOpen,
   type LucideIcon,
 } from 'lucide-react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/lib/ThemeContext';
 import { useOrganization, Organization } from '@/lib/OrganizationContext';
@@ -61,6 +62,7 @@ const navigation: NavGroup[] = [
       { name: 'Passwords', href: '/dashboard/passwords', icon: Key },
       { name: 'Domains & SSL', href: '/dashboard/domains', icon: Globe },
       { name: 'SSL Certificates', href: '/dashboard/ssl', icon: Lock, sub: true },
+      { name: 'Licenses & Contracts', href: '/dashboard/renewals', icon: CalendarClock },
       { name: 'Assets', href: '/dashboard/assets', icon: Box },
       { name: 'Checklists', href: '/dashboard/checklists', icon: CheckSquare },
       { name: 'Tags', href: '/dashboard/tags', icon: Tag },
@@ -103,7 +105,17 @@ export function Sidebar() {
   const [orgDropdownOpen, setOrgDropdownOpen] = useState(false);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loadingOrgs, setLoadingOrgs] = useState(false);
+  const [limitedScope, setLimitedScope] = useState<{ orgIds: string[] } | null>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch('/api/me/org-scope')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.mode === 'limited') setLimitedScope({ orgIds: data.orgs.map((o: { id: string }) => o.id) });
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     setLoadingOrgs(true);
@@ -131,8 +143,38 @@ export function Sidebar() {
     return pathname === cleanHref || (cleanHref !== '/dashboard' && pathname.startsWith(cleanHref));
   };
 
-  const activeNavigation: NavGroup[] = selectedOrg
-    ? [
+  const activeNavigation: NavGroup[] = useMemo(() => {
+    if (limitedScope) {
+      const orgParam = selectedOrg && limitedScope.orgIds.includes(selectedOrg.id) ? `?organizationId=${selectedOrg.id}` : '';
+      return [
+        {
+          label: 'Overview',
+          items: [
+            { name: 'Client Portal', href: '/dashboard/portal', icon: Building },
+          ],
+        },
+        {
+          label: 'Core Assets',
+          items: [
+            { name: 'Knowledge Base', href: '/dashboard/portal/kb', icon: BookOpen },
+            { name: 'Passwords', href: `/dashboard/passwords${orgParam}`, icon: Key },
+            { name: 'Flexible Assets', href: `/dashboard/assets${orgParam}`, icon: Box },
+            { name: 'Domains & SSL', href: `/dashboard/domains${orgParam}`, icon: Globe },
+            { name: 'Configurations / Servers', href: `/dashboard/configurations${orgParam}`, icon: Server },
+            { name: 'Network', href: `/dashboard/network${orgParam}`, icon: Network },
+          ],
+        },
+        {
+          label: 'Global Admin',
+          items: [
+            { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart },
+          ],
+        },
+      ];
+    }
+
+    if (selectedOrg) {
+      return [
         {
           label: 'Overview',
           items: [
@@ -159,8 +201,8 @@ export function Sidebar() {
           items: [
             { name: 'Cloud', href: '/dashboard/cloud', icon: Cloud },
             { name: 'Maintenance', href: '/dashboard/maintenance', icon: CalendarClock },
-      { name: 'Status Pages', href: '/dashboard/status', icon: Activity },
-      { name: 'Relationship Map', href: '/dashboard/relationships', icon: Network },
+            { name: 'Status Pages', href: '/dashboard/status', icon: Activity },
+            { name: 'Relationship Map', href: '/dashboard/relationships', icon: Network },
             { name: 'Automation', href: '/dashboard/automation', icon: Zap },
             { name: 'Schedules', href: '/dashboard/automation/schedules', icon: CalendarClock, sub: true },
             { name: 'Changes', href: '/dashboard/automation/changes', icon: Activity, sub: true },
@@ -175,8 +217,10 @@ export function Sidebar() {
             { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart },
           ],
         },
-      ]
-    : navigation;
+      ];
+    }
+    return navigation;
+  }, [selectedOrg, limitedScope]);
 
   return (
     <>

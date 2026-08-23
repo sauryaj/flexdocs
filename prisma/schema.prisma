@@ -58,6 +58,9 @@ model User {
   statusPages     StatusPage[]
   scheduledScans  ScheduledScan[]
   costEntries     CostEntry[]
+  organizationMembers OrganizationMember[]
+  renewalItems    RenewalItem[] @relation("RenewalItems")
+  integrations    Integration[]
   costBudgets     CostBudget[]
   dockerHosts     DockerHost[]
   k8sClusters     K8sCluster[]
@@ -96,6 +99,7 @@ model Document {
   isArchived  Boolean  @default(false)
   reviewDate     DateTime?
   lastReviewedAt DateTime?
+  visibility     String   @default("private") // private | org (client-facing KB)
   folderId    String?
   folder      Folder?  @relation(fields: [folderId], references: [id])
   userId         String
@@ -379,6 +383,8 @@ model Organization {
   logo        String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  members     OrganizationMember[]
+  renewalItems RenewalItem[]
 
   documents     Document[]
   passwords     Password[]
@@ -398,6 +404,64 @@ model Organization {
   dockerHosts   DockerHost[]
   k8sClusters   K8sCluster[]
   infraChanges  InfraChange[]
+}
+
+model OrganizationMember {
+  id             String       @id @default(cuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           String       @default("client") // "client" | "org_admin"
+  createdAt      DateTime     @default(now())
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model RenewalItem {
+  id             String       @id @default(cuid())
+  name           String
+  vendor         String?
+  type           String       @default("license") // license | contract | saas | warranty
+  seats          Int?
+  costPerSeat    Float?
+  totalCost      Float?
+  renewsAt       DateTime
+  autoRenew      Boolean      @default(true)
+  notes          String?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  userId         String
+  user           User         @relation("RenewalItems", fields: [userId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId, renewsAt])
+  @@index([organizationId])
+}
+
+model Integration {
+  id              String   @id @default(cuid())
+  type            String // m365 | google
+  name            String   @default("")
+  tenantId        String? // m365
+  clientId        String?
+  clientSecret    String? // encrypted (m365)
+  serviceAccountEmail String? // google
+  privateKey      String? // encrypted (google)
+  adminEmail      String? // google impersonation subject
+  lastSyncAt      DateTime?
+  lastStatus      String?  // ok | error
+  lastError       String?
+  usersSnapshot   String?  // JSON array of synced users
+  organizationId  String?
+  userId          String
+  user            User     @relation(fields: [userId], references: [id])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([userId, type])
 }
 
 model Relationship {
@@ -670,6 +734,10 @@ model Server {
   purchaseDate   DateTime?
   warrantyExpiry DateTime?
   notes          String?
+  lastHeartbeatAt DateTime?
+  agentVersion    String?
+  softwareInventory String  @default("[]")
+  patchStatus     String?
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id])
   userId         String

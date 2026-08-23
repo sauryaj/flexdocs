@@ -34,7 +34,7 @@ export async function PUT(
   }
 
   const { id } = await params;
-  const { title, content, category, folderId, isPinned, isArchived, tags, reviewDate, reviewAcknowledged } = await req.json();
+  const { title, content, category, folderId, isPinned, isArchived, tags, reviewDate, reviewAcknowledged, visibility } = await req.json();
 
   const document = await prisma.document.findFirst({
     where: { id, userId: user.id },
@@ -57,6 +57,9 @@ export async function PUT(
         ? { reviewDate: reviewDate ? new Date(reviewDate) : null }
         : {}),
       ...(reviewAcknowledged ? { lastReviewedAt: new Date() } : {}),
+      ...(visibility !== undefined
+        ? { visibility: visibility === 'org' && document.organizationId ? 'org' : 'private' }
+        : {}),
     },
   });
 

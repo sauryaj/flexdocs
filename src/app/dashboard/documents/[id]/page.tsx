@@ -55,6 +55,8 @@ interface Document {
   category: string;
   isPinned: boolean;
   isArchived: boolean;
+  visibility?: string;
+  organizationId?: string | null;
   createdAt: string;
   updatedAt: string;
   tags: { id: string; name: string; color: string }[];
@@ -115,6 +117,7 @@ export default function DocumentDetailPage() {
   const [tags, setTags] = useState('');
   const [reviewDate, setReviewDate] = useState('');
   const [reviewDue, setReviewDue] = useState(false);
+  const [visibility, setVisibility] = useState('private');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -181,6 +184,7 @@ export default function DocumentDetailPage() {
           setReviewDate(new Date(data.reviewDate).toISOString().slice(0, 10));
           setReviewDue(new Date(data.reviewDate).getTime() <= Date.now());
         }
+        setVisibility(data.visibility || 'private');
         setLoading(false);
       });
   }, [params.id]);
@@ -279,6 +283,7 @@ export default function DocumentDetailPage() {
         isPinned: doc?.isPinned,
         isArchived: doc?.isArchived,
         reviewDate: reviewDate || null,
+        visibility,
       }),
     });
     setSaving(false);
@@ -522,8 +527,7 @@ export default function DocumentDetailPage() {
               <input type="text" value={tags} onChange={(e) => setTags(e.target.value)} className="input-field" placeholder="network, windows" />
             </div>
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Review due</label>
-              <div className="flex items-center gap-2">
+              <label className="block text-sm font-medium text-slate-700 mb-1">Review due</label>              <div className="flex items-center gap-2">
                 <input
                   type="date"
                   value={reviewDate}
@@ -552,6 +556,20 @@ export default function DocumentDetailPage() {
                 <p className="text-xs text-red-600 mt-1">This document is past its review date.</p>
               )}
             </div>
+            {doc?.organizationId && (
+              <div>
+                <label htmlFor="doc-visibility" className="block text-sm font-medium text-slate-700 mb-1">Visibility</label>
+                <select
+                  id="doc-visibility"
+                  value={visibility}
+                  onChange={(e) => setVisibility(e.target.value)}
+                  className="input-field"
+                >
+                  <option value="private">Private (internal only)</option>
+                  <option value="org">Shared to client portal</option>
+                </select>
+              </div>
+            )}
           </div>
           <div>
             <div className="flex items-center justify-between mb-1">

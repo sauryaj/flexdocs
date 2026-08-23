@@ -14,6 +14,8 @@ import {
   BookOpen,
   Palette,
   Bell,
+  Cloud,
+  UsersRound,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -21,6 +23,8 @@ const settingsNav = [
   { name: 'Profile Settings', href: '/dashboard/settings', icon: User },
   { name: 'Notifications', href: '/dashboard/settings/notifications', icon: Bell },
   { name: '2FA / MFA', href: '/dashboard/settings/mfa', icon: Shield },
+  { name: 'Integrations', href: '/dashboard/settings/integrations', icon: Cloud },
+  { name: 'Org Members', href: '/dashboard/settings/members', icon: UsersRound },
   { name: 'Sessions', href: '/dashboard/settings/sessions', icon: Activity },
   { name: 'API Keys', href: '/dashboard/settings/api-keys', icon: Key },
   { name: 'Webhooks', href: '/dashboard/settings/webhooks', icon: Zap },
