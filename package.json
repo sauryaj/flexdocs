@@ -9,6 +9,7 @@
     "lint": "npx eslint src/",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:smoke": "bash scripts/smoke-test.sh",
     "db:push": "npx prisma db push",
     "db:seed": "npx prisma db seed",
     "db:studio": "npx prisma studio"
