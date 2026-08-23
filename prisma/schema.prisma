@@ -94,6 +94,8 @@ model Document {
   category    String   @default("general")
   isPinned    Boolean  @default(false)
   isArchived  Boolean  @default(false)
+  reviewDate     DateTime?
+  lastReviewedAt DateTime?
   folderId    String?
   folder      Folder?  @relation(fields: [folderId], references: [id])
   userId         String

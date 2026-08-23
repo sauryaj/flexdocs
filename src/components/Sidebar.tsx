@@ -159,7 +159,8 @@ export function Sidebar() {
           items: [
             { name: 'Cloud', href: '/dashboard/cloud', icon: Cloud },
             { name: 'Maintenance', href: '/dashboard/maintenance', icon: CalendarClock },
-            { name: 'Status Pages', href: '/dashboard/status', icon: Activity },
+      { name: 'Status Pages', href: '/dashboard/status', icon: Activity },
+      { name: 'Relationship Map', href: '/dashboard/relationships', icon: Network },
             { name: 'Automation', href: '/dashboard/automation', icon: Zap },
             { name: 'Schedules', href: '/dashboard/automation/schedules', icon: CalendarClock, sub: true },
             { name: 'Changes', href: '/dashboard/automation/changes', icon: Activity, sub: true },

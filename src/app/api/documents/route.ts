@@ -31,13 +31,14 @@ export async function POST(req: Request) {
   const user = await auth();
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { title, content, category, folderId, organizationId, tags } = await req.json();
+  const { title, content, category, folderId, organizationId, tags, reviewDate } = await req.json();
 
   const document = await prisma.document.create({
     data: {
       title, content: content || '',
       category: category || 'general',
       folderId: folderId || null,
+      reviewDate: reviewDate ? new Date(reviewDate) : null,
       organizationId: organizationId || null, userId: user.id,
       tags: tags?.length
         ? {

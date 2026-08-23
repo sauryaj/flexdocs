@@ -78,6 +78,8 @@ export default function PasswordsPage() {
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [visiblePasswords, setVisiblePasswords] = useState<Set<string>>(new Set());
   const [revealed, setRevealed] = useState<Record<string, string>>({});
   const [copiedId, setCopiedId] = useState<string | null>(null);
@@ -100,6 +102,39 @@ export default function PasswordsPage() {
     const data = await res.json();
     setPasswords(data.items || data);
     setLoading(false);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const runBulk = async (action: 'favorite' | 'unfavorite' | 'tag', tag?: string) => {
+    await fetch('/api/passwords/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ids: Array.from(selectedIds), tag }),
+    });
+    setSelectedIds(new Set());
+    fetchPasswords();
+    loadHealth();
+  };
+
+  const bulkDelete = async (confirmed: boolean) => {
+    setBulkConfirmOpen(false);
+    if (!confirmed) return;
+    await fetch('/api/passwords/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', ids: Array.from(selectedIds) }),
+    });
+    setSelectedIds(new Set());
+    fetchPasswords();
+    loadHealth();
   };
 
   const loadHealth = useCallback(async () => {
@@ -302,6 +337,48 @@ export default function PasswordsPage() {
             />
           ) : (
             <div className="space-y-6">
+              {selectedIds.size > 0 && (
+                <div
+                  className="sticky top-16 z-20 rounded-xl px-4 py-3 flex items-center justify-between gap-3 shadow-lg"
+                  style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--accent)' }}
+                >
+                  <span className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>
+                    {selectedIds.size} selected
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        const tag = window.prompt('Tag to add to selected passwords:');
+                        if (tag && tag.trim()) runBulk('tag', tag.trim());
+                      }}
+                      className="text-xs px-3 py-1.5 rounded-lg border transition-colors hover:bg-[var(--surface-2)]"
+                      style={{ color: 'var(--foreground)', borderColor: 'var(--card-border)' }}
+                    >
+                      Add Tag
+                    </button>
+                    <button
+                      onClick={() => runBulk('favorite')}
+                      className="text-xs px-3 py-1.5 rounded-lg border transition-colors hover:bg-[var(--surface-2)]"
+                      style={{ color: 'var(--foreground)', borderColor: 'var(--card-border)' }}
+                    >
+                      Favorite
+                    </button>
+                    <button
+                      onClick={() => setBulkConfirmOpen(true)}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
+                    >
+                      Delete
+                    </button>
+                    <button
+                      onClick={() => setSelectedIds(new Set())}
+                      className="text-xs px-2 py-1.5"
+                      style={{ color: 'var(--muted)' }}
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+              )}
               {favorites.length > 0 && (
                 <div>
                   <h3 className="text-sm font-medium text-slate-500 mb-3 flex items-center gap-2">
@@ -319,6 +396,8 @@ export default function PasswordsPage() {
                         onCopy={(id) => handleCopy(revealed[pass.id], id)}
                         onDelete={setDeleteId}
                         copiedId={copiedId}
+                        selected={selectedIds.has(pass.id)}
+                        onToggleSelect={toggleSelect}
                       />
                     ))}
                   </div>
@@ -342,6 +421,8 @@ export default function PasswordsPage() {
                         onCopy={(id) => handleCopy(revealed[pass.id], id)}
                         onDelete={setDeleteId}
                         copiedId={copiedId}
+                        selected={selectedIds.has(pass.id)}
+                        onToggleSelect={toggleSelect}
                       />
                     ))}
                   </div>
@@ -493,6 +574,14 @@ export default function PasswordsPage() {
         title="Delete Password"
         message="Are you sure you want to delete this password? This action cannot be undone."
       />
+
+      <ConfirmDialog
+        isOpen={bulkConfirmOpen}
+        onClose={() => setBulkConfirmOpen(false)}
+        onConfirm={() => bulkDelete(true)}
+        title="Delete Passwords"
+        message={`Are you sure you want to delete ${selectedIds.size} passwords? This action cannot be undone.`}
+      />
     </div>
   );
 }
@@ -506,6 +595,8 @@ function PasswordRow({
   onCopy,
   onDelete,
   copiedId,
+  selected,
+  onToggleSelect,
 }: {
   pass: PasswordEntry;
   visible: boolean;
@@ -515,9 +606,18 @@ function PasswordRow({
   onCopy: (id: string) => void;
   onDelete: (id: string) => void;
   copiedId: string | null;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
 }) {
   return (
     <div className="flex items-center gap-4 p-4 hover:bg-[var(--surface-1)] transition-colors">
+      <input
+        type="checkbox"
+        checked={selected}
+        onChange={() => onToggleSelect(pass.id)}
+        aria-label={`Select ${pass.name}`}
+        className="w-4 h-4 cursor-pointer accent-current shrink-0"
+      />
       <button
         onClick={() => onToggleFavorite()}
         className={cn(

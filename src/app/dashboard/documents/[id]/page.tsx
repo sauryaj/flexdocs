@@ -113,6 +113,8 @@ export default function DocumentDetailPage() {
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('general');
   const [tags, setTags] = useState('');
+  const [reviewDate, setReviewDate] = useState('');
+  const [reviewDue, setReviewDue] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
@@ -175,6 +177,10 @@ export default function DocumentDetailPage() {
         setContent(data.content);
         setCategory(data.category);
         setTags(data.tags.map((t: any) => t.name).join(', '));
+        if (data.reviewDate) {
+          setReviewDate(new Date(data.reviewDate).toISOString().slice(0, 10));
+          setReviewDue(new Date(data.reviewDate).getTime() <= Date.now());
+        }
         setLoading(false);
       });
   }, [params.id]);
@@ -272,6 +278,7 @@ export default function DocumentDetailPage() {
         tags: tagList,
         isPinned: doc?.isPinned,
         isArchived: doc?.isArchived,
+        reviewDate: reviewDate || null,
       }),
     });
     setSaving(false);
@@ -513,6 +520,37 @@ export default function DocumentDetailPage() {
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Tags (comma separated)</label>
               <input type="text" value={tags} onChange={(e) => setTags(e.target.value)} className="input-field" placeholder="network, windows" />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Review due</label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="date"
+                  value={reviewDate}
+                  onChange={(e) => setReviewDate(e.target.value)}
+                  aria-label="Next review date"
+                  className="input-field"
+                />
+                {reviewDate && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await fetch(`/api/documents/${params.id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ reviewAcknowledged: true, reviewDate }),
+                      });
+                      setReviewDue(false);
+                    }}
+                    className="text-xs px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors whitespace-nowrap"
+                  >
+                    Mark reviewed
+                  </button>
+                )}
+              </div>
+              {reviewDue && (
+                <p className="text-xs text-red-600 mt-1">This document is past its review date.</p>
+              )}
             </div>
           </div>
           <div>

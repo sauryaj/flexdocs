@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Shield,
   Database,
+  PartyPopper,
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { formatDate, getDaysUntilExpiry } from '@/lib/utils';
@@ -30,6 +31,15 @@ export default function DashboardPage() {
   const { selectedOrg } = useOrganization();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showOnboardBanner, setShowOnboardBanner] = useState(false);
+
+  useEffect(() => {
+    try {
+      setShowOnboardBanner(localStorage.getItem('flexdocs_onboarded') !== '1');
+    } catch {
+      // localStorage unavailable (private mode) — default to showing the banner
+    }
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -128,6 +138,37 @@ export default function DashboardPage() {
           {selectedOrg ? `${selectedOrg.name} — overview` : 'All organizations — overview'}
         </p>
       </div>
+
+      {/* Onboarding banner */}
+      {showOnboardBanner && (
+        <div
+          className="card px-5 py-4 flex items-center justify-between gap-3"
+          style={{ border: '1px solid color-mix(in srgb, var(--accent) 35%, transparent)' }}
+        >
+          <div className="flex items-center gap-3 min-w-0">
+            <PartyPopper className="w-5 h-5 shrink-0" style={{ color: 'var(--accent)' }} />
+            <p className="text-sm font-medium truncate" style={{ color: 'var(--foreground)' }}>
+              New here? Complete the 5-step setup to get the most out of FlexDocs.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Link href="/dashboard/onboarding" className="btn-primary text-xs inline-flex items-center gap-1.5">
+              Start setup <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+            <button
+              onClick={() => {
+                localStorage.setItem('flexdocs_onboarded', '1');
+                setShowOnboardBanner(false);
+              }}
+              aria-label="Dismiss setup banner"
+              className="text-xs px-2 py-1.5 hover:bg-[var(--surface-2)] rounded-lg transition-colors"
+              style={{ color: 'var(--muted)' }}
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

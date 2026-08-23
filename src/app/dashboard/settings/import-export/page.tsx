@@ -12,7 +12,7 @@ interface ImportResult {
 }
 
 export default function ImportExportPage() {
-  const [activeTab, setActiveTab] = useState<'import' | 'export'>('import');
+  const [activeTab, setActiveTab] = useState<'import' | 'export' | 'vault'>('import');
   const [importType, setImportType] = useState<ImportType>('documents');
   const [file, setFile] = useState<File | null>(null);
   const [importing, setImporting] = useState(false);
@@ -20,6 +20,46 @@ export default function ImportExportPage() {
   const [result, setResult] = useState<ImportResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // Password manager vault import
+  const [vaultFormat, setVaultFormat] = useState<'auto' | 'bitwarden' | '1password' | 'chrome'>('auto');
+  const [vaultFile, setVaultFile] = useState<File | null>(null);
+  const [vaultImporting, setVaultImporting] = useState(false);
+  const [vaultResult, setVaultResult] = useState<{
+    detectedFormat: string;
+    total: number;
+    created: number;
+    skipped: number;
+    errors: number;
+    errorDetails?: { index: number; error: string }[];
+  } | null>(null);
+  const vaultFileRef = useRef<HTMLInputElement>(null);
+
+  const handleVaultImport = async () => {
+    if (!vaultFile) {
+      setError('Please select a CSV export from your password manager');
+      return;
+    }
+    if (vaultImporting) return;
+    try {
+      setVaultImporting(true);
+      setError(null);
+      setVaultResult(null);
+      const text = await vaultFile.text();
+      const res = await fetch('/api/passwords/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ csv: text, format: vaultFormat }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Import failed');
+      setVaultResult(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Vault import failed');
+    } finally {
+      setVaultImporting(false);
+    }
+  };
 
   const handleImport = async () => {
     if (!file) {
@@ -110,6 +150,16 @@ export default function ImportExportPage() {
           Import
         </button>
         <button
+          onClick={() => setActiveTab('vault')}
+          className={`px-4 py-2 text-sm rounded-lg transition-colors ${
+            activeTab === 'vault'
+              ? 'bg-blue-600 text-white'
+              : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
+          }`}
+        >
+          Password Vault
+        </button>
+        <button
           onClick={() => setActiveTab('export')}
           className={`px-4 py-2 text-sm rounded-lg transition-colors ${
             activeTab === 'export'
@@ -143,7 +193,66 @@ export default function ImportExportPage() {
         </div>
       )}
 
-      {activeTab === 'import' ? (
+      {activeTab === 'vault' ? (
+        <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Import from Password Manager</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Export a CSV from Bitwarden, 1Password, or Chrome — the format is detected automatically.
+            Duplicates (same name, username & URL) are skipped; secrets are encrypted at rest.
+          </p>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Source</label>
+              <select
+                value={vaultFormat}
+                onChange={(e) => setVaultFormat(e.target.value as typeof vaultFormat)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="auto">Auto-detect</option>
+                <option value="bitwarden">Bitwarden</option>
+                <option value="1password">1Password</option>
+                <option value="chrome">Chrome / Edge</option>
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">CSV Export</label>
+              <input
+                ref={vaultFileRef}
+                type="file"
+                accept=".csv,.txt"
+                onChange={(e) => setVaultFile(e.target.files?.[0] || null)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
+
+            {vaultResult && (
+              <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4">
+                <p className="text-sm text-green-600 dark:text-green-400">
+                  Imported {vaultResult.created} of {vaultResult.total} entries
+                  ({vaultResult.skipped} duplicates/empty, {vaultResult.errors} errors)
+                  — detected format: <strong>{vaultResult.detectedFormat}</strong>
+                </p>
+                {vaultResult.errorDetails && vaultResult.errorDetails.length > 0 && (
+                  <div className="mt-2 text-xs text-red-600 dark:text-red-400">
+                    {vaultResult.errorDetails.map((e, i) => (
+                      <div key={i}>• Row {e.index}: {e.error}</div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <button
+              onClick={handleVaultImport}
+              disabled={!vaultFile || vaultImporting}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {vaultImporting ? 'Importing…' : 'Import Vault'}
+            </button>
+          </div>
+        </div>
+      ) : activeTab === 'import' ? (
         <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Import Data</h2>
           <div className="space-y-4">

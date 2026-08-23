@@ -14,6 +14,7 @@ export interface MaintenanceSummary {
   sslAlerts: number;
   rotationReminders: number;
   stalenessDigests: number;
+  docReviewsDue: number;
 }
 
 async function wasNotifiedRecently(userId: string, title: string, link: string): Promise<boolean> {
@@ -148,6 +149,38 @@ async function runStalenessDigest(): Promise<number> {
   return digests;
 }
 
+/**
+ * Documents past their review date -> one notification per document (deduped).
+ */
+async function runDocReviewSweep(): Promise<number> {
+  const due = await prisma.document.findMany({
+    where: {
+      reviewDate: { lte: new Date() },
+      isArchived: false,
+    },
+    select: { id: true, title: true, userId: true },
+    take: 100,
+  });
+
+  let notified = 0;
+  for (const doc of due) {
+    const title = 'Document review overdue';
+    const link = `/dashboard/documents/${doc.id}`;
+    if (await wasNotifiedRecently(doc.userId, title, link)) continue;
+
+    await createNotification({
+      userId: doc.userId,
+      type: 'system',
+      title,
+      message: `"${doc.title}" is past its review date. Verify it's still accurate.`,
+      severity: 'warning',
+      link,
+    });
+    notified++;
+  }
+  return notified;
+}
+
 export async function runDailyMaintenance(): Promise<MaintenanceSummary> {
   logger.info('Daily maintenance starting');
   const summary: MaintenanceSummary = {
@@ -155,6 +188,7 @@ export async function runDailyMaintenance(): Promise<MaintenanceSummary> {
     sslAlerts: 0,
     rotationReminders: 0,
     stalenessDigests: 0,
+    docReviewsDue: 0,
   };
 
   const jobs: [string, () => Promise<number>, keyof MaintenanceSummary][] = [
@@ -162,6 +196,7 @@ export async function runDailyMaintenance(): Promise<MaintenanceSummary> {
     ['ssl cert sweep', runSslCertSweep, 'sslAlerts'],
     ['rotation reminders', runRotationReminders, 'rotationReminders'],
     ['staleness digest', runStalenessDigest, 'stalenessDigests'],
+    ['document review sweep', runDocReviewSweep, 'docReviewsDue'],
   ];
 
   for (const [name, job, key] of jobs) {

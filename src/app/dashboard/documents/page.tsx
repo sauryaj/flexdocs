@@ -24,6 +24,7 @@ interface Document {
   category: string;
   isPinned: boolean;
   isArchived: boolean;
+  reviewDate: string | null;
   createdAt: string;
   updatedAt: string;
   tags: { id: string; name: string; color: string }[];
@@ -57,6 +58,8 @@ export default function DocumentsPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
   const [folderRefresh, setFolderRefresh] = useState(0);
   const [allFolders, setAllFolders] = useState<FolderInfo[]>([]);
@@ -76,6 +79,37 @@ export default function DocumentsPage() {
     const data = await res.json();
     setDocuments(data.items || data);
     setLoading(false);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const runBulk = async (action: 'archive' | 'unarchive' | 'tag', tag?: string) => {
+    await fetch('/api/documents/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action, ids: Array.from(selectedIds), tag }),
+    });
+    setSelectedIds(new Set());
+    fetchDocuments();
+  };
+
+  const bulkDelete = async (confirmed: boolean) => {
+    setBulkConfirmOpen(false);
+    if (!confirmed) return;
+    await fetch('/api/documents/bulk', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', ids: Array.from(selectedIds) }),
+    });
+    setSelectedIds(new Set());
+    fetchDocuments();
   };
 
   const fetchFolders = async () => {
@@ -283,6 +317,48 @@ export default function DocumentsPage() {
           />
         ) : (
           <div className="space-y-6">
+            {selectedIds.size > 0 && (
+              <div
+                className="sticky top-16 z-20 rounded-xl px-4 py-3 flex items-center justify-between gap-3 shadow-lg"
+                style={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--accent)' }}
+              >
+                <span className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>
+                  {selectedIds.size} selected
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => {
+                      const tag = window.prompt('Tag to add to selected documents:');
+                      if (tag && tag.trim()) runBulk('tag', tag.trim());
+                    }}
+                    className="text-xs px-3 py-1.5 rounded-lg border transition-colors hover:bg-[var(--surface-2)]"
+                    style={{ color: 'var(--foreground)', borderColor: 'var(--card-border)' }}
+                  >
+                    Add Tag
+                  </button>
+                  <button
+                    onClick={() => runBulk(showArchived ? 'unarchive' : 'archive')}
+                    className="text-xs px-3 py-1.5 rounded-lg border transition-colors hover:bg-[var(--surface-2)]"
+                    style={{ color: 'var(--foreground)', borderColor: 'var(--card-border)' }}
+                  >
+                    {showArchived ? 'Unarchive' : 'Archive'}
+                  </button>
+                  <button
+                    onClick={() => setBulkConfirmOpen(true)}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600 transition-colors"
+                  >
+                    Delete
+                  </button>
+                  <button
+                    onClick={() => setSelectedIds(new Set())}
+                    className="text-xs px-2 py-1.5"
+                    style={{ color: 'var(--muted)' }}
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+            )}
             {pinned.length > 0 && (
               <div>
                 <h3 className="text-sm font-medium text-slate-500 mb-3 flex items-center gap-2">
@@ -297,6 +373,8 @@ export default function DocumentsPage() {
                       onMove={setMoveDocId}
                       folders={allFolders}
                       onMoveConfirm={handleMoveToFolder}
+                      selected={selectedIds.has(doc.id)}
+                      onToggleSelect={toggleSelect}
                     />
                   ))}
                 </div>
@@ -319,6 +397,8 @@ export default function DocumentsPage() {
                       onMove={setMoveDocId}
                       folders={allFolders}
                       onMoveConfirm={handleMoveToFolder}
+                      selected={selectedIds.has(doc.id)}
+                      onToggleSelect={toggleSelect}
                     />
                   ))}
                 </div>
@@ -334,6 +414,14 @@ export default function DocumentsPage() {
         onConfirm={handleDelete}
         title="Delete Document"
         message="Are you sure you want to delete this document? This action cannot be undone."
+      />
+
+      <ConfirmDialog
+        isOpen={bulkConfirmOpen}
+        onClose={() => setBulkConfirmOpen(false)}
+        onConfirm={() => bulkDelete(true)}
+        title="Delete Documents"
+        message={`Are you sure you want to delete ${selectedIds.size} documents? This action cannot be undone.`}
       />
 
       {/* Move Document Modal */}
@@ -368,12 +456,16 @@ function DocumentCard({
   onMove,
   folders,
   onMoveConfirm,
+  selected,
+  onToggleSelect,
 }: {
   doc: Document;
   onDelete: (id: string) => void;
   onMove: (id: string) => void;
   folders: FolderInfo[];
   onMoveConfirm: (docId: string, folderId: string | null) => void;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
 }) {
   const [showMenu, setShowMenu] = useState(false);
   const catColor = categoryColors[doc.category] || categoryColors.general;
@@ -383,8 +475,8 @@ function DocumentCard({
       href={`/dashboard/documents/${doc.id}`}
       className="group relative rounded-xl p-4 transition-all duration-200 hover:scale-[1.01]"
       style={{
-        backgroundColor: 'var(--card-bg)',
-        border: '1px solid var(--card-border)',
+        backgroundColor: selected ? 'color-mix(in srgb, var(--accent) 8%, var(--card-bg))' : 'var(--card-bg)',
+        border: `1px solid ${selected ? 'var(--accent)' : 'var(--card-border)'}`,
         boxShadow: 'var(--card-shadow)',
       }}
       onMouseEnter={(e) => {
@@ -398,6 +490,14 @@ function DocumentCard({
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => onToggleSelect(doc.id)}
+            onClick={(e) => e.stopPropagation()}
+            aria-label={`Select ${doc.title}`}
+            className="w-4 h-4 cursor-pointer accent-current shrink-0"
+          />
           <div
             className="flex items-center gap-1.5 px-2 py-0.5 rounded-md text-xs font-medium"
             style={{ backgroundColor: catColor.bg, color: catColor.text }}
@@ -532,6 +632,11 @@ function DocumentCard({
               {tag.name}
             </span>
           ))}
+          {doc.reviewDate && new Date(doc.reviewDate).getTime() <= Date.now() && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium bg-red-500/10 text-red-500">
+              Review due
+            </span>
+          )}
         </div>
         <span className="text-[10px]" style={{ color: 'var(--muted)' }}>{formatDate(doc.updatedAt)}</span>
       </div>
