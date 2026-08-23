@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   ArrowRight,
   Shield,
+  Database,
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { formatDate, getDaysUntilExpiry } from '@/lib/utils';
@@ -22,6 +23,7 @@ interface DashboardData {
   recentDocs: any[];
   recentPasswords: any[];
   activityTrend?: { date: string; count: number }[];
+  staleServerCount?: number;
 }
 
 export default function DashboardPage() {
@@ -76,7 +78,7 @@ export default function DashboardPage() {
     );
   }
 
-  const { docCount, passCount, domainCount, expiringDomains, recentDocs, recentPasswords, activityTrend } = data;
+  const { docCount, passCount, domainCount, expiringDomains, recentDocs, recentPasswords, activityTrend, staleServerCount } = data;
 
   const trendHasData = (activityTrend || []).some((d) => d.count > 0);
 
@@ -160,6 +162,33 @@ export default function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      {/* Stale Configurations Alert */}
+      {(staleServerCount || 0) > 0 && (
+        <div
+          className="card overflow-hidden"
+          style={{
+            border: '1px solid rgba(139, 92, 246, 0.2)',
+            backgroundColor: 'var(--surface-1)',
+          }}
+        >
+          <div className="px-5 py-4 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <Database className="w-4 h-4 shrink-0" style={{ color: '#8b5cf6' }} />
+              <p className="text-sm font-medium truncate" style={{ color: 'var(--foreground)' }}>
+                {staleServerCount} configuration{staleServerCount === 1 ? '' : 's'} not updated in 30+ days
+              </p>
+            </div>
+            <Link
+              href="/dashboard/configurations"
+              className="text-xs font-medium flex items-center gap-1 shrink-0 transition-colors hover:gap-2"
+              style={{ color: 'var(--accent)' }}
+            >
+              Review <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Activity Trend */}
       {trendHasData && (

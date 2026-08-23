@@ -321,6 +321,19 @@ export default function ConfigurationsPage() {
                       </div>
                     </div>
                   )}
+                  {(() => {
+                    const ageDays = Math.floor((Date.now() - new Date(server.updatedAt).getTime()) / 86400000);
+                    const fresh = ageDays < 7;
+                    const stale = ageDays > 30;
+                    return (
+                      <span
+                        className={`badge ${fresh ? 'badge-green' : stale ? 'badge-red' : 'badge-yellow'}`}
+                        title={`Last updated ${ageDays} day${ageDays === 1 ? '' : 's'} ago`}
+                      >
+                        {fresh ? 'Fresh' : stale ? `Stale ${ageDays}d` : `${ageDays}d old`}
+                      </span>
+                    );
+                  })()}
                   <span className="badge badge-green capitalize">{server.status || 'active'}</span>
                 </div>
               </div>

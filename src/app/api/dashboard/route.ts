@@ -17,7 +17,7 @@ export async function GET(req: Request) {
     ...(organizationId ? { organizationId } : {}),
   };
 
-  const [docCount, passCount, domainCount, domains, recentDocs, recentPasswords, recentActivity] =
+  const [docCount, passCount, domainCount, domains, recentDocs, recentPasswords, recentActivity, staleServerCount] =
     await Promise.all([
       prisma.document.count({ where }),
       prisma.password.count({ where }),
@@ -43,6 +43,13 @@ export async function GET(req: Request) {
           createdAt: { gte: new Date(Date.now() - 13 * 86400000) },
         },
         select: { createdAt: true },
+      }),
+      prisma.server.count({
+        where: {
+          userId: user.id,
+          ...(organizationId ? { organizationId } : {}),
+          updatedAt: { lt: new Date(Date.now() - 30 * 86400000) },
+        },
       }),
     ]);
 
@@ -75,5 +82,6 @@ export async function GET(req: Request) {
     recentDocs,
     recentPasswords,
     activityTrend,
+    staleServerCount,
   });
 }
