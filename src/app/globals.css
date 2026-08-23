@@ -465,6 +465,13 @@ h1, h2, h3, h4, h5, h6 {
   margin: 0.5rem 0.75rem;
 }
 
+/* Sidebar nested sub-item */
+.sidebar-subitem {
+  padding-left: 2.125rem;
+  font-size: 0.8125rem;
+  font-weight: 400;
+}
+
 /* Sidebar section label */
 .sidebar-label {
   font-size: 0.6875rem;

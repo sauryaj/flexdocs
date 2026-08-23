@@ -10,6 +10,7 @@ import {
   ArrowRight,
   Shield,
 } from 'lucide-react';
+import { AreaChart, Area, XAxis, YAxis, ResponsiveContainer, Tooltip } from 'recharts';
 import { formatDate, getDaysUntilExpiry } from '@/lib/utils';
 import { useOrganization } from '@/lib/OrganizationContext';
 
@@ -20,6 +21,7 @@ interface DashboardData {
   expiringDomains: any[];
   recentDocs: any[];
   recentPasswords: any[];
+  activityTrend?: { date: string; count: number }[];
 }
 
 export default function DashboardPage() {
@@ -74,7 +76,9 @@ export default function DashboardPage() {
     );
   }
 
-  const { docCount, passCount, domainCount, expiringDomains, recentDocs, recentPasswords } = data;
+  const { docCount, passCount, domainCount, expiringDomains, recentDocs, recentPasswords, activityTrend } = data;
+
+  const trendHasData = (activityTrend || []).some((d) => d.count > 0);
 
   const stats = [
     {
@@ -156,6 +160,42 @@ export default function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      {/* Activity Trend */}
+      {trendHasData && (
+        <div className="card p-5">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="font-semibold" style={{ color: 'var(--foreground)' }}>Activity — last 14 days</h2>
+            <Link
+              href="/dashboard/activity"
+              className="text-xs font-medium flex items-center gap-1 transition-colors hover:gap-2"
+              style={{ color: 'var(--accent)' }}
+            >
+              View all <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
+          <div className="h-44">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={activityTrend} margin={{ top: 5, right: 10, bottom: 0, left: -20 }}>
+                <defs>
+                  <linearGradient id="activityFill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="var(--accent)" stopOpacity={0.25} />
+                    <stop offset="100%" stopColor="var(--accent)" stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--muted)" tickLine={false} axisLine={false} interval={2} />
+                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="var(--muted)" tickLine={false} axisLine={false} />
+                <Tooltip
+                  cursor={{ stroke: 'var(--card-border)' }}
+                  contentStyle={{ backgroundColor: 'var(--card-bg)', border: '1px solid var(--card-border)', borderRadius: 8, fontSize: 12 }}
+                  labelStyle={{ color: 'var(--foreground)' }}
+                />
+                <Area type="monotone" dataKey="count" name="Events" stroke="var(--accent)" strokeWidth={2} fill="url(#activityFill)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

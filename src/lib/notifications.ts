@@ -22,8 +22,45 @@ interface CreateNotificationParams {
   link?: string;
 }
 
+export const NOTIFICATION_TYPES: NotificationType[] = [
+  'domain_expiring',
+  'cert_expiring',
+  'breach',
+  'maintenance',
+  'system',
+  'share',
+  'emergency',
+  'webhook',
+];
+
+export async function getMutedNotificationTypes(userId: string): Promise<NotificationType[]> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { mutedNotificationTypes: true },
+  });
+  return ((user?.mutedNotificationTypes || []) as NotificationType[]).filter((t) =>
+    NOTIFICATION_TYPES.includes(t),
+  );
+}
+
+export async function setMutedNotificationTypes(userId: string, types: string[]): Promise<NotificationType[]> {
+  const valid = types.filter((t): t is NotificationType =>
+    (NOTIFICATION_TYPES as string[]).includes(t),
+  );
+  await prisma.user.update({
+    where: { id: userId },
+    data: { mutedNotificationTypes: Array.from(new Set(valid)) },
+  });
+  return Array.from(new Set(valid));
+}
+
 export async function createNotification(params: CreateNotificationParams): Promise<void> {
   try {
+    const muted = await prisma.user.findUnique({
+      where: { id: params.userId },
+      select: { mutedNotificationTypes: true },
+    });
+    if (muted?.mutedNotificationTypes?.includes(params.type)) return;
     await prisma.notification.create({
       data: {
         userId: params.userId,
@@ -44,7 +81,10 @@ export async function createNotificationForAllUsers(
   params: Omit<CreateNotificationParams, 'userId'>
 ): Promise<void> {
   try {
-    const users = await prisma.user.findMany({ select: { id: true } });
+    const users = await prisma.user.findMany({
+      where: { NOT: { mutedNotificationTypes: { has: params.type } } },
+      select: { id: true },
+    });
     await prisma.notification.createMany({
       data: users.map((u) => ({
         userId: u.id,

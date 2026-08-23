@@ -13,11 +13,13 @@ import {
   HeartPulse,
   BookOpen,
   Palette,
+  Bell,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const settingsNav = [
   { name: 'Profile Settings', href: '/dashboard/settings', icon: User },
+  { name: 'Notifications', href: '/dashboard/settings/notifications', icon: Bell },
   { name: '2FA / MFA', href: '/dashboard/settings/mfa', icon: Shield },
   { name: 'Sessions', href: '/dashboard/settings/sessions', icon: Activity },
   { name: 'API Keys', href: '/dashboard/settings/api-keys', icon: Key },

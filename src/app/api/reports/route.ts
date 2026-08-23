@@ -2,13 +2,24 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/rbac';
 import { prisma } from '@/lib/prisma';
-import { generateComplianceReport, reportToCsv, type ReportData } from '@/lib/compliance';
+import { generateComplianceReport, type ReportData } from '@/lib/compliance';
 import PDFDocument from 'pdfkit';
 
 const REPORT_TYPES = ['documents', 'passwords', 'domains', 'assets', 'organizations', 'activity', 'compliance', 'health'] as const;
 type ReportType = (typeof REPORT_TYPES)[number];
 
-function csv(rows: string[][]): string {
+type Cell = string | number | null | undefined;
+interface ReportSection {
+  heading: string;
+  headers: string[];
+  rows: Cell[][];
+}
+interface StructuredReport {
+  title: string;
+  sections: ReportSection[];
+}
+
+function csv(rows: Cell[][]): string {
   return rows.map((cols) => cols.map((c) => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
 }
 
@@ -16,82 +27,76 @@ function toIso(d: Date | null | undefined): string {
   return d ? new Date(d).toISOString() : '';
 }
 
-async function generateReport(userId: string, type: ReportType, format: string): Promise<{ content: string | Buffer; contentType: string; filename: string }> {
-  const filenameBase = `${type}-report-${new Date().toISOString().slice(0, 10)}`;
+function toDay(d: Date | string | null | undefined): string {
+  return d ? new Date(d).toISOString().slice(0, 10) : 'N/A';
+}
 
-  if (type === 'compliance') {
-    const report = await generateComplianceReport(userId);
-    if (format === 'pdf') {
-      const content = await buildPdf(report);
-      return { content, contentType: 'application/pdf', filename: `${filenameBase}.pdf` };
-    }
-    const csvContent = reportToCsv(report);
-    return { content: csvContent, contentType: 'text/csv', filename: `${filenameBase}.csv` };
-  }
-
+async function buildStructuredReport(userId: string, type: ReportType): Promise<StructuredReport> {
   if (type === 'health') {
     const passwords = await prisma.password.findMany({ where: { userId } });
-    const rows: string[][] = [['Name', 'Username', 'Category', 'Created', 'Updated', 'Age (days)', 'Expires']];
     const now = new Date();
-    for (const p of passwords) {
-      rows.push([
-        p.name,
-        p.username,
-        p.category,
-        toIso(p.createdAt),
-        toIso(p.updatedAt),
-        String(Math.floor((now.getTime() - (p.updatedAt || p.createdAt).getTime()) / 86400000)),
-        toIso(p.expiresAt),
-      ]);
-    }
-    return { content: csv(rows), contentType: 'text/csv', filename: `${filenameBase}.csv` };
+    const rows: Cell[][] = passwords.map((p) => [
+      p.name,
+      p.username,
+      p.category,
+      toIso(p.createdAt),
+      toIso(p.updatedAt),
+      Math.floor((now.getTime() - (p.updatedAt || p.createdAt).getTime()) / 86400000),
+      toIso(p.expiresAt),
+    ]);
+    return {
+      title: 'Password Health Report',
+      sections: [{ heading: 'Passwords', headers: ['Name', 'Username', 'Category', 'Created', 'Updated', 'Age (days)', 'Expires'], rows }],
+    };
   }
 
   if (type === 'documents') {
     const items = await prisma.document.findMany({ where: { userId }, orderBy: { updatedAt: 'desc' }, include: { tags: true } });
-    const rows: string[][] = [['Title', 'Type', 'Category', 'Tags', 'Archived', 'Updated']];
-    for (const d of items) {
-      rows.push([d.title, d.type, d.category, (d.tags || []).map((t) => t.name).join('; '), String(d.isArchived), toIso(d.updatedAt)]);
-    }
-    return { content: csv(rows), contentType: 'text/csv', filename: `${filenameBase}.csv` };
+    const rows: Cell[][] = items.map((d) => [d.title, d.type, d.category, (d.tags || []).map((t) => t.name).join('; '), String(d.isArchived), toIso(d.updatedAt)]);
+    return {
+      title: 'Documents Report',
+      sections: [{ heading: 'Documents', headers: ['Title', 'Type', 'Category', 'Tags', 'Archived', 'Updated'], rows }],
+    };
   }
 
   if (type === 'passwords') {
     const items = await prisma.password.findMany({ where: { userId }, orderBy: { updatedAt: 'desc' } });
-    const rows: string[][] = [['Name', 'Username', 'Category', 'URL', 'Favorite', 'Expires', 'Updated']];
-    for (const p of items) {
-      rows.push([p.name, p.username, p.category, p.url || '', String(p.isFavorite), toIso(p.expiresAt), toIso(p.updatedAt)]);
-    }
-    return { content: csv(rows), contentType: 'text/csv', filename: `${filenameBase}.csv` };
+    const rows: Cell[][] = items.map((p) => [p.name, p.username, p.category, p.url || '', String(p.isFavorite), toIso(p.expiresAt), toIso(p.updatedAt)]);
+    return {
+      title: 'Passwords Report',
+      sections: [{ heading: 'Passwords', headers: ['Name', 'Username', 'Category', 'URL', 'Favorite', 'Expires', 'Updated'], rows }],
+    };
   }
 
   if (type === 'domains') {
     const items = await prisma.domain.findMany({ where: { userId }, orderBy: { expiresAt: 'asc' } });
-    const rows: string[][] = [['Name', 'Registrar', 'Status', 'Expires', 'Days Until Expiry']];
     const now = new Date();
-    for (const d of items) {
+    const rows: Cell[][] = items.map((d) => {
       const days = d.expiresAt ? Math.ceil((d.expiresAt.getTime() - now.getTime()) / 86400000) : null;
-      rows.push([d.name, d.registrar || '', d.status, toIso(d.expiresAt), days === null ? '' : String(days)]);
-    }
-    return { content: csv(rows), contentType: 'text/csv', filename: `${filenameBase}.csv` };
+      return [d.name, d.registrar || '', d.status, toIso(d.expiresAt), days === null ? '' : days];
+    });
+    return {
+      title: 'Domains Report',
+      sections: [{ heading: 'Domains', headers: ['Name', 'Registrar', 'Status', 'Expires', 'Days Until Expiry'], rows }],
+    };
   }
 
   if (type === 'assets') {
     const items = await prisma.flexibleAsset.findMany({ where: { userId }, orderBy: { updatedAt: 'desc' } });
-    const rows: string[][] = [['Name', 'Type', 'Archived', 'Updated']];
-    for (const a of items) {
-      rows.push([a.name, a.assetType, String(a.isArchived), toIso(a.updatedAt)]);
-    }
-    return { content: csv(rows), contentType: 'text/csv', filename: `${filenameBase}.csv` };
+    const rows: Cell[][] = items.map((a) => [a.name, a.assetType, String(a.isArchived), toIso(a.updatedAt)]);
+    return {
+      title: 'Assets Report',
+      sections: [{ heading: 'Flexible Assets', headers: ['Name', 'Type', 'Archived', 'Updated'], rows }],
+    };
   }
 
   if (type === 'organizations') {
     const items = await prisma.organization.findMany({ orderBy: { name: 'asc' } });
-    const rows: string[][] = [['Name', 'Website', 'Email', 'Phone', 'Address']];
-    for (const o of items) {
-      rows.push([o.name, o.website || '', o.email || '', o.phone || '', o.address || '']);
-    }
-    return { content: csv(rows), contentType: 'text/csv', filename: `${filenameBase}.csv` };
+    const rows: Cell[][] = items.map((o) => [o.name, o.website || '', o.email || '', o.phone || '', o.address || '']);
+    return {
+      title: 'Organizations Report',
+      sections: [{ heading: 'Organizations', headers: ['Name', 'Website', 'Email', 'Phone', 'Address'], rows }],
+    };
   }
 
   if (type === 'activity') {
@@ -101,17 +106,76 @@ async function generateReport(userId: string, type: ReportType, format: string):
       orderBy: { createdAt: 'desc' },
       take: 500,
     });
-    const rows: string[][] = [['Action', 'Resource Type', 'Resource Name', 'User', 'Created At']];
-    for (const a of items) {
-      rows.push([a.action, a.resourceType || '', a.resourceName || '', a.user?.name || '', toIso(a.createdAt)]);
-    }
-    return { content: csv(rows), contentType: 'text/csv', filename: `${filenameBase}.csv` };
+    const rows: Cell[][] = items.map((a) => [a.action, a.resourceType || '', a.resourceName || '', a.user?.name || '', toIso(a.createdAt)]);
+    return {
+      title: 'Activity Report',
+      sections: [{ heading: 'Recent Activity', headers: ['Action', 'Resource Type', 'Resource Name', 'User', 'Created At'], rows }],
+    };
   }
 
   throw new Error('Unknown report type');
 }
 
-function buildPdf(report: ReportData): Promise<Buffer> {
+function complianceSections(report: ReportData): StructuredReport {
+  const s = report.summary;
+  return {
+    title: 'Compliance Report',
+    sections: [
+      {
+        heading: 'Summary',
+        headers: ['Documents', 'Passwords', 'Domains', 'Assets', 'Checklists', 'SSL Certificates'],
+        rows: [[s.totalDocuments, s.totalPasswords, s.totalDomains, s.totalAssets, s.totalChecklists, s.totalSslCerts]],
+      },
+      {
+        heading: 'Domain Expiry',
+        headers: ['Name', 'Registrar', 'Status', 'Expires', 'Days Left'],
+        rows: report.domainExpiry.map((d) => [d.name, d.registrar, d.status, toDay(d.expiresAt), d.daysUntilExpiry ?? 'N/A']),
+      },
+      {
+        heading: 'Password Age',
+        headers: ['Name', 'Username', 'Category', 'Updated', 'Days Old'],
+        rows: report.passwordAge.map((p) => [p.name, p.username, p.category, toDay(p.updatedAt), p.daysOld]),
+      },
+      {
+        heading: 'SSL Certificates',
+        headers: ['Hostname', 'Issuer', 'Valid From', 'Valid To', 'Status', 'Days Left'],
+        rows: report.sslCertificates.map((c) => [c.hostname, c.issuer, toDay(c.validFrom), toDay(c.validTo), c.isExpired ? 'EXPIRED' : 'Valid', c.daysUntilExpiry ?? 'N/A']),
+      },
+      {
+        heading: 'Recent Activity',
+        headers: ['Action', 'Resource', 'User', 'Created'],
+        rows: report.recentActivity.map((a) => [a.action, a.resourceName ?? '', a.userName ?? '', a.createdAt.slice(0, 16)]),
+      },
+    ],
+  };
+}
+
+async function generateReport(userId: string, type: ReportType, format: string): Promise<{ content: string | Buffer; contentType: string; filename: string }> {
+  const filenameBase = `${type}-report-${new Date().toISOString().slice(0, 10)}`;
+
+  let structured: StructuredReport;
+  if (type === 'compliance') {
+    structured = complianceSections(await generateComplianceReport(userId));
+  } else {
+    structured = await buildStructuredReport(userId, type);
+  }
+
+  if (format === 'pdf') {
+    const content = await buildPdf(structured);
+    return { content, contentType: 'application/pdf', filename: `${filenameBase}.pdf` };
+  }
+
+  const csvRows: Cell[][] = [];
+  for (const section of structured.sections) {
+    csvRows.push([section.heading]);
+    csvRows.push(section.headers);
+    csvRows.push(...section.rows);
+    csvRows.push([]);
+  }
+  return { content: csv(csvRows), contentType: 'text/csv', filename: `${filenameBase}.csv` };
+}
+
+function buildPdf(report: StructuredReport): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     const doc = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true });
     const chunks: Buffer[] = [];
@@ -127,10 +191,10 @@ function buildPdf(report: ReportData): Promise<Buffer> {
       doc.moveDown(0.4);
     };
 
-    const drawTable = (headers: string[], rows: (string | number | null | undefined)[][]) => {
+    const drawTable = (headers: string[], rows: Cell[][]) => {
       const cellPad = 5;
       const colWidth = (doc.page.width - doc.page.margins.left - doc.page.margins.right) / headers.length;
-      const drawRow = (cells: (string | number | null | undefined)[], isHeader: boolean) => {
+      const drawRow = (cells: Cell[], isHeader: boolean) => {
         const cellFont = isHeader ? 'Helvetica-Bold' : 'Helvetica';
         const fontSize = isHeader ? 8.5 : 8;
         doc.font(cellFont).fontSize(fontSize);
@@ -139,7 +203,7 @@ function buildPdf(report: ReportData): Promise<Buffer> {
           const x = doc.page.margins.left + i * colWidth;
           const y = doc.y;
           if (isHeader) {
-            doc.fillColor('#374151').rect(x, y, colWidth, lineHeight + 4).fill('#f3f4f6');
+            doc.rect(x, y, colWidth, lineHeight + 4).fill('#f3f4f6');
           }
           doc.fillColor(isHeader ? '#111827' : '#4b5563');
           doc.text(String(cell ?? ''), x + cellPad, y + 2, { width: colWidth - cellPad * 2, lineBreak: false, ellipsis: true });
@@ -152,42 +216,17 @@ function buildPdf(report: ReportData): Promise<Buffer> {
       };
       drawRow(headers, true);
       rows.forEach((r) => drawRow(r, false));
+      doc.moveDown(0.3);
     };
 
-    doc.font('Helvetica-Bold').fontSize(18).fillColor('#111827').text('Compliance Report');
-    doc.font('Helvetica').fontSize(9).fillColor('#6b7280').text(`Generated: ${report.generatedAt}`);
+    doc.font('Helvetica-Bold').fontSize(18).fillColor('#111827').text(report.title);
+    doc.font('Helvetica').fontSize(9).fillColor('#6b7280').text(`Generated: ${new Date().toISOString()}`);
     doc.moveDown(0.8);
 
-    drawHeading('Summary');
-    const s = report.summary;
-    drawTable(
-      ['Documents', 'Passwords', 'Domains', 'Assets', 'Checklists', 'SSL Certificates'],
-      [[s.totalDocuments, s.totalPasswords, s.totalDomains, s.totalAssets, s.totalChecklists, s.totalSslCerts]],
-    );
-
-    drawHeading('Domain Expiry');
-    drawTable(
-      ['Name', 'Registrar', 'Status', 'Expires', 'Days Left'],
-      report.domainExpiry.map((d) => [d.name, d.registrar, d.status, d.expiresAt ? new Date(d.expiresAt).toISOString().slice(0, 10) : 'N/A', d.daysUntilExpiry ?? 'N/A']),
-    );
-
-    drawHeading('Password Age');
-    drawTable(
-      ['Name', 'Username', 'Category', 'Updated', 'Days Old'],
-      report.passwordAge.map((p) => [p.name, p.username, p.category, new Date(p.updatedAt).toISOString().slice(0, 10), p.daysOld]),
-    );
-
-    drawHeading('SSL Certificates');
-    drawTable(
-      ['Hostname', 'Issuer', 'Valid From', 'Valid To', 'Status', 'Days Left'],
-      report.sslCertificates.map((c) => [c.hostname, c.issuer, c.validFrom ? new Date(c.validFrom).toISOString().slice(0, 10) : 'N/A', c.validTo ? new Date(c.validTo).toISOString().slice(0, 10) : 'N/A', c.isExpired ? 'EXPIRED' : 'Valid', c.daysUntilExpiry ?? 'N/A']),
-    );
-
-    drawHeading('Recent Activity');
-    drawTable(
-      ['Action', 'Resource', 'User', 'Created'],
-      report.recentActivity.map((a) => [a.action, a.resourceName ?? '', a.userName ?? '', new Date(a.createdAt).toISOString().slice(0, 16)]),
-    );
+    for (const section of report.sections) {
+      drawHeading(section.heading);
+      drawTable(section.headers, section.rows);
+    }
 
     doc.end();
   });

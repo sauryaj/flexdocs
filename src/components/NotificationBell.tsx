@@ -70,16 +70,20 @@ export function NotificationBell() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const markRead = async () => {
-    const unreadIds = notifications.filter((n) => !n.read).map((n) => n.id);
-    if (unreadIds.length === 0) return;
+  const markRead = async (ids?: string[]) => {
+    const targetIds = ids || notifications.filter((n) => !n.read).map((n) => n.id);
+    if (targetIds.length === 0) return;
     await fetch('/api/notifications', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ids: unreadIds }),
+      body: JSON.stringify({ ids: targetIds }),
     });
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
-    setUnread(0);
+    fetchNotifications();
+  };
+
+  const dismiss = async (id: string) => {
+    await fetch(`/api/notifications?ids=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    fetchNotifications();
   };
 
   const clearAll = async () => {
@@ -93,7 +97,7 @@ export function NotificationBell() {
       <button
         onClick={() => {
           setOpen(!open);
-          if (!open) markRead();
+          if (!open) fetchNotifications();
         }}
         aria-label={`Notifications${unread ? ` (${unread} unread)` : ''}`}
         className="relative p-2 rounded-lg transition-all duration-150 hover:bg-[var(--surface-2)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-muted)]"
@@ -168,14 +172,44 @@ export function NotificationBell() {
                 return (
                   <div
                     key={n.id}
-                    className="px-4 py-3 border-b last:border-b-0 transition-colors"
+                    className="group px-4 py-3 border-b last:border-b-0 transition-colors relative"
                     style={{ borderColor: 'var(--card-border)', opacity: n.read ? 0.7 : 1 }}
                   >
                     {n.link ? (
-                      <Link href={n.link} onClick={() => setOpen(false)} className="block hover:bg-[var(--surface-1)] -mx-1 px-1 py-0.5 rounded-lg">
+                      <Link
+                        href={n.link}
+                        onClick={(e) => {
+                          if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+                          setOpen(false);
+                          markRead([n.id]);
+                        }}
+                        className="block hover:bg-[var(--surface-1)] -mx-1 px-1 py-0.5 pr-7 rounded-lg"
+                      >
                         {inner}
                       </Link>
-                    ) : inner}
+                    ) : (
+                      <div className="-mx-1 px-1 py-0.5 pr-7">{inner}</div>
+                    )}
+                    {!n.read && (
+                      <button
+                        onClick={() => markRead([n.id])}
+                        aria-label="Mark as read"
+                        title="Mark as read"
+                        className="absolute right-9 top-3 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-[var(--surface-2)]"
+                        style={{ color: 'var(--muted)' }}
+                      >
+                        <Check className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      onClick={() => dismiss(n.id)}
+                      aria-label="Dismiss notification"
+                      title="Dismiss"
+                      className="absolute right-2.5 top-3 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 rounded hover:bg-[var(--surface-2)]"
+                      style={{ color: 'var(--muted)' }}
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
                   </div>
                 );
               })
@@ -185,12 +219,32 @@ export function NotificationBell() {
           {notifications.length > 0 && (
             <div className="px-4 py-2 border-t flex items-center justify-between" style={{ borderColor: 'var(--card-border)' }}>
               <button
-                onClick={markRead}
+                onClick={() => markRead()}
                 className="text-xs flex items-center gap-1 hover:opacity-80"
                 style={{ color: 'var(--muted)' }}
               >
                 <Check className="w-3 h-3" /> Mark all as read
               </button>
+              <Link
+                href="/dashboard/settings/notifications"
+                onClick={() => setOpen(false)}
+                className="text-xs hover:underline"
+                style={{ color: 'var(--accent)' }}
+              >
+                Preferences
+              </Link>
+            </div>
+          )}
+          {notifications.length === 0 && (
+            <div className="px-4 py-2 border-t text-center" style={{ borderColor: 'var(--card-border)' }}>
+              <Link
+                href="/dashboard/settings/notifications"
+                onClick={() => setOpen(false)}
+                className="text-xs hover:underline"
+                style={{ color: 'var(--accent)' }}
+              >
+                Notification preferences
+              </Link>
             </div>
           )}
         </div>

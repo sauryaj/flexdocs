@@ -12,12 +12,6 @@ import {
   Columns,
   FileText,
   AtSign,
-  Bold,
-  Italic,
-  List,
-  Heading,
-  Code,
-  Table,
   AlertCircle,
   Trash2,
   RotateCcw,
@@ -28,6 +22,7 @@ import {
 } from 'lucide-react';
 import { MentionPicker } from '@/components/MentionPicker';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
+import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 
 const categories = [
   'general',
@@ -539,71 +534,7 @@ function NewDocumentForm() {
           {/* Header Controls: Formatting Toolbar & View Switcher */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
             {/* Formatting Action Tools */}
-            <div className="flex flex-wrap items-center gap-1">
-              <button
-                type="button"
-                onClick={() => insertFormatting('**', '**', 'bold text')}
-                title="Bold"
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-300 transition-colors"
-              >
-                <Bold className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => insertFormatting('*', '*', 'italic text')}
-                title="Italic"
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-300 transition-colors"
-              >
-                <Italic className="w-4 h-4" />
-              </button>
-              <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-1" />
-              <button
-                type="button"
-                onClick={() => insertFormatting('## ', '', 'Heading 2')}
-                title="Heading"
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-300 transition-colors"
-              >
-                <Heading className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => insertFormatting('- ', '', 'List item')}
-                title="Bullet List"
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-300 transition-colors"
-              >
-                <List className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => insertFormatting('```bash\n', '\n```', '# bash commands here')}
-                title="Code Block"
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-300 transition-colors"
-              >
-                <Code className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  insertFormatting(
-                    '\n| Feature | Status | Notes |\n| :--- | :--- | :--- |\n| Service A | Active | Primary |\n'
-                  )
-                }
-                title="Insert Table"
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-300 transition-colors"
-              >
-                <Table className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => insertFormatting('> [!NOTE]\n> ', '', 'Important note details...')}
-                title="Callout Box"
-                className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg text-slate-700 dark:text-slate-300 transition-colors"
-              >
-                <AlertCircle className="w-4 h-4" />
-              </button>
-
-              <div className="h-4 w-px bg-slate-200 dark:bg-slate-800 mx-1" />
-
+            <MarkdownToolbar onFormat={insertFormatting}>
               {/* Mention Asset Button */}
               <div className="relative">
                 <button
@@ -621,7 +552,7 @@ function NewDocumentForm() {
                   onSelect={handleSelectMention}
                 />
               </div>
-            </div>
+            </MarkdownToolbar>
 
             {/* View Mode Switcher (Write / Preview / Split) */}
             <div className="flex items-center bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs font-medium">

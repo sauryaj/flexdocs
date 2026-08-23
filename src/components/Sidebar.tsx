@@ -8,6 +8,7 @@ import {
   FileText,
   Key,
   Globe,
+  Lock,
   Tag,
   Settings,
   ChevronLeft,
@@ -25,13 +26,27 @@ import {
   Cloud,
   CalendarClock,
   Zap,
+  HardDrive,
+  type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect, useRef } from 'react';
 import { cn } from '@/lib/utils';
 import { useTheme } from '@/lib/ThemeContext';
 import { useOrganization, Organization } from '@/lib/OrganizationContext';
 
-const navigation = [
+interface NavItem {
+  name: string;
+  href: string;
+  icon: LucideIcon;
+  sub?: boolean;
+}
+
+interface NavGroup {
+  label: string;
+  items: NavItem[];
+}
+
+const navigation: NavGroup[] = [
   {
     label: 'Overview',
     items: [
@@ -45,6 +60,7 @@ const navigation = [
       { name: 'Templates', href: '/dashboard/templates', icon: FileStack },
       { name: 'Passwords', href: '/dashboard/passwords', icon: Key },
       { name: 'Domains & SSL', href: '/dashboard/domains', icon: Globe },
+      { name: 'SSL Certificates', href: '/dashboard/ssl', icon: Lock, sub: true },
       { name: 'Assets', href: '/dashboard/assets', icon: Box },
       { name: 'Checklists', href: '/dashboard/checklists', icon: CheckSquare },
       { name: 'Tags', href: '/dashboard/tags', icon: Tag },
@@ -54,15 +70,16 @@ const navigation = [
     label: 'Infrastructure',
     items: [
       { name: 'Configurations / Servers', href: '/dashboard/configurations', icon: Server },
+      { name: 'Server Inventory', href: '/dashboard/servers', icon: HardDrive, sub: true },
       { name: 'Network', href: '/dashboard/network', icon: Network },
       { name: 'Cloud', href: '/dashboard/cloud', icon: Cloud },
       { name: 'Maintenance', href: '/dashboard/maintenance', icon: CalendarClock },
       { name: 'Status Pages', href: '/dashboard/status', icon: Activity },
       { name: 'Automation', href: '/dashboard/automation', icon: Zap },
-      { name: '  Schedules', href: '/dashboard/automation/schedules', icon: CalendarClock },
-      { name: '  Changes', href: '/dashboard/automation/changes', icon: Activity },
-      { name: '  Docker', href: '/dashboard/automation/docker', icon: Box },
-      { name: '  Cloud Costs', href: '/dashboard/automation/costs', icon: FileBarChart },
+      { name: 'Schedules', href: '/dashboard/automation/schedules', icon: CalendarClock, sub: true },
+      { name: 'Changes', href: '/dashboard/automation/changes', icon: Activity, sub: true },
+      { name: 'Docker', href: '/dashboard/automation/docker', icon: Box, sub: true },
+      { name: 'Cloud Costs', href: '/dashboard/automation/costs', icon: FileBarChart, sub: true },
     ],
   },
   {
@@ -114,7 +131,7 @@ export function Sidebar() {
     return pathname === cleanHref || (cleanHref !== '/dashboard' && pathname.startsWith(cleanHref));
   };
 
-  const activeNavigation = selectedOrg
+  const activeNavigation: NavGroup[] = selectedOrg
     ? [
         {
           label: 'Overview',
@@ -130,9 +147,24 @@ export function Sidebar() {
             { name: 'Passwords', href: `/dashboard/passwords?organizationId=${selectedOrg.id}`, icon: Key },
             { name: 'Flexible Assets', href: `/dashboard/assets?organizationId=${selectedOrg.id}`, icon: Box },
             { name: 'Domains & SSL', href: `/dashboard/domains?organizationId=${selectedOrg.id}`, icon: Globe },
-            { name: 'Configurations / Servers', href: `/dashboard/servers?organizationId=${selectedOrg.id}`, icon: Server },
+            { name: 'SSL Certificates', href: `/dashboard/ssl?organizationId=${selectedOrg.id}`, icon: Lock, sub: true },
+            { name: 'Configurations / Servers', href: `/dashboard/configurations?organizationId=${selectedOrg.id}`, icon: Server },
+            { name: 'Server Inventory', href: `/dashboard/servers?organizationId=${selectedOrg.id}`, icon: HardDrive, sub: true },
             { name: 'Network', href: `/dashboard/network?organizationId=${selectedOrg.id}`, icon: Network },
             { name: 'Checklists', href: `/dashboard/checklists?organizationId=${selectedOrg.id}`, icon: CheckSquare },
+          ],
+        },
+        {
+          label: 'Operations',
+          items: [
+            { name: 'Cloud', href: '/dashboard/cloud', icon: Cloud },
+            { name: 'Maintenance', href: '/dashboard/maintenance', icon: CalendarClock },
+            { name: 'Status Pages', href: '/dashboard/status', icon: Activity },
+            { name: 'Automation', href: '/dashboard/automation', icon: Zap },
+            { name: 'Schedules', href: '/dashboard/automation/schedules', icon: CalendarClock, sub: true },
+            { name: 'Changes', href: '/dashboard/automation/changes', icon: Activity, sub: true },
+            { name: 'Docker', href: '/dashboard/automation/docker', icon: Box, sub: true },
+            { name: 'Cloud Costs', href: '/dashboard/automation/costs', icon: FileBarChart, sub: true },
           ],
         },
         {
@@ -300,7 +332,7 @@ export function Sidebar() {
                   <Link
                     key={item.name}
                     href={item.href}
-                    className={cn('sidebar-nav-item', isActive(item.href) && 'active')}
+                    className={cn('sidebar-nav-item', item.sub && 'sidebar-subitem', isActive(item.href) && 'active')}
                     title={collapsed ? item.name : undefined}
                   >
                     <item.icon className="w-4 h-4 flex-shrink-0" />

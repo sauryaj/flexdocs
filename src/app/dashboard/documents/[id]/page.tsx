@@ -24,6 +24,7 @@ import {
 import { formatDate } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/UIComponents';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
+import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { Eye, Edit3, Columns } from 'lucide-react';
 
 const categories = [
@@ -116,6 +117,24 @@ export default function DocumentDetailPage() {
   const [saving, setSaving] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [viewMode, setViewMode] = useState<'write' | 'preview' | 'split'>('write');
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const insertFormatting = (prefix: string, suffix: string = '', defaultText: string = '') => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const selectedText = content.substring(start, end) || defaultText;
+    const replacement = `${prefix}${selectedText}${suffix}`;
+
+    setContent(content.substring(0, start) + replacement + content.substring(end));
+
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(start + prefix.length, start + prefix.length + selectedText.length);
+    }, 0);
+  };
 
   // Version History
   const [revisions, setRevisions] = useState<Revision[]>([]);
@@ -527,7 +546,10 @@ export default function DocumentDetailPage() {
               </div>
             </div>
             {viewMode === 'write' && (
-              <textarea value={content} onChange={(e) => setContent(e.target.value)} className="input-field min-h-[500px] font-mono text-sm" />
+              <div className="space-y-1.5">
+                <MarkdownToolbar onFormat={insertFormatting} />
+                <textarea ref={textareaRef} value={content} onChange={(e) => setContent(e.target.value)} className="input-field min-h-[500px] font-mono text-sm" />
+              </div>
             )}
             {viewMode === 'preview' && (
               <div className="min-h-[500px] p-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 overflow-y-auto">
@@ -539,14 +561,17 @@ export default function DocumentDetailPage() {
               </div>
             )}
             {viewMode === 'split' && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-h-[500px]">
-                <textarea value={content} onChange={(e) => setContent(e.target.value)} className="input-field min-h-[500px] font-mono text-sm" />
-                <div className="min-h-[500px] p-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 overflow-y-auto max-h-[500px]">
-                  {content.trim() ? (
-                    <MarkdownPreview content={content} />
-                  ) : (
-                    <div className="text-slate-400 italic text-center py-16">Live preview</div>
-                  )}
+              <div className="space-y-1.5">
+                <MarkdownToolbar onFormat={insertFormatting} />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 min-h-[500px]">
+                  <textarea ref={textareaRef} value={content} onChange={(e) => setContent(e.target.value)} className="input-field min-h-[500px] font-mono text-sm" />
+                  <div className="min-h-[500px] p-4 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 overflow-y-auto max-h-[500px]">
+                    {content.trim() ? (
+                      <MarkdownPreview content={content} />
+                    ) : (
+                      <div className="text-slate-400 italic text-center py-16">Live preview</div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
