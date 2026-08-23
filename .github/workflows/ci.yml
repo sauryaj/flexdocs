@@ -1,78 +1,95 @@
-name: CI/CD
+name: CI
 
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
-    branches: [main]
 
 jobs:
-  lint:
+  test:
+    name: Lint, types & unit tests
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://flexdocs:flexdocs@localhost:5432/flexdocs
+      SESSION_SECRET: ci-session-secret
+      ENCRYPTION_KEY: ci-encryption-key
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run lint
 
-  typecheck:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
+
       - run: npm ci
+
+      - run: npx prisma generate
+
       - run: npx tsc --noEmit
 
-  test:
+      - run: npx eslint src/
+
+      - run: npm test
+
+  smoke:
+    name: Build & API smoke tests
     runs-on: ubuntu-latest
+    needs: test
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: flexdocs
+          POSTGRES_PASSWORD: flexdocs
+          POSTGRES_DB: flexdocs
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flexdocs"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql://flexdocs:flexdocs@localhost:5432/flexdocs
+      REDIS_URL: redis://localhost:6379
+      SESSION_SECRET: ci-session-secret
+      NEXTAUTH_SECRET: ci-session-secret
+      ENCRYPTION_KEY: ci-encryption-key
+      NEXTAUTH_URL: http://localhost:3000
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-      - run: npm ci
-      - run: npx vitest run
 
-  build:
-    runs-on: ubuntu-latest
-    needs: [lint, typecheck, test]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
       - run: npm ci
-      - run: npx prisma generate
-      - run: npm run build
 
-  deploy:
-    runs-on: ubuntu-latest
-    needs: [build]
-    # Only run on version tags, and only when deploy credentials are configured
-    if: startsWith(github.ref, 'refs/tags/v') && vars.DEPLOY_ENABLED == 'true'
-    environment: production
-    concurrency: production-deploy
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{ secrets.DEPLOY_HOST }}
-          username: ${{ secrets.DEPLOY_USER }}
-          key: ${{ secrets.DEPLOY_SSH_KEY }}
-          port: ${{ secrets.DEPLOY_PORT }}
-          script: |
-            set -e
-            cd ${{ vars.DEPLOY_PATH }}
-            git fetch origin
-            git checkout ${{ github.ref_name }}
-            ./scripts/deploy.sh
+      - name: Apply schema
+        run: npx prisma db push --skip-generate
+
+      - name: Build
+        run: npm run build
+
+      - name: Start server
+        run: |
+          npm run start &
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/login || true)
+            [ "$code" = "200" ] && break
+            sleep 2
+          done
+          curl -s -o /dev/null -w 'login page %{http_code}\n' http://localhost:3000/login
+
+      - name: Run smoke tests
+        run: bash scripts/smoke-test.sh http://localhost:3000

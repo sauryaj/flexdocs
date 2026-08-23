@@ -3,117 +3,7 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/rbac';
 import { prisma } from '@/lib/prisma';
 import { encrypt } from '@/lib/encryption';
-
-/** RFC-4180-ish CSV parser: handles quoted fields with embedded commas/newlines/quotes. */
-function parseCsv(text: string): string[][] {
-  const rows: string[][] = [];
-  let row: string[] = [];
-  let field = '';
-  let inQuotes = false;
-  const src = text.replace(/^\uFEFF/, '');
-
-  for (let i = 0; i < src.length; i++) {
-    const ch = src[i];
-    if (inQuotes) {
-      if (ch === '"') {
-        if (src[i + 1] === '"') {
-          field += '"';
-          i++;
-        } else {
-          inQuotes = false;
-        }
-      } else {
-        field += ch;
-      }
-    } else if (ch === '"') {
-      inQuotes = true;
-    } else if (ch === ',') {
-      row.push(field);
-      field = '';
-    } else if (ch === '\n' || ch === '\r') {
-      if (ch === '\r' && src[i + 1] === '\n') i++;
-      row.push(field);
-      field = '';
-      if (row.some((c) => c.trim() !== '')) rows.push(row);
-      row = [];
-    } else {
-      field += ch;
-    }
-  }
-  if (field !== '' || row.length > 0) {
-    row.push(field);
-    if (row.some((c) => c.trim() !== '')) rows.push(row);
-  }
-  return rows;
-}
-
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-type VaultFormat = 'bitwarden' | '1password' | 'chrome' | 'generic';
-
-function detectFormat(headers: string[]): VaultFormat {
-  const h = headers.map(norm);
-  if (h.includes('loginusername') && h.includes('loginpassword')) return 'bitwarden';
-  if (h.includes('title') && (h.includes('url') || h.includes('loginuri'))) return '1password';
-  if (h.includes('name') && h.includes('username') && h.includes('password')) return 'chrome';
-  return 'generic';
-}
-
-interface MappedRow {
-  name: string;
-  username: string;
-  password: string;
-  url?: string;
-  notes?: string;
-  totpSecret?: string;
-  isFavorite?: boolean;
-}
-
-function mapRow(row: Record<string, string>, format: VaultFormat): MappedRow {
-  const get = (...keys: string[]): string => {
-    for (const k of keys) {
-      const v = row[norm(k)];
-      if (v !== undefined && v.trim() !== '') return v.trim();
-    }
-    return '';
-  };
-
-  // Bitwarden stores TOTP as otpauth:// URI or raw secret
-  const totpRaw = get('login_totp', 'totp');
-  const totpSecret = totpRaw
-    ? decodeURIComponent(totpRaw.replace(/^otpauth:\/\/totp\/[^?]*\?secret=/i, '').split('&')[0])
-    : undefined;
-
-  if (format === 'bitwarden') {
-    return {
-      name: get('name') || 'Untitled',
-      username: get('login_username', 'username'),
-      password: get('login_password'),
-      url: get('login_uri', 'uri') || undefined,
-      notes: get('notes') || undefined,
-      totpSecret: totpSecret || undefined,
-      isFavorite: get('favorite') === 'true',
-    };
-  }
-  if (format === '1password') {
-    return {
-      name: get('title') || 'Untitled',
-      username: get('username', 'login_username'),
-      password: get('password', 'login_password'),
-      url: get('url', 'login_uri', 'website') || undefined,
-      notes: get('notes') || undefined,
-      totpSecret: totpSecret || undefined,
-    };
-  }
-  // chrome + generic
-  return {
-    name: get('name', 'title') || 'Untitled',
-    username: get('username', 'login_username'),
-    password: get('password', 'login_password'),
-    url: get('url', 'login_uri') || undefined,
-    notes: get('notes') || undefined,
-  };
-}
+import { parseCsv, detectFormat, mapRow, type VaultFormat } from '@/lib/vault-import';
 
 export async function POST(req: Request) {
   const user = await auth();
@@ -139,7 +29,7 @@ export async function POST(req: Request) {
   const dataRows = rows.slice(1).map((r) => {
     const rec: Record<string, string> = {};
     headers.forEach((h, i) => {
-      rec[norm(h)] = r[i] ?? '';
+      rec[h.toLowerCase().replace(/[^a-z0-9]/g, '')] = r[i] ?? '';
     });
     return rec;
   });

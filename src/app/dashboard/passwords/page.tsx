@@ -611,13 +611,24 @@ function PasswordRow({
 }) {
   return (
     <div className="flex items-center gap-4 p-4 hover:bg-[var(--surface-1)] transition-colors">
-      <input
-        type="checkbox"
-        checked={selected}
-        onChange={() => onToggleSelect(pass.id)}
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={selected}
         aria-label={`Select ${pass.name}`}
-        className="w-4 h-4 cursor-pointer accent-current shrink-0"
-      />
+        onClick={(e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          onToggleSelect(pass.id);
+        }}
+        className="w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors"
+        style={{
+          borderColor: selected ? 'var(--accent)' : 'var(--card-border)',
+          backgroundColor: selected ? 'var(--accent)' : 'transparent',
+        }}
+      >
+        {selected && <svg viewBox="0 0 12 12" className="w-3 h-3" fill="none"><path d="M2.5 6.5l2.5 2.5L9.5 4" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+      </button>
       <button
         onClick={() => onToggleFavorite()}
         className={cn(
