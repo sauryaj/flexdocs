@@ -28,6 +28,7 @@ import {
   Zap,
   HardDrive,
   BookOpen,
+  Ticket,
   type LucideIcon,
 } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo } from 'react';
@@ -151,6 +152,8 @@ export function Sidebar() {
           label: 'Overview',
           items: [
             { name: 'Client Portal', href: '/dashboard/portal', icon: Building },
+            { name: 'My Tickets', href: '/dashboard/portal/tickets', icon: Ticket },
+            { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
           ],
         },
         {
@@ -201,8 +204,9 @@ export function Sidebar() {
           items: [
             { name: 'Cloud', href: '/dashboard/cloud', icon: Cloud },
             { name: 'Maintenance', href: '/dashboard/maintenance', icon: CalendarClock },
-            { name: 'Status Pages', href: '/dashboard/status', icon: Activity },
-            { name: 'Relationship Map', href: '/dashboard/relationships', icon: Network },
+      { name: 'Status Pages', href: '/dashboard/status', icon: Activity },
+      { name: 'Relationship Map', href: '/dashboard/relationships', icon: Network },
+      { name: 'Tickets', href: '/dashboard/tickets', icon: Ticket },
             { name: 'Automation', href: '/dashboard/automation', icon: Zap },
             { name: 'Schedules', href: '/dashboard/automation/schedules', icon: CalendarClock, sub: true },
             { name: 'Changes', href: '/dashboard/automation/changes', icon: Activity, sub: true },

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Building2, Globe, KeyRound, ShieldAlert, BookOpen, Server, ArrowRight, CalendarClock } from 'lucide-react';
+import { Building2, Globe, KeyRound, ShieldAlert, BookOpen, Server, ArrowRight, CalendarClock, Ticket as TicketIcon } from 'lucide-react';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
 
 interface Summary {
@@ -101,6 +101,18 @@ export default function ClientPortalPage() {
         </div>
       </div>
 
+      {/* Support */}
+      <Link
+        href="/dashboard/portal/tickets"
+        className="card px-5 py-4 flex items-center justify-between gap-3 transition-colors hover:bg-[var(--surface-1)]"
+      >
+        <div className="flex items-center gap-3">
+          <TicketIcon className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+          <p className="text-sm font-medium" style={{ color: 'var(--foreground)' }}>Need help? Open a support ticket</p>
+        </div>
+        <ArrowRight className="w-4 h-4 shrink-0" style={{ color: 'var(--muted)' }} />
+      </Link>
+
       {/* Knowledge base */}
       <div className="card overflow-hidden">
         <div className="px-5 py-3.5 border-b flex items-center justify-between" style={{ borderColor: 'var(--card-border)' }}>
@@ -110,8 +122,7 @@ export default function ClientPortalPage() {
           </div>
           <Link href="/dashboard/portal/kb" className="text-xs hover:underline" style={{ color: 'var(--accent)' }}>
             View all →
-          </Link>
-        </div>
+          </Link>        </div>
         <div className="divide-y" style={{ borderColor: 'var(--card-border)' }}>
           {data.kb.length === 0 ? (
             <p className="px-5 py-6 text-sm text-center" style={{ color: 'var(--muted)' }}>No published articles yet.</p>

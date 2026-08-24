@@ -61,6 +61,9 @@ model User {
   organizationMembers OrganizationMember[]
   renewalItems    RenewalItem[] @relation("RenewalItems")
   integrations    Integration[]
+  ticketsCreated  Ticket[]        @relation("TicketCreator")
+  ticketsAssigned Ticket[]        @relation("TicketAssignee")
+  ticketReplies   TicketReply[]
   costBudgets     CostBudget[]
   dockerHosts     DockerHost[]
   k8sClusters     K8sCluster[]
@@ -384,6 +387,7 @@ model Organization {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   members     OrganizationMember[]
+  tickets     Ticket[]
   renewalItems RenewalItem[]
 
   documents     Document[]
@@ -404,6 +408,41 @@ model Organization {
   dockerHosts   DockerHost[]
   k8sClusters   K8sCluster[]
   infraChanges  InfraChange[]
+}
+
+model Ticket {
+  id               Int      @id @default(autoincrement())
+  subject          String
+  description      String
+  status           String   @default("open") // open | pending | resolved | closed
+  priority         String   @default("medium") // low | medium | high | urgent
+  organizationId   String?
+  organization     Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  createdByUserId  String
+  createdBy        User     @relation("TicketCreator", fields: [createdByUserId], references: [id])
+  assignedToUserId String?
+  assignedTo       User?    @relation("TicketAssignee", fields: [assignedToUserId], references: [id])
+  resolvedAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  replies          TicketReply[]
+
+  @@index([organizationId])
+  @@index([status, priority])
+  @@index([createdByUserId])
+}
+
+model TicketReply {
+  id        String   @id @default(cuid())
+  ticketId  Int
+  ticket    Ticket   @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  body      String
+  internal  Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
 }
 
 model OrganizationMember {

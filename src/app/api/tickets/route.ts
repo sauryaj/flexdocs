@@ -1,0 +1,103 @@
+import { NextResponse } from 'next/server';
+import { auth } from '@/lib/auth';
+import { prisma } from '@/lib/prisma';
+import { getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
+import { createNotification } from '@/lib/notifications';
+
+const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
+
+export async function GET(req: Request) {
+  const user = await auth();
+  if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const url = new URL(req.url);
+  const organizationId = url.searchParams.get('organizationId') || undefined;
+  const status = url.searchParams.get('status') || undefined;
+
+  const scope = await getOrgScope(user.id, user.role);
+  let where: Record<string, unknown>;
+  if (scope.mode === 'limited') {
+    // Clients only see their own org's tickets, and never staff-internal data
+    const orgs = scopeOrgWhere(scope, organizationId).organizationId;
+    where = {
+      organizationId: orgs ?? { in: ['__none__'] },
+      ...(status ? { status } : {}),
+    };
+  } else {
+    where = {
+      ...(organizationId ? { organizationId } : {}),
+      ...(status ? { status } : {}),
+    };
+  }
+
+  const tickets = await prisma.ticket.findMany({
+    where,
+    include: {
+      createdBy: { select: { name: true, email: true } },
+      assignedTo: { select: { id: true, name: true } },
+      _count: { select: { replies: true } },
+    },
+    orderBy: [{ priority: 'desc' }, { updatedAt: 'desc' }],
+    take: 200,
+  });
+
+  const priorityRank: Record<string, number> = { urgent: 4, high: 3, medium: 2, low: 1 };
+  tickets.sort((a, b) => (priorityRank[b.priority] ?? 0) - (priorityRank[a.priority] ?? 0));
+
+  return NextResponse.json(
+    tickets.map((t) => ({
+      ...t,
+      createdByName: t.createdBy.name || t.createdBy.email,
+      replyCount: t._count.replies,
+      _count: undefined,
+    })),
+  );
+}
+
+export async function POST(req: Request) {
+  const user = await auth();
+  if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { subject, description, priority, organizationId } = await req.json().catch(() => ({}));
+  if (!subject?.trim() || !description?.trim()) {
+    return NextResponse.json({ error: 'subject and description required' }, { status: 400 });
+  }
+  if (priority && !PRIORITIES.includes(priority)) {
+    return NextResponse.json({ error: `priority must be one of ${PRIORITIES.join(', ')}` }, { status: 400 });
+  }
+
+  const ticket = await prisma.ticket.create({
+    data: {
+      subject: subject.trim(),
+      description: description.trim(),
+      priority: priority || 'medium',
+      organizationId: organizationId || null,
+      createdByUserId: user.id,
+    },
+    include: { organization: { select: { name: true } } },
+  });
+
+  // Notify staff (admins + editors) that a new ticket arrived
+  if (!['admin', 'editor'].includes(user.role)) {
+    try {
+      const staff = await prisma.user.findMany({
+        where: { role: { in: ['admin', 'editor'] } },
+        select: { id: true },
+      });
+      for (const s of staff) {
+        await createNotification({
+          userId: s.id,
+          type: 'system',
+          title: 'New support ticket',
+          message: `${user.name || user.email} opened "${ticket.subject}"${ticket.organization ? ` (${ticket.organization.name})` : ''}`,
+          severity: priority === 'urgent' ? 'danger' : 'info',
+          link: `/dashboard/tickets/${ticket.id}`,
+        });
+      }
+    } catch {
+      // notification failures never block ticket creation
+    }
+  }
+
+  return NextResponse.json({ ...ticket, createdByName: user.name || user.email }, { status: 201 });
+}
