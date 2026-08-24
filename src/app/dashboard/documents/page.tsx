@@ -256,7 +256,7 @@ export default function DocumentsPage() {
             </p>
           </div>
           <Link
-            href={`/dashboard/documents/new${selectedFolderId ? `?folder=${selectedFolderId}` : ''}`}
+            href={`/dashboard/documents/new?${new URLSearchParams({ ...(selectedOrg?.id ? { organizationId: selectedOrg.id } : {}), ...(selectedFolderId ? { folder: selectedFolderId } : {}) })}`}
             className="btn-primary flex items-center gap-2"
           >
             <Plus className="w-4 h-4" />
@@ -309,7 +309,7 @@ export default function DocumentsPage() {
                 : 'Create your first document to get started'
             }
             action={
-              <Link href="/dashboard/documents/new" className="btn-primary">
+              <Link href={`/dashboard/documents/new${selectedOrg?.id ? `?organizationId=${selectedOrg.id}` : ''}`} className="btn-primary">
                 <Plus className="w-4 h-4 mr-2 inline" />
                 New Document
               </Link>

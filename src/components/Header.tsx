@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Moon, Sun, FileText, Key, Globe, Box, CheckSquare, Command, LogOut } from 'lucide-react';
 import { useTheme } from '@/lib/ThemeContext';
+import { useOrganization } from '@/lib/OrganizationContext';
 import { NotificationBell } from '@/components/NotificationBell';
 
 interface SearchResult {
@@ -30,6 +31,7 @@ const typeIcons: Record<SearchResult['type'], typeof FileText> = {
 };
 
 export function Header() {
+  const { selectedOrg } = useOrganization();
   const router = useRouter();
   const { resolvedMode, setTheme } = useTheme();
   const [searchQuery, setSearchQuery] = useState('');
@@ -255,7 +257,7 @@ export function Header() {
               <button
                 onClick={() => {
                   setQuickAddOpen(false);
-                  router.push('/dashboard/documents/new');
+                  router.push(`/dashboard/documents/new${selectedOrg?.id ? `?organizationId=${selectedOrg.id}` : ''}`);
                 }}
                 className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-[var(--surface-2)] font-medium"
                 style={{ color: 'var(--foreground)' }}

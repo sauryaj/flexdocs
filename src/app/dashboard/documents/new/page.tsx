@@ -23,6 +23,7 @@ import {
 import { MentionPicker } from '@/components/MentionPicker';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
+import { useOrganization } from '@/lib/OrganizationContext';
 
 const categories = [
   'general',
@@ -201,12 +202,15 @@ function NewDocumentForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const presetFolderId = searchParams.get('folder') || '';
+  const { selectedOrg } = useOrganization();
 
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('general');
   const [folderId, setFolderId] = useState(presetFolderId);
-  const [organizationId, setOrganizationId] = useState('');
+  // Default to the organization being browsed so new docs land in the
+  // org-scoped list the user came from.
+  const [organizationId, setOrganizationId] = useState(selectedOrg?.id || '');
   const [tags, setTags] = useState('');
 
   const [folders, setFolders] = useState<Folder[]>([]);
