@@ -51,7 +51,7 @@ export async function PUT(
   const {
     name, username, password, url, notes, category, isFavorite, tags,
     rotationDays, totpSecret, totpIssuer, totpPeriod, totpDigits,
-    customFields, autofillSelector, autofillNotes,
+    customFields, autofillSelector, autofillNotes, clientVisible,
   } = await req.json();
 
   const existing = await prisma.password.findFirst({
@@ -90,6 +90,7 @@ export async function PUT(
       customFields: customFields !== undefined ? JSON.stringify(customFields) : undefined,
       autofillSelector: autofillSelector !== undefined ? autofillSelector : undefined,
       autofillNotes: autofillNotes !== undefined ? autofillNotes : undefined,
+      clientVisible: clientVisible !== undefined ? clientVisible : undefined,
     },
   });
 

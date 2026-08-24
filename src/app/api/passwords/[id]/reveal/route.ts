@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { decrypt } from '@/lib/encryption';
 import { auditLog } from '@/lib/audit';
+import { canAccessOrganization } from '@/lib/org-scope';
 
 export async function GET(
   req: Request,
@@ -12,7 +13,7 @@ export async function GET(
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { id } = await params;
-  const password = await prisma.password.findFirst({
+  let password = await prisma.password.findFirst({
     where: { id, userId: user.id },
     select: {
       id: true,
@@ -23,6 +24,25 @@ export async function GET(
       organizationId: true,
     },
   });
+
+  // Org members may reveal org-linked credentials flagged client-visible
+  if (!password) {
+    const record = await prisma.password.findFirst({
+      where: { id },
+      select: {
+        id: true, name: true, username: true, password: true, totpSecret: true,
+        organizationId: true, clientVisible: true,
+      },
+    });
+    if (
+      record &&
+      record.clientVisible &&
+      record.organizationId &&
+      (await canAccessOrganization(user.id, user.role, record.organizationId))
+    ) {
+      password = record;
+    }
+  }
 
   if (!password) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 

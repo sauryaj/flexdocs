@@ -20,7 +20,7 @@ export async function GET(req: Request) {
   const orgWhere = scopeOrgWhere(scope, organizationId);
   const where =
     scope.mode === 'limited'
-      ? orgWhere
+      ? { ...orgWhere, clientVisible: true }
       : { userId: user.id, ...(organizationId ? { organizationId } : {}) };
 
   const passwords = await prisma.password.findMany({
@@ -55,7 +55,7 @@ export async function POST(req: Request) {
   }
 
   const {
-    name, username, password, url, notes, category, organizationId, tags,
+    name, username, password, url, notes, category, organizationId, clientVisible, tags,
     rotationDays, totpSecret, totpIssuer, totpPeriod, totpDigits,
     customFields, autofillSelector, autofillNotes,
   } = await req.json();
@@ -70,6 +70,7 @@ export async function POST(req: Request) {
       name, username, password: encrypt(password), url, notes,
       category: category || 'general',
       organizationId: organizationId || null, userId: user.id,
+      clientVisible: clientVisible !== false,
       rotationDays: rotationDays || null, expiresAt, lastRotatedAt: now,
       totpSecret: totpSecret ? encrypt(totpSecret) : null,
       totpIssuer: totpIssuer || null,

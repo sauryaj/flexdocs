@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Building2, Globe, ShieldAlert, BookOpen, Server, ArrowRight, CalendarClock, Ticket as TicketIcon } from 'lucide-react';
+import { Building2, Globe, ShieldAlert, BookOpen, Server, Key, ArrowRight, CalendarClock, Ticket as TicketIcon } from 'lucide-react';
 
 interface Summary {
   orgs: { id: string; name: string }[];
   serverCount: number;
+  vaultCount: number;
   kb: { id: string; title: string; updatedAt: string }[];
   expiries: { kind: string; name: string; when: string; days: number | null }[];
 }
@@ -55,6 +56,7 @@ export default function ClientPortalPage() {
           { label: 'Knowledge articles', value: data.kb.length, icon: BookOpen },
           { label: 'Expiring in 90 days', value: data.expiries.length, icon: CalendarClock },
           { label: 'Managed servers', value: data.serverCount, icon: Server },
+          { label: 'Shared credentials', value: data.vaultCount, icon: Key },
           { label: 'Organizations', value: data.orgs.length, icon: Building2 },
         ].map((s) => (
           <div key={s.label} className="card p-5">

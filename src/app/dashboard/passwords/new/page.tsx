@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Save, Loader2, RefreshCw } from 'lucide-react';
+import { useOrganization } from '@/lib/OrganizationContext';
 
 const categories = [
   'general',
@@ -31,6 +32,7 @@ function generatePassword(length = 20): string {
 
 export default function NewPasswordPage() {
   const router = useRouter();
+  const { selectedOrg } = useOrganization();
   const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -38,6 +40,7 @@ export default function NewPasswordPage() {
   const [notes, setNotes] = useState('');
   const [category, setCategory] = useState('general');
   const [tags, setTags] = useState('');
+  const [clientVisible, setClientVisible] = useState(true);
   const [loading, setLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -52,7 +55,11 @@ export default function NewPasswordPage() {
     const res = await fetch('/api/passwords', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, username, password, url, notes, category, tags: tagList }),
+      body: JSON.stringify({
+        name, username, password, url, notes, category, tags: tagList,
+        organizationId: selectedOrg?.id || undefined,
+        clientVisible,
+      }),
     });
 
     if (res.ok) {
@@ -160,6 +167,23 @@ export default function NewPasswordPage() {
             />
           </div>
         </div>
+
+        {selectedOrg && (
+          <div className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              role="checkbox"
+              id="clientVisible"
+              checked={clientVisible}
+              onChange={(e) => setClientVisible(e.target.checked)}
+              className="w-4 h-4"
+            />
+            <label htmlFor="clientVisible" className="cursor-pointer text-slate-700 dark:text-slate-300">
+              Visible to <span className="font-medium">{selectedOrg.name}</span> client users
+              <span className="block text-xs text-slate-500">Uncheck to keep this credential staff-only</span>
+            </label>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>

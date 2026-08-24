@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { encrypt, decrypt } from '@/lib/encryption';
 import { generateTotp, getKeyUri } from '@/lib/totp-password';
+import { canAccessOrganization } from '@/lib/org-scope';
+import { auditLog } from '@/lib/audit';
 
 export async function GET(
   req: Request,
@@ -12,9 +14,43 @@ export async function GET(
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { id } = await params;
-  const password = await prisma.password.findFirst({
+
+  const TOTP_FIELDS = {
+    id: true, name: true, username: true, totpIssuer: true, totpPeriod: true, totpDigits: true,
+    totpSecret: true, organizationId: true, clientVisible: true,
+  } as const;
+
+  type TotpRecord = {
+    id: string; name: string; username: string; totpIssuer: string | null;
+    totpPeriod: number; totpDigits: number; totpSecret: string | null;
+    organizationId: string | null; clientVisible: boolean;
+  };
+
+  // Own credential first; org members may generate codes for client-visible org credentials
+  let password: TotpRecord | null = await prisma.password.findFirst({
     where: { id, userId: user.id },
+    select: TOTP_FIELDS,
   });
+
+  if (!password) {
+    const record = await prisma.password.findUnique({ where: { id }, select: TOTP_FIELDS });
+    if (
+      record &&
+      record.clientVisible &&
+      record.organizationId &&
+      (await canAccessOrganization(user.id, user.role, record.organizationId))
+    ) {
+      password = record;
+      await auditLog({
+        userId: user.id,
+        action: 'password.view',
+        resourceType: 'password',
+        resourceId: id,
+        resourceName: record.name,
+        details: { totp: true },
+      }).catch(() => {});
+    }
+  }
   if (!password) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   if (!password.totpSecret) {

@@ -33,6 +33,8 @@ interface PasswordEntry {
   autofillNotes: string | null;
   breachCount: number;
   lastBreachCheck: string | null;
+  organizationId: string | null;
+  clientVisible: boolean;
   createdAt: string;
   updatedAt: string;
   tags: { id: string; name: string; color: string }[];
@@ -98,6 +100,7 @@ export default function PasswordDetailPage() {
   const [url, setUrl] = useState('');
   const [notes, setNotes] = useState('');
   const [category, setCategory] = useState('general');
+  const [clientVisible, setClientVisible] = useState(true);
   const [tags, setTags] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -177,6 +180,7 @@ export default function PasswordDetailPage() {
       body: JSON.stringify({
         name, username, password, url: url || null, notes: notes || null,
         category, isFavorite: pass?.isFavorite, tags: tagList,
+        clientVisible,
         rotationDays: rotationDays || null,
         totpSecret: totpSecret || undefined, totpIssuer: totpIssuer || null,
         customFields, autofillSelector: autofillSelector || null,
@@ -399,6 +403,23 @@ export default function PasswordDetailPage() {
             <input type="text" value={tags} onChange={(e) => setTags(e.target.value)} className="input-field" />
           </div>
         </div>
+
+        {pass?.organizationId && (
+          <div className="flex items-center gap-2 text-sm">
+            <input
+              type="checkbox"
+              role="checkbox"
+              id="clientVisibleEdit"
+              checked={clientVisible}
+              onChange={(e) => setClientVisible(e.target.checked)}
+              className="w-4 h-4"
+            />
+            <label htmlFor="clientVisibleEdit" className="cursor-pointer text-slate-700 dark:text-slate-300">
+              Visible to client users of the linked organization
+              <span className="block text-xs text-slate-500">Uncheck to keep this credential staff-only</span>
+            </label>
+          </div>
+        )}
 
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1">Notes</label>

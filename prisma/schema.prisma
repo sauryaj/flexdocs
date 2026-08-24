@@ -138,6 +138,8 @@ model Password {
   expiresAt      DateTime? // When password should be rotated
   rotationDays   Int?      // Auto-calculate expiresAt from updatedAt + rotationDays
   lastRotatedAt  DateTime? // When password was last rotated
+  // Client portal sharing
+  clientVisible  Boolean  @default(true) // org members can reveal this credential
   // TOTP/2FA
   totpSecret     String?  // Encrypted TOTP secret
   totpIssuer      String?  // e.g., "Google", "GitHub"

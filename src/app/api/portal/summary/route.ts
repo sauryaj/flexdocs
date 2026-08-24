@@ -12,7 +12,7 @@ export async function GET() {
 
   const scope = await getOrgScope(user.id, user.role);
   if (scope.mode === 'limited' && scope.orgIds.length === 0) {
-    return NextResponse.json({ orgs: [], serverCount: 0, kb: [], expiries: [], renewals: [] });
+    return NextResponse.json({ orgs: [], serverCount: 0, kb: [], expiries: [], renewals: [], vaultCount: 0 });
   }
 
   const orgWhere =
@@ -23,7 +23,7 @@ export async function GET() {
   const now = Date.now();
   const days = (d: Date | null) => (d ? Math.ceil((d.getTime() - now) / 86400000) : null);
 
-  const [orgs, kb, domains, certs, servers, renewals] = await Promise.all([
+  const [orgs, kb, domains, certs, renewals, servers, vaultCount] = await Promise.all([
     prisma.organization.findMany({
       where: scope.mode === 'limited' ? { id: { in: scope.orgIds } } : undefined,
       select: { id: true, name: true },
@@ -46,7 +46,6 @@ export async function GET() {
       orderBy: { validTo: 'asc' },
       take: 20,
     }),
-    prisma.server.count({ where: orgWhere }),
     prisma.renewalItem.findMany({
       where: {
         ...(scope.mode === 'limited'
@@ -58,11 +57,14 @@ export async function GET() {
       orderBy: { renewsAt: 'asc' },
       take: 20,
     }),
+    prisma.server.count({ where: orgWhere }),
+    prisma.password.count({ where: { ...orgWhere, clientVisible: true } }),
   ]);
 
   return NextResponse.json({
     orgs,
     serverCount: servers,
+    vaultCount,
     kb: kb.map((k) => ({ ...k, updatedAt: k.updatedAt.toISOString() })),
     expiries: [
       ...domains.map((d) => ({ kind: 'domain', name: d.name, when: d.expiresAt!.toISOString(), days: days(d.expiresAt) })),
