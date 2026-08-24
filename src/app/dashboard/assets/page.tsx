@@ -11,7 +11,6 @@ import {
 import { formatDate, cn } from '@/lib/utils';
 import { EmptyState, ConfirmDialog } from '@/components/UIComponents';
 import { useOrganization } from '@/lib/OrganizationContext';
-import { AssetTypeBuilderModal } from '@/components/AssetTypeBuilderModal';
 
 interface Asset {
   id: string;
@@ -54,9 +53,6 @@ export default function AssetsPage() {
   const [typeFilter, setTypeFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
-  const [showNewType, setShowNewType] = useState(false);
-  const [newTypeName, setNewTypeName] = useState('');
-  const [newTypeColor, setNewTypeColor] = useState('#6366f1');
 
   useEffect(() => {
     fetchAssets();
@@ -87,20 +83,6 @@ export default function AssetsPage() {
     setDeleteId(null);
   };
 
-  const handleCreateType = async () => {
-    if (!newTypeName.trim()) return;
-    const res = await fetch('/api/asset-types', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newTypeName.trim(), color: newTypeColor }),
-    });
-    if (res.ok) {
-      await fetchTypes();
-      setNewTypeName('');
-      setShowNewType(false);
-    }
-  };
-
   const filtered = assets.filter((a) => {
     const matchesSearch = a.name.toLowerCase().includes(search.toLowerCase());
     const matchesType = typeFilter === 'all' || a.assetType === typeFilter;
@@ -125,10 +107,10 @@ export default function AssetsPage() {
           <p className="text-slate-500">Track hardware, network devices, and custom assets</p>
         </div>
         <div className="flex gap-2">
-          <button onClick={() => setShowNewType(true)} className="btn-secondary flex items-center gap-2">
+          <Link href="/dashboard/asset-layouts" className="btn-secondary flex items-center gap-2">
             <Plus className="w-4 h-4" />
-            New Type
-          </button>
+            Manage Layouts
+          </Link>
           <Link href="/dashboard/assets/new" className="btn-primary flex items-center gap-2">
             <Plus className="w-4 h-4" />
             New Asset
@@ -259,11 +241,6 @@ export default function AssetsPage() {
         message="Are you sure you want to delete this asset?"
       />
 
-      <AssetTypeBuilderModal
-        isOpen={showNewType}
-        onClose={() => setShowNewType(false)}
-        onSuccess={() => fetchTypes()}
-      />
     </div>
   );
 }

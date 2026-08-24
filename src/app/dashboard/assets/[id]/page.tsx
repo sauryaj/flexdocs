@@ -4,11 +4,24 @@ import { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
-  ArrowLeft, Save, Loader2, Trash2, Plus, X,
+  ArrowLeft, Save, Loader2, Trash2, Plus, X, LayoutGrid,
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/UIComponents';
 import { RelatedItems } from '@/components/RelatedItems';
+
+interface FieldDef {
+  name: string;
+  type: 'text' | 'number' | 'date' | 'select' | 'checkbox' | 'url';
+  required?: boolean;
+  options?: string[];
+}
+
+interface AssetType {
+  id: string;
+  name: string;
+  fields: string;
+}
 
 interface Asset {
   id: string;
@@ -31,23 +44,43 @@ export default function AssetDetailPage() {
   const [notes, setNotes] = useState('');
   const [tags, setTags] = useState('');
   const [fields, setFields] = useState<Record<string, string>>({});
+  const [types, setTypes] = useState<AssetType[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/assets/${params.id}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setAsset(data);
-        setName(data.name);
-        setAssetType(data.assetType);
-        setNotes(data.notes || '');
-        setTags(data.tags.map((t: any) => t.name).join(', '));
-        setFields(JSON.parse(data.fields || '{}'));
-        setLoading(false);
-      });
+    Promise.all([
+      fetch(`/api/assets/${params.id}`).then((r) => r.json()),
+      fetch('/api/asset-types').then((r) => (r.ok ? r.json() : [])),
+    ]).then(([data, typeList]: [Asset & { fields: string }, AssetType[]]) => {
+      setAsset(data);
+      setName(data.name);
+      setAssetType(data.assetType);
+      setNotes(data.notes || '');
+      setTags((data.tags || []).map((t) => t.name).join(', '));
+      try { setFields(JSON.parse(data.fields || '{}')); } catch { setFields({}); }
+      setTypes(Array.isArray(typeList) ? typeList : []);
+      setLoading(false);
+    });
   }, [params.id]);
+
+  // Schema for the selected type, if it still exists
+  const schema: FieldDef[] = (() => {
+    const t = types.find((x) => x.name === assetType);
+    if (!t) return [];
+    try {
+      const parsed = JSON.parse(t.fields || '[]');
+      return Array.isArray(parsed)
+        ? parsed.filter((f): f is FieldDef => typeof f === 'object' && f !== null && !!f.name)
+        : [];
+    } catch {
+      return [];
+    }
+  })();
+  const schemaNames = new Set(schema.map((f) => f.name));
+  // Values not covered by the current schema (legacy or schema changed)
+  const extraEntries = Object.entries(fields).filter(([k]) => !schemaNames.has(k));
 
   const handleSave = async () => {
     setSaving(true);
@@ -99,20 +132,87 @@ export default function AssetDetailPage() {
             <input type="text" value={name} onChange={(e) => setName(e.target.value)} className="input-field" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Asset Type</label>
-            <input type="text" value={assetType} onChange={(e) => setAssetType(e.target.value)} className="input-field" />
+            <label className="block text-sm font-medium text-slate-700 mb-1">Layout</label>
+            <select
+              value={schema.length > 0 || types.some((t) => t.name === assetType) ? assetType : '__custom__'}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === '__custom__') return;
+                setAssetType(v);
+                setFields({});
+              }}
+              className="input-field"
+            >
+              {types.map((t) => (
+                <option key={t.id} value={t.name}>{t.name}</option>
+              ))}
+              {!types.some((t) => t.name === assetType) && (
+                <option value="__custom__">{assetType} (custom)</option>
+              )}
+            </select>
           </div>
         </div>
 
+        {/* Structured layout fields */}
+        {schema.length > 0 && (
+          <div className="space-y-4 border-t pt-4">
+            <h3 className="font-semibold text-sm text-slate-800 flex items-center gap-1.5">
+              <LayoutGrid className="w-4 h-4" style={{ color: 'var(--accent)' }} />
+              {assetType} fields
+            </h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {schema.map((f) => (
+                <div key={f.name}>
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
+                    {f.name} {f.required && <span className="text-red-500">*</span>}
+                  </label>
+                  {f.type === 'select' ? (
+                    <select
+                      value={fields[f.name] ?? ''}
+                      onChange={(e) => setFields({ ...fields, [f.name]: e.target.value })}
+                      className="input-field"
+                      required={f.required}
+                    >
+                      <option value="">Select…</option>
+                      {(f.options ?? []).map((o) => <option key={o} value={o}>{o}</option>)}
+                    </select>
+                  ) : f.type === 'checkbox' ? (
+                    <label className="flex items-center gap-2 text-sm cursor-pointer mt-1">
+                      <input
+                        type="checkbox"
+                        role="checkbox"
+                        checked={fields[f.name] === 'true'}
+                        onChange={(e) => setFields({ ...fields, [f.name]: e.target.checked ? 'true' : 'false' })}
+                      />
+                      Yes
+                    </label>
+                  ) : (
+                    <input
+                      type={f.type === 'number' ? 'number' : f.type === 'date' ? 'date' : 'text'}
+                      value={fields[f.name] ?? ''}
+                      onChange={(e) => setFields({ ...fields, [f.name]: e.target.value })}
+                      className="input-field"
+                      required={f.required}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Legacy / off-schema custom values */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <label className="block text-sm font-medium text-slate-700">Custom Fields</label>
+            <label className="block text-sm font-medium text-slate-700">
+              {schema.length > 0 ? 'Additional fields' : 'Custom Fields'}
+            </label>
             <button type="button" onClick={() => setFields({ ...fields, '': '' })} className="text-sm text-blue-600 hover:underline flex items-center gap-1">
               <Plus className="w-3 h-3" /> Add Field
             </button>
           </div>
-          {Object.entries(fields).map(([key, value], i) => (
-            <div key={i} className="flex gap-2 mb-2">
+          {(schema.length > 0 ? extraEntries : Object.entries(fields)).map(([key, value], i) => (
+            <div key={`${key}-${i}`} className="flex gap-2 mb-2">
               <input
                 type="text"
                 value={key}
@@ -146,6 +246,12 @@ export default function AssetDetailPage() {
               </button>
             </div>
           ))}
+          {schema.length > 0 && types.some((t) => t.name === assetType) && (
+            <p className="text-xs mt-2" style={{ color: 'var(--muted)' }}>
+              Editing the schema?{' '}
+              <Link href="/dashboard/asset-layouts" className="underline hover:text-blue-600 transition-colors">Manage layouts →</Link>
+            </p>
+          )}
         </div>
 
         <div>

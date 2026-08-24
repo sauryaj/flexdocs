@@ -130,7 +130,7 @@ async function main() {
   }
 
   const skipIfDomainExists = await prisma.domain.findFirst({
-    where: { userId: user.id, name: 'company.com' },
+    where: { name: 'company.com' },
   });
   if (!skipIfDomainExists) {
     await prisma.domain.createMany({
@@ -165,6 +165,53 @@ async function main() {
     console.log('Created sample domains');
   } else {
     console.log('Sample domains already exist, skipping');
+  }
+
+  // Starter asset layouts so the schema builder isn't empty on fresh installs
+  const typeCount = await prisma.flexibleAssetType.count({ where: { userId: user.id } });
+  if (typeCount === 0) {
+    await prisma.flexibleAssetType.createMany({
+      data: [
+        {
+          name: 'Printer',
+          color: '#0ea5e9',
+          icon: 'printer',
+          userId: user.id,
+          fields: JSON.stringify([
+            { name: 'Manufacturer', type: 'text', required: true },
+            { name: 'Model', type: 'text' },
+            { name: 'IP Address', type: 'text' },
+            { name: 'Color', type: 'select', options: ['Mono', 'Color'] },
+            { name: 'Managed', type: 'checkbox' },
+          ]),
+        },
+        {
+          name: 'Software License',
+          color: '#8b5cf6',
+          icon: 'license',
+          userId: user.id,
+          fields: JSON.stringify([
+            { name: 'Vendor', type: 'text', required: true },
+            { name: 'Seats', type: 'number' },
+            { name: 'Renewal Date', type: 'date' },
+            { name: 'Tier', type: 'select', options: ['Basic', 'Pro', 'Enterprise'] },
+          ]),
+        },
+        {
+          name: 'Warranty',
+          color: '#f59e0b',
+          icon: 'warranty',
+          userId: user.id,
+          fields: JSON.stringify([
+            { name: 'Provider', type: 'text', required: true },
+            { name: 'Expires', type: 'date', required: true },
+            { name: 'Coverage', type: 'select', options: ['Onsite', 'Depot', 'NBD'] },
+            { name: 'Contract URL', type: 'url' },
+          ]),
+        },
+      ],
+    });
+    console.log('Created starter asset layouts');
   }
 
   console.log('Seed completed!');
