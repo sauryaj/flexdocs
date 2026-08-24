@@ -13,7 +13,6 @@ import {
   FileText,
   AtSign,
   AlertCircle,
-  Trash2,
   RotateCcw,
   Sparkles,
   BookOpen,

@@ -3,9 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
-  Activity, Plus, Search, Trash2, CheckCircle, AlertTriangle, XCircle,
-} from 'lucide-react';
-import { formatDate, cn } from '@/lib/utils';
+  Activity, Plus, Search, Trash2, } from 'lucide-react';
 import { EmptyState, ConfirmDialog } from '@/components/UIComponents';
 import { useOrganization } from '@/lib/OrganizationContext';
 

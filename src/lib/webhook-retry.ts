@@ -4,22 +4,6 @@ import { createHmac } from 'crypto';
 
 export const RETRY_DELAYS_MS = [5000, 30000, 120000, 600000, 3600000]; // 5s, 30s, 2m, 10m, 1h
 
-export async function enqueueWebhookDelivery(
-  webhookId: string,
-  event: string,
-  payload: Record<string, unknown>
-) {
-  return prisma.webhookDelivery.create({
-    data: {
-      webhookId,
-      event,
-      payload: JSON.stringify(payload),
-      status: 'pending',
-      attempts: 0,
-    },
-  });
-}
-
 export async function processWebhookRetries() {
   const pendingDeliveries = await prisma.webhookDelivery.findMany({
     where: {

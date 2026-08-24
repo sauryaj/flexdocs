@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useOrganization } from '@/lib/OrganizationContext';
 import { Cloud, Server, Upload, Webhook, ArrowRight, Loader2 } from 'lucide-react';
@@ -171,7 +171,7 @@ function ImportTab({ orgId }: { orgId?: string }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState('');
-  const [file, setFile] = useState<File | null>(null);
+  const [, setFile] = useState<File | null>(null);
 
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0];

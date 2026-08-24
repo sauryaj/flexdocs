@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
-  User, Mail, Phone, Globe, Save, Loader2, ArrowRight,
+  Globe, Save, Loader2, ArrowRight,
   FileText, KeyRound, Key, Tag, Shield, Activity, Lock,
   Palette, Bell, Zap, FileBarChart, BookOpen, LayoutGrid,
   CheckCircle2, AlertCircle,

@@ -48,13 +48,6 @@ export function apiKeyHasPermission(
   return permissions.includes(required);
 }
 
-export function apiKeyHasAnyPermission(
-  permissions: Permission[],
-  required: Permission[]
-): boolean {
-  return required.some((p) => permissions.includes(p));
-}
-
 export async function extractAuth(req: Request) {
   // Check API key first
   const apiKeyHeader = req.headers.get('x-api-key');

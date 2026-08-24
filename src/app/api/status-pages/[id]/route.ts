@@ -27,7 +27,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
   const item = await prisma.statusPage.findFirst({ where: { id, userId: user.id } });
   if (!item) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const updated = await prisma.statusPage.update({
+  await prisma.statusPage.update({
     where: { id },
     data: {
       name: data.name, description: data.description, isPublic: data.isPublic,

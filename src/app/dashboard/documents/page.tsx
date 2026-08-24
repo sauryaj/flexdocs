@@ -10,8 +10,7 @@ import {
   Archive,
   Trash2,
   FolderOpen,
-  ArrowUpRight,
-} from 'lucide-react';
+  } from 'lucide-react';
 import { formatDate, cn } from '@/lib/utils';
 import { EmptyState, ConfirmDialog, Modal } from '@/components/UIComponents';
 import { FolderSidebar } from '@/components/FolderSidebar';
@@ -456,7 +455,7 @@ const categoryColors: Record<string, { bg: string; text: string; dot: string }> 
 function DocumentCard({
   doc,
   onDelete,
-  onMove,
+  onMove: _onMove,
   folders,
   onMoveConfirm,
   selected,

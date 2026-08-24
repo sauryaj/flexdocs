@@ -2,8 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { Building2, Globe, KeyRound, ShieldAlert, BookOpen, Server, ArrowRight, CalendarClock, Ticket as TicketIcon } from 'lucide-react';
-import { MarkdownPreview } from '@/components/MarkdownPreview';
+import { Building2, Globe, ShieldAlert, BookOpen, Server, ArrowRight, CalendarClock, Ticket as TicketIcon } from 'lucide-react';
 
 interface Summary {
   orgs: { id: string; name: string }[];

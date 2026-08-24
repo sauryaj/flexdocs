@@ -52,40 +52,6 @@ function generateIPs(cidr: string): string[] {
   return ips;
 }
 
-function parseNmapOutput(output: string): ScanResult[] {
-  const results: ScanResult[] = [];
-  const lines = output.split('\n');
-  let currentHost: ScanResult | null = null;
-
-  for (const line of lines) {
-    const hostMatch = line.match(/Nmap scan report for (\S+?) \((\d+\.\d+\.\d+\.\d+)\)/);
-    if (hostMatch) {
-      if (currentHost) results.push(currentHost);
-      currentHost = { hostname: hostMatch[1], ip: hostMatch[2], ports: [], status: 'up' };
-      continue;
-    }
-
-    const ipOnlyMatch = line.match(/Nmap scan report for (\d+\.\d+\.\d+\.\d+)/);
-    if (ipOnlyMatch) {
-      if (currentHost) results.push(currentHost);
-      currentHost = { ip: ipOnlyMatch[1], ports: [], status: 'up' };
-      continue;
-    }
-
-    if (currentHost) {
-      const portMatch = line.match(/(\d+)\/(tcp|udp)\s+(open|closed|filtered)\s+(\S+)/);
-      if (portMatch) {
-        currentHost.ports.push({ port: parseInt(portMatch[1]), service: portMatch[4], state: portMatch[3] });
-      }
-      const osMatch = line.match(/OS details?: (.+)/);
-      if (osMatch) currentHost.os = osMatch[1];
-      const macMatch = line.match(/MAC Address: ([0-9A-F:]+)/);
-      if (macMatch) currentHost.mac = macMatch[1];
-    }
-  }
-  if (currentHost) results.push(currentHost);
-  return results;
-}
 
 async function pingHost(ip: string): Promise<boolean> {
   try {

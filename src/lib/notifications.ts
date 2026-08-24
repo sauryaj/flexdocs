@@ -77,29 +77,6 @@ export async function createNotification(params: CreateNotificationParams): Prom
   }
 }
 
-export async function createNotificationForAllUsers(
-  params: Omit<CreateNotificationParams, 'userId'>
-): Promise<void> {
-  try {
-    const users = await prisma.user.findMany({
-      where: { NOT: { mutedNotificationTypes: { has: params.type } } },
-      select: { id: true },
-    });
-    await prisma.notification.createMany({
-      data: users.map((u) => ({
-        userId: u.id,
-        type: params.type,
-        title: params.title,
-        message: params.message,
-        severity: params.severity || 'info',
-        link: params.link || null,
-      })),
-    });
-  } catch (error) {
-    logger.error('Notification broadcast error', { error });
-  }
-}
-
 export async function getNotifications(userId: string, limit = 50) {
   const [notifications, unreadCount] = await Promise.all([
     prisma.notification.findMany({

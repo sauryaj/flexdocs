@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { getOrgScope, canAccessOrganization } from '@/lib/org-scope';
+import { canAccessOrganization } from '@/lib/org-scope';
 
 /** Client-safe knowledge-base article: must be visibility=org AND inside member orgs. */
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {

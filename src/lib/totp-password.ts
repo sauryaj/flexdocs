@@ -1,17 +1,7 @@
-import { createHmac, randomBytes } from 'crypto';
+import { createHmac } from 'crypto';
 
 // TOTP implementation (RFC 6238)
 // Compatible with Google Authenticator, Authy, etc.
-
-export function generateTotpSecret(length = 20): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-  let secret = '';
-  const bytes = randomBytes(length);
-  for (let i = 0; i < length; i++) {
-    secret += chars[bytes[i] % chars.length];
-  }
-  return secret;
-}
 
 export function base32Decode(encoded: string): Buffer {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';

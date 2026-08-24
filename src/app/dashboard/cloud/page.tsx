@@ -5,7 +5,6 @@ import Link from 'next/link';
 import {
   Cloud, Plus, Search, Trash2, DollarSign, MapPin,
 } from 'lucide-react';
-import { formatDate, cn } from '@/lib/utils';
 import { EmptyState, ConfirmDialog } from '@/components/UIComponents';
 import { useOrganization } from '@/lib/OrganizationContext';
 

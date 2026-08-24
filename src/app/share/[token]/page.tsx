@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, use } from 'react';
-import { Shield, Key, Copy, Check, Lock, AlertTriangle, Eye, EyeOff } from 'lucide-react';
+import {  Copy, Check, Lock, AlertTriangle, Eye, EyeOff } from 'lucide-react';
 
 interface SharedSecret {
   name: string;

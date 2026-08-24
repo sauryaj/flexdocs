@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   Network, Plus, Search, Trash2, Globe, Shield, Server, Wifi, Globe2, Lock,
 } from 'lucide-react';
-import { formatDate, cn } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 import { EmptyState, ConfirmDialog } from '@/components/UIComponents';
 import { useOrganization } from '@/lib/OrganizationContext';
 import { NetworkTopologyMap } from '@/components/NetworkTopologyMap';

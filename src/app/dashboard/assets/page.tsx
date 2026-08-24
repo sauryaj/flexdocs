@@ -8,7 +8,7 @@ import {
   Search,
   Trash2,
 } from 'lucide-react';
-import { formatDate, cn } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 import { EmptyState, ConfirmDialog } from '@/components/UIComponents';
 import { useOrganization } from '@/lib/OrganizationContext';
 

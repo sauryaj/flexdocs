@@ -71,7 +71,6 @@ export default function ChangesPage() {
   };
 
   const unacknowledged = changes.filter((c) => !c.acknowledged);
-  const acknowledged = changes.filter((c) => c.acknowledged);
 
   const getTypeIcon = (type: string) => {
     switch (type) {

@@ -15,11 +15,6 @@ function getSigningKey(): Buffer {
 }
 
 // Signed token format: "<randomToken>.<hmacSignature>"
-export function createSessionToken(): string {
-  const token = crypto.randomBytes(32).toString('hex');
-  const sig = crypto.createHmac('sha256', getSigningKey()).update(token).digest('hex');
-  return `${token}.${sig}`;
-}
 
 export function verifySessionToken(signed: string): string | null {
   const [token, sig] = signed.split('.');

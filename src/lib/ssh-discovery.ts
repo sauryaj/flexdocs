@@ -147,19 +147,3 @@ export async function discoverServer(config: SshConfig): Promise<ServerSpecs> {
   });
 }
 
-export async function discoverMultipleServers(
-  targets: SshConfig[]
-): Promise<{ config: SshConfig; specs: ServerSpecs | null; error?: string }[]> {
-  const results: { config: SshConfig; specs: ServerSpecs | null; error?: string }[] = [];
-
-  for (const target of targets) {
-    try {
-      const specs = await discoverServer(target);
-      results.push({ config: target, specs });
-    } catch (err: any) {
-      results.push({ config: target, specs: null, error: err.message });
-    }
-  }
-
-  return results;
-}

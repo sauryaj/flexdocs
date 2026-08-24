@@ -63,7 +63,7 @@ export async function POST(req: Request) {
     response.cookies.set('flexdocs_session', cookieValue, sessionCookieOptions());
 
     return response;
-  } catch (error: any) {
+  } catch {
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

@@ -5,7 +5,7 @@ import Link from 'next/link';
 import {
   Server, Plus, Search, Trash2, Cpu, HardDrive, MemoryStick, MapPin,
 } from 'lucide-react';
-import { formatDate, cn } from '@/lib/utils';
+import { formatDate } from '@/lib/utils';
 import { EmptyState, ConfirmDialog } from '@/components/UIComponents';
 import { useOrganization } from '@/lib/OrganizationContext';
 

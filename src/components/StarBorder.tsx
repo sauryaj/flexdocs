@@ -20,7 +20,7 @@ export function StarBorder({
   thickness = 1,
   as: Component = 'div',
 }: StarBorderProps) {
-  const { accent } = useTheme();
+  useTheme();
   const borderColor = color || 'var(--accent)';
 
   return (

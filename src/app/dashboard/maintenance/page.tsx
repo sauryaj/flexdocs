@@ -5,7 +5,6 @@ import Link from 'next/link';
 import {
   CalendarClock, Plus, Search, Trash2, Clock, AlertTriangle, CheckCircle, XCircle,
 } from 'lucide-react';
-import { formatDate, cn } from '@/lib/utils';
 import { EmptyState, ConfirmDialog } from '@/components/UIComponents';
 import { useOrganization } from '@/lib/OrganizationContext';
 

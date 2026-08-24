@@ -29,11 +29,6 @@ export function timeAgo(date: Date | string): string {
   return 'just now';
 }
 
-export function generateColor(): string {
-  const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4'];
-  return colors[Math.floor(Math.random() * colors.length)];
-}
-
 export function maskPassword(password: string): string {
   return '•'.repeat(Math.min(password.length, 16));
 }

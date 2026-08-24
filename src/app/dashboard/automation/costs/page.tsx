@@ -26,7 +26,7 @@ interface CostBudget {
 export default function CloudCostsPage() {
   const { selectedOrg } = useOrganization();
   const { toast } = useToast();
-  const [entries, setEntries] = useState<CostEntry[]>([]);
+  const [, setEntries] = useState<CostEntry[]>([]);
   const [budgets, setBudgets] = useState<CostBudget[]>([]);
   const [totalCost, setTotalCost] = useState(0);
   const [byService, setByService] = useState<Record<string, number>>({});

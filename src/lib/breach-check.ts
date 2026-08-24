@@ -49,13 +49,3 @@ export async function checkPasswordBreach(password: string): Promise<BreachCheck
   }
 }
 
-export async function checkMultiplePasswords(passwords: string[]): Promise<Map<string, BreachCheckResult>> {
-  const results = new Map<string, BreachCheckResult>();
-
-  for (const password of passwords) {
-    const result = await checkPasswordBreach(password);
-    results.set(password, result);
-  }
-
-  return results;
-}

@@ -1,4 +1,4 @@
-import { EC2Client, DescribeInstancesCommand, RunInstancesCommand } from '@aws-sdk/client-ec2';
+import { EC2Client, DescribeInstancesCommand } from '@aws-sdk/client-ec2';
 import { S3Client, ListBucketsCommand, GetBucketLocationCommand } from '@aws-sdk/client-s3';
 import { RDSClient, DescribeDBInstancesCommand } from '@aws-sdk/client-rds';
 import { CostExplorerClient, GetCostAndUsageCommand } from '@aws-sdk/client-cost-explorer';
@@ -153,7 +153,7 @@ export async function fetchCosts(
   creds: AwsCreds,
   startDate: string,
   endDate: string,
-  groupBy?: string
+  _groupBy?: string
 ): Promise<{ amount: number; service: string; period: string }[]> {
   const clients = getClients(creds);
   const costs: { amount: number; service: string; period: string }[] = [];

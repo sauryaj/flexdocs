@@ -19,30 +19,34 @@ vi.mock('@/lib/prisma', () => ({
 }));
 
 import {
-  createSessionToken,
   verifySessionToken,
   createSessionCookieValue,
 } from '@/lib/session';
+import crypto from 'crypto';
+
+const makeSigned = () => {
+  const token = crypto.randomBytes(32).toString('hex');
+  const hmac = crypto
+    .createHmac('sha256', process.env.SESSION_SECRET || '')
+    .update(token)
+    .digest('hex');
+  return `${token}.${hmac}`;
+};
 
 describe('session token signing', () => {
-  it('creates a signed token of form <token>.<hmac>', () => {
-    const signed = createSessionToken();
-    expect(signed).toMatch(/^[0-9a-f]{64}\.[0-9a-f]{64}$/);
-  });
-
   it('verifies a freshly created token', () => {
-    const signed = createSessionToken();
+    const signed = makeSigned();
     expect(verifySessionToken(signed)).toBe(signed.split('.')[0]);
   });
 
   it('rejects a tampered signature', () => {
-    const [token] = createSessionToken().split('.');
+    const [token] = makeSigned().split('.');
     const bad = `${token}.${'0'.repeat(64)}`;
     expect(verifySessionToken(bad)).toBeNull();
   });
 
   it('rejects a signature computed with a different secret', () => {
-    const [token] = createSessionToken().split('.');
+    const [token] = makeSigned().split('.');
     const forged = `${token}.${require('crypto')
       .createHmac('sha256', 'wrong-secret')
       .update(token)

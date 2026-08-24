@@ -115,7 +115,7 @@ export async function detectCloudChanges(userId: string, orgId?: string) {
 
   for (const resource of resources) {
     try {
-      const currentMeta = JSON.parse(resource.metadata || '{}');
+      
       const oldStatus = resource.status;
 
       const newStatus = 'active';
@@ -160,7 +160,7 @@ export async function getRecentChanges(userId: string, orgId?: string, limit: nu
   });
 }
 
-export async function acknowledgeChange(changeId: string, userId: string) {
+export async function acknowledgeChange(changeId: string, _userId: string) {
   return prisma.infraChange.update({
     where: { id: changeId },
     data: { acknowledged: true, acknowledgedAt: new Date() },

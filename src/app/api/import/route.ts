@@ -14,7 +14,7 @@ function parseCsv(text: string): { headers: string[]; rows: string[][] } {
   return { headers, rows };
 }
 
-function mapRowToModule(row: string[], headers: string[], module: string): Record<string, any> {
+function mapRowToModule(row: string[], headers: string[], _module: string): Record<string, any> {
   const data: Record<string, any> = {};
   headers.forEach((h, i) => {
     const val = row[i] || '';

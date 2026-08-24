@@ -21,7 +21,7 @@ const EMPTY_GOOGLE = { type: 'google', name: '', serviceAccountEmail: '', privat
 
 export default function IntegrationsPage() {
   const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [saving, setSaving] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const [message, setMessage] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);

@@ -24,7 +24,6 @@ interface AssetType {
 }
 
 const FIELD_TYPES: FieldDef['type'][] = ['text', 'number', 'date', 'select', 'checkbox', 'url'];
-const ICONS = ['box', 'printer', 'license', 'warranty', 'vehicle', 'phone', 'monitor'];
 
 export default function AssetLayoutsPage() {
   const router = useRouter();

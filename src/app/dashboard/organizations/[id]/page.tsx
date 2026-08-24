@@ -18,10 +18,6 @@ import {
   Mail,
   MapPin,
   Plus,
-  Building2,
-  Server,
-  ShieldCheck,
-  CheckCircle2,
   X,
 } from 'lucide-react';
 import { ConfirmDialog, Modal } from '@/components/UIComponents';

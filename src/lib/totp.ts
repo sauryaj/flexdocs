@@ -37,18 +37,6 @@ export function generateSecret(): string {
   return base32Encode(crypto.randomBytes(20));
 }
 
-export function generateToken(secret: string): string {
-  const key = base32Decode(secret);
-  const counter = Math.floor(Date.now() / 1000 / PERIOD);
-  const counterBuf = Buffer.alloc(8);
-  counterBuf.writeUInt32BE(Math.floor(counter / 0x100000000), 0);
-  counterBuf.writeUInt32BE(counter & 0xffffffff, 4);
-  const hmac = crypto.createHmac(ALGO, key).update(counterBuf).digest();
-  const offset = hmac[hmac.length - 1] & 0x0f;
-  const code = ((hmac[offset] & 0x7f) << 24) | (hmac[offset + 1] << 16) | (hmac[offset + 2] << 8) | hmac[offset + 3];
-  return (code % Math.pow(10, DIGITS)).toString().padStart(DIGITS, '0');
-}
-
 export function verifyToken(secret: string, token: string): boolean {
   // Check current and one period before/after for clock skew
   for (const offset of [-1, 0, 1]) {

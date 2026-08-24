@@ -4,33 +4,17 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Server,
-  HardDrive,
   ShieldAlert,
-  AlertTriangle,
-  Clock,
   CheckCircle2,
   Search,
   Plus,
   Globe,
   Lock,
   Cpu,
-  Monitor,
-  Wifi,
-} from 'lucide-react';
+  } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { useOrganization } from '@/lib/OrganizationContext';
 
-interface ConfigurationItem {
-  id: string;
-  name: string;
-  type: 'server' | 'workstation' | 'firewall' | 'switch' | 'router';
-  hostname?: string | null;
-  ipAddress?: string | null;
-  os?: string | null;
-  warrantyExpiry?: string | null;
-  status: string;
-  organizationName?: string;
-}
 
 interface ExpiryItem {
   id: string;
@@ -52,7 +36,7 @@ export default function ConfigurationsPage() {
   const [showAgentModal, setShowAgentModal] = useState(false);
 
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState('all');
+  
   const [expiryFilter, setExpiryFilter] = useState<'30' | '60' | '90' | 'all'>('90');
 
   useEffect(() => {

@@ -3,7 +3,6 @@ import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/rbac';
 import { prisma } from '@/lib/prisma';
 import { encrypt } from '@/lib/encryption';
-import { runTenantSync } from '@/lib/tenant-sync';
 
 const TYPES = ['m365', 'google'];
 

@@ -52,21 +52,3 @@ export function getDiffStats(diffs: DiffResult[]) {
   return { added, removed, unchanged, total: added + removed + unchanged };
 }
 
-export function diffToHtml(diffs: DiffResult[]): string {
-  const parts: string[] = [];
-  for (const d of diffs) {
-    const escaped = d.value
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/\n/g, '<br>');
-    if (d.added) {
-      parts.push(`<span class="diff-added">${escaped}</span>`);
-    } else if (d.removed) {
-      parts.push(`<span class="diff-removed">${escaped}</span>`);
-    } else {
-      parts.push(`<span class="diff-unchanged">${escaped}</span>`);
-    }
-  }
-  return parts.join('');
-}

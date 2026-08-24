@@ -21,7 +21,6 @@ vi.mock('@/lib/logger', () => ({
 import { prisma } from '@/lib/prisma';
 import {
   createNotification,
-  createNotificationForAllUsers,
   setMutedNotificationTypes,
 } from '@/lib/notifications';
 
@@ -62,24 +61,6 @@ describe('createNotification', () => {
     await expect(
       createNotification({ userId: 'u1', type: 'system', title: 't', message: 'm' }),
     ).resolves.toBeUndefined();
-  });
-});
-
-describe('createNotificationForAllUsers', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('excludes users who muted the type', async () => {
-    mockedPrisma.user.findMany.mockResolvedValue([{ id: 'u2' }] as never);
-    await createNotificationForAllUsers({ type: 'maintenance', title: 't', message: 'm' });
-    expect(mockedPrisma.user.findMany).toHaveBeenCalledWith({
-      where: { NOT: { mutedNotificationTypes: { has: 'maintenance' } } },
-      select: { id: true },
-    });
-    expect(mockedPrisma.notification.createMany).toHaveBeenCalledWith({
-      data: [{ userId: 'u2', type: 'maintenance', title: 't', message: 'm', severity: 'info', link: null }],
-    });
   });
 });
 
