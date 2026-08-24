@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/rbac';
+import { auditLog } from '@/lib/audit';
 import { type UserRole } from '@prisma/client';
 
 async function getUnlinkedResources(userId: string, resourceType: string) {
@@ -125,6 +126,15 @@ export async function POST(
   if (!updated) {
     return NextResponse.json({ error: 'Resource not found or forbidden' }, { status: 404 });
   }
+
+  auditLog({
+    userId: user.id,
+    action: 'document.move',
+    resourceType,
+    resourceId,
+    resourceName: organization.name,
+    details: { linkedToOrganizationId: id },
+  }).catch(() => {});
 
   return NextResponse.json(updated);
 }

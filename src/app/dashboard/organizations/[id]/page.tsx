@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react';
 import { ConfirmDialog, Modal } from '@/components/UIComponents';
+import { MagicDashboard } from '@/components/MagicDashboard';
 
 interface Organization {
   id: string;
@@ -61,7 +62,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
   const [loading, setLoading] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'documents' | 'passwords' | 'domains' | 'assets' | 'checklists'>('overview');
+  const [activeTab, setActiveTab] = useState<'health' | 'overview' | 'documents' | 'passwords' | 'domains' | 'assets' | 'checklists'>('health');
 
   const [editForm, setEditForm] = useState({
     name: '',
@@ -370,6 +371,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
       {/* Navigation Tabs */}
       <div className="flex items-center gap-2 border-b pb-2 dark:border-slate-800">
         {[
+          { key: 'health', label: '⚡ Health' },
           { key: 'overview', label: 'All Core Assets Hub' },
           { key: 'documents', label: `Documents (${org.documents.length})` },
           { key: 'passwords', label: `Passwords (${org.passwords.length})` },
@@ -392,7 +394,9 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
       </div>
 
       {/* Main Tabbed Content */}
-      {activeTab === 'overview' ? (
+      {activeTab === 'health' ? (
+        <MagicDashboard orgId={id} />
+      ) : activeTab === 'overview' ? (
         <div className="space-y-6">
           <ResourceSection
             title="Documents"

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/rbac';
+import { auditLog } from '@/lib/audit';
 import { type UserRole } from '@prisma/client';
 
 export async function GET(
@@ -52,12 +53,15 @@ export async function PUT(
   await prisma.document.update({
     where: { id },
     data: {
-      title,
-      content,
-      category,
-      folderId: folderId || null,
-      isPinned,
-      isArchived,
+      // Partial-update safe: only write fields the client actually sent,
+      // so autosave pings or narrow PATCHes never wipe untouched columns.
+      ...(title !== undefined ? { title } : {}),
+      ...(content !== undefined ? { content } : {}),
+      ...(category !== undefined ? { category } : {}),
+      ...(folderId !== undefined ? { folderId: folderId || null } : {}),
+      ...(isPinned !== undefined ? { isPinned } : {}),
+      ...(isArchived !== undefined ? { isArchived } : {}),
+      ...(tags !== undefined ? { tags } : {}),
       ...(reviewDate !== undefined
         ? { reviewDate: reviewDate ? new Date(reviewDate) : null }
         : {}),
@@ -67,6 +71,18 @@ export async function PUT(
         : {}),
     },
   });
+
+  const sent: Record<string, unknown> = { title, content, category, folderId, isPinned, isArchived, tags, reviewDate, visibility };
+  if (reviewAcknowledged) sent.reviewAcknowledged = true;
+  const changedFields = Object.keys(sent).filter((k) => sent[k] !== undefined);
+  auditLog({
+    userId: user.id,
+    action: 'document.update',
+    resourceType: 'document',
+    resourceId: id,
+    resourceName: title ?? document.title,
+    details: { fields: changedFields.length > 0 ? changedFields : ['unknown'] },
+  }).catch(() => {});
 
   // Snapshot the overwritten content so manual saves AND autosaves stay
   // recoverable. Skips when the latest revision already holds that exact
