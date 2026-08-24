@@ -659,3 +659,108 @@ html[data-effect="star"] .card::after {
   0% { transform: translate(0%, 0%); opacity: 1; }
   100% { transform: translate(100%, 0%); opacity: 0; }
 }
+
+/* --- Glass effect (frosted translucent cards) --- */
+html[data-effect="glass"] .card {
+  background-color: color-mix(in srgb, var(--card-bg) 72%, transparent);
+  backdrop-filter: blur(14px) saturate(1.4);
+  -webkit-backdrop-filter: blur(14px) saturate(1.4);
+}
+html[data-effect="glass"] header {
+  background-color: color-mix(in srgb, var(--background) 60%, transparent);
+}
+html[data-effect="glass"] aside,
+html[data-effect="glass"] .sidebar {
+  background-color: color-mix(in srgb, var(--card-bg) 82%, transparent);
+}
+
+/* --- Gradient effect (soft ambient accent glow behind the page) --- */
+html[data-effect="gradient"] body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(600px circle at 12% 8%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 65%),
+    radial-gradient(700px circle at 88% 90%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 65%);
+}
+html.dark[data-effect="gradient"] body::before {
+  background:
+    radial-gradient(700px circle at 12% 8%, color-mix(in srgb, var(--accent) 13%, transparent), transparent 60%),
+    radial-gradient(800px circle at 88% 90%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%);
+}
+
+/* ============================================================
+   DENSITY — applied via data-density on <html>
+   ============================================================ */
+html[data-density="compact"] .card {
+  line-height: 1.35;
+}
+html[data-density="compact"] .input-field {
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+}
+html[data-density="compact"] .sidebar-nav-item {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+html[data-density="compact"] table th,
+html[data-density="compact"] table td {
+  padding-top: 0.375rem;
+  padding-bottom: 0.375rem;
+}
+html[data-density="compact"] .badge {
+  font-size: 0.6875rem;
+  padding: 0.0625rem 0.5rem;
+}
+
+/* ============================================================
+   HIGH CONTRAST — applied via data-contrast="high" on <html>
+   ============================================================ */
+html[data-contrast="high"].light {
+  --foreground: #08080a;
+  --muted: #3d3d46;
+  --card-border: #52525e;
+  --input-border: #52525e;
+}
+html[data-contrast="high"].dark {
+  --foreground: #fafafc;
+  --muted: #c9c9d4;
+  --card-border: #6b6b78;
+  --input-border: #6b6b78;
+}
+html[data-contrast="high"] a:focus-visible,
+html[data-contrast="high"] button:focus-visible,
+html[data-contrast="high"] input:focus-visible,
+html[data-contrast="high"] select:focus-visible,
+html[data-contrast="high"] textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+html[data-contrast="high"] .badge-slate {
+  border: 1px solid currentColor;
+}
+
+/* ============================================================
+   REDUCED MOTION — data-motion="reduced" forces stillness
+   (system preference is additionally honored via the media query)
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  html:not([data-motion="full"]) *,
+  html:not([data-motion="full"]) *::before,
+  html:not([data-motion="full"]) *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+html[data-motion="reduced"] *,
+html[data-motion="reduced"] *::before,
+html[data-motion="reduced"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+  scroll-behavior: auto !important;
+}

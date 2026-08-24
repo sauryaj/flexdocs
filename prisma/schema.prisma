@@ -27,6 +27,7 @@ model User {
   mfaEnabled    Boolean   @default(false)
   mfaSecret     String?
   mutedNotificationTypes String[] @default([])
+  themePrefs   Json?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   documents     Document[]
