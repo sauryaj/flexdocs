@@ -79,6 +79,7 @@ const navigation: NavGroup[] = [
       { name: 'Configurations / Servers', href: '/dashboard/configurations', icon: Server },
       { name: 'Server Inventory', href: '/dashboard/servers', icon: HardDrive, sub: true },
       { name: 'Network', href: '/dashboard/network', icon: Network },
+      { name: 'IPAM', href: '/dashboard/ipam', icon: Network, sub: true },
       { name: 'Cloud', href: '/dashboard/cloud', icon: Cloud },
       { name: 'Maintenance', href: '/dashboard/maintenance', icon: CalendarClock },
       { name: 'Status Pages', href: '/dashboard/status', icon: Activity },

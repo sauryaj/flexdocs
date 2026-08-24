@@ -53,6 +53,7 @@ model User {
   emergencyOwned  EmergencyAccess[] @relation("EmergencyOwner")
   emergencyTrusted EmergencyAccess[] @relation("EmergencyTrusted")
   networkDocuments NetworkDocument[]
+  ipamNetworks     IpamNetwork[]
   servers         Server[]
   maintenanceWindows MaintenanceWindow[]
   cloudResources  CloudResource[]
@@ -399,6 +400,7 @@ model Organization {
   folders       Folder[]
   sslCertificates SslCertificate[]
   networkDocuments NetworkDocument[]
+  ipamNetworks     IpamNetwork[]
   servers       Server[]
   maintenanceWindows MaintenanceWindow[]
   cloudResources CloudResource[]
@@ -1079,4 +1081,21 @@ model K8sCluster {
 
   @@index([organizationId])
   @@index([userId])
+}
+
+model IpamNetwork {
+  id             String       @id @default(cuid())
+  name           String
+  cidr           String
+  vlanId         Int?
+  notes          String?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([userId])
+  @@index([organizationId])
 }
