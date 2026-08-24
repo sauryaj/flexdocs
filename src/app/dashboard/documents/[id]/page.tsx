@@ -9,6 +9,7 @@ import {
   Loader2,
   Pin,
   Archive,
+  Copy,
   Trash2,
   FileText,
   Upload,
@@ -547,6 +548,19 @@ export default function DocumentDetailPage() {
             title={doc.isPinned ? 'Unpin' : 'Pin'}
           >
             <Pin className="w-5 h-5" />
+          </button>
+          <button
+            onClick={async () => {
+              const res = await fetch(`/api/documents/${doc.id}/duplicate`, { method: 'POST' });
+              if (res.ok) {
+                const copy = await res.json();
+                router.push(`/dashboard/documents/${copy.id}`);
+              }
+            }}
+            className="p-2 rounded-lg transition-colors hover:bg-slate-100"
+            title="Duplicate"
+          >
+            <Copy className="w-5 h-5" />
           </button>
           <button
             onClick={toggleArchive}
