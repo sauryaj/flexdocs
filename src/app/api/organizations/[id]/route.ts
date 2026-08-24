@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { hasPermission } from '@/lib/rbac';
+import { type UserRole } from '@prisma/client';
 
 export async function GET(
   req: Request,
@@ -40,6 +42,9 @@ export async function PUT(
   if (!user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+  if (!hasPermission(user.role as UserRole, 'organization.update')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const { id } = await params;
   const { name, description, website, phone, email, address, logo } = await req.json();
@@ -75,6 +80,9 @@ export async function DELETE(
   const user = await auth();
   if (!user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (!hasPermission(user.role as UserRole, 'organization.delete')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const { id } = await params;

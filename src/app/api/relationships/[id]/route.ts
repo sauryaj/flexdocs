@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { auth } from '@/lib/auth';
+import { hasPermission } from '@/lib/rbac';
+import { type UserRole } from '@prisma/client';
 
 export async function DELETE(
   req: Request,
@@ -9,6 +11,9 @@ export async function DELETE(
   const user = await auth();
   if (!user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (!hasPermission(user.role as UserRole, 'document.delete')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const { id } = await params;

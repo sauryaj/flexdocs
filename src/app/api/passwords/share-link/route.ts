@@ -3,6 +3,8 @@ import { prisma } from '@/lib/prisma';
 import { auth } from '@/lib/auth';
 import { decrypt } from '@/lib/encryption';
 import crypto from 'crypto';
+import { hasPermission } from '@/lib/rbac';
+import { type UserRole } from '@prisma/client';
 
 // In-memory or database token store for secure password quickshare links
 const tokenStore = new Map<
@@ -19,6 +21,9 @@ export async function POST(req: Request) {
   const user = await auth();
   if (!user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (!hasPermission(user.role as UserRole, 'password.update')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const { passwordId, durationHours = 24, oneTimeOnly = true } = await req.json();

@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { processWebhookRetries } from '@/lib/webhook-retry';
+import { hasPermission } from '@/lib/rbac';
+import { type UserRole } from '@prisma/client';
 
 export async function GET() {
   const user = await auth();
@@ -33,6 +35,9 @@ export async function GET() {
 export async function POST() {
   const user = await auth();
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!hasPermission(user.role as UserRole, 'webhook.create')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   await processWebhookRetries();
   return NextResponse.json({ success: true, message: 'Retry queue processed' });

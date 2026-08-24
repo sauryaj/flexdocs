@@ -4,6 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import logger from '@/lib/logger';
+import { hasPermission } from '@/lib/rbac';
+import { type UserRole } from '@prisma/client';
 
 const execFileAsync = promisify(execFile);
 
@@ -126,6 +128,9 @@ async function scanPorts(ip: string): Promise<ScanResult['ports']> {
 export async function POST(req: Request) {
   const user = await auth();
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!hasPermission(user.role as UserRole, 'settings.update')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const { cidr, scanType, organizationId } = await req.json();
 

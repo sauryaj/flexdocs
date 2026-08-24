@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { auth } from '@/lib/auth';
+import { hasPermission } from '@/lib/rbac';
+import { type UserRole } from '@prisma/client';
 
 async function resolveName(type: string, id: string): Promise<string> {
   try {
@@ -94,6 +96,9 @@ export async function POST(req: Request) {
   const user = await auth();
   if (!user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (!hasPermission(user.role as UserRole, 'document.create')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const { name, sourceType, sourceId, targetType, targetId, notes } = await req.json();

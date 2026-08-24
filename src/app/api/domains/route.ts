@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
+import { hasPermission } from '@/lib/rbac';
+import { type UserRole } from '@prisma/client';
 
 export async function GET(req: Request) {
   const user = await auth();
@@ -39,6 +41,9 @@ export async function POST(req: Request) {
   const user = await auth();
   if (!user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (!hasPermission(user.role as UserRole, 'domain.create')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const { name, registrar, nameservers, expiresAt, autoRenew, notes, organizationId, tags } = await req.json();

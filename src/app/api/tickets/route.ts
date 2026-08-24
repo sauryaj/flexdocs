@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
+import { getOrgScope, scopeOrgWhere, canAccessOrganization } from '@/lib/org-scope';
 import { createNotification } from '@/lib/notifications';
 
 const PRIORITIES = ['low', 'medium', 'high', 'urgent'];
@@ -17,10 +17,13 @@ export async function GET(req: Request) {
   const scope = await getOrgScope(user.id, user.role);
   let where: Record<string, unknown>;
   if (scope.mode === 'limited') {
-    // Clients only see their own org's tickets, and never staff-internal data
+    // Clients see their own org's tickets AND any ticket they filed, even without membership
     const orgs = scopeOrgWhere(scope, organizationId).organizationId;
     where = {
-      organizationId: orgs ?? { in: ['__none__'] },
+      OR: [
+        { createdByUserId: user.id },
+        { organizationId: orgs ?? { in: ['__none__'] } },
+      ],
       ...(status ? { status } : {}),
     };
   } else {
@@ -76,6 +79,15 @@ export async function POST(req: Request) {
   }
   if (priority && !PRIORITIES.includes(priority)) {
     return NextResponse.json({ error: `priority must be one of ${PRIORITIES.join(', ')}` }, { status: 400 });
+  }
+
+  // Non-staff may only file against organizations they actually belong to
+  const scope = await getOrgScope(user.id, user.role);
+  if (scope.mode === 'limited' && organizationId) {
+    const allowed = await canAccessOrganization(user.id, user.role, organizationId);
+    if (!allowed) {
+      return NextResponse.json({ error: 'Forbidden: not a member of this organization' }, { status: 403 });
+    }
   }
 
   const ticket = await prisma.ticket.create({

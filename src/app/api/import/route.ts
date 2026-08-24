@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { hasAnyPermission } from '@/lib/rbac';
+import { type UserRole } from '@prisma/client';
 
 function parseCsv(text: string): { headers: string[]; rows: string[][] } {
   const lines = text.trim().split('\n');
@@ -25,6 +27,9 @@ function mapRowToModule(row: string[], headers: string[], module: string): Recor
 export async function POST(req: Request) {
   const user = await auth();
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!hasAnyPermission(user.role as UserRole, ['document.create', 'password.create'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const { module, data, format, organizationId } = await req.json();
 

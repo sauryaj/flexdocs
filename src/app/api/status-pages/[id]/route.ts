@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
+import { hasPermission } from '@/lib/rbac';
+import { type UserRole } from '@prisma/client';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await auth();
@@ -17,6 +19,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 export async function PUT(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await auth();
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!hasPermission(user.role as UserRole, 'settings.update')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
   const { id } = await params;
   const data = await req.json();
   const item = await prisma.statusPage.findFirst({ where: { id, userId: user.id } });
@@ -51,6 +56,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await auth();
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!hasPermission(user.role as UserRole, 'settings.update')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
   const { id } = await params;
   const item = await prisma.statusPage.findFirst({ where: { id, userId: user.id } });
   if (!item) return NextResponse.json({ error: 'Not found' }, { status: 404 });

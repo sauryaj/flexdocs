@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { createBackup, listBackups } from '@/lib/backup';
 import { auth } from '@/lib/auth';
+import { hasPermission } from '@/lib/rbac';
+import { type UserRole } from '@prisma/client';
 
 export async function GET() {
   const user = await auth();
@@ -20,6 +22,9 @@ export async function GET() {
 export async function POST() {
   const user = await auth();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!hasPermission(user.role as UserRole, 'backup.create')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   try {
     const filepath = createBackup();

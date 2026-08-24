@@ -1,10 +1,15 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { importFromItGlue, parseItGlueCsv } from '@/lib/itglue-import';
+import { hasAnyPermission } from '@/lib/rbac';
+import { type UserRole } from '@prisma/client';
 
 export async function POST(req: Request) {
   const user = await auth();
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!hasAnyPermission(user.role as UserRole, ['document.create', 'password.create'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const { data, type, organizationId } = await req.json();
 

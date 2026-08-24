@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
+import { hasPermission } from '@/lib/rbac';
+import { type UserRole } from '@prisma/client';
 
 function randomHex(length: number): string {
   return Array.from({ length }, () =>
@@ -11,6 +13,9 @@ export async function POST(req: Request) {
   const user = await auth();
   if (!user?.id) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+  if (!hasPermission(user.role as UserRole, 'domain.update')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   const { hostname } = await req.json();

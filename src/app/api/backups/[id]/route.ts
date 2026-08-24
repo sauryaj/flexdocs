@@ -2,12 +2,17 @@ import { NextResponse } from 'next/server';
 import { existsSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { auth } from '@/lib/auth';
+import { hasPermission } from '@/lib/rbac';
+import { type UserRole } from '@prisma/client';
 
 const BACKUP_DIR = process.env.BACKUP_DIR || '/backups';
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await auth();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!hasPermission(user.role as UserRole, 'backup.create')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   const { id } = await params;
   const name = /^flexdocs-backup-[\w-]+\.sql$/.test(id) ? id : null;
