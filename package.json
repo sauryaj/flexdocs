@@ -29,9 +29,9 @@
     "dockerode": "^5.0.1",
     "ioredis": "^5.11.1",
     "lucide-react": "^0.511.0",
-    "next": "^15.3.3",
+    "next": "15.5.23",
     "node-cron": "^4.5.0",
-    "nodemailer": "^7.0.13",
+    "nodemailer": "^9.0.5",
     "pdfkit": "^0.19.1",
     "qrcode": "^1.5.4",
     "react": "^19.1.0",
@@ -39,6 +39,7 @@
     "react-markdown": "^10.1.0",
     "recharts": "^3.10.1",
     "remark-gfm": "^4.0.1",
+    "sharp": "^0.35.3",
     "ssh2": "^1.17.0",
     "tailwind-merge": "^3.3.0",
     "whoiser": "^2.0.0-beta.10",
@@ -64,11 +65,16 @@
     "autoprefixer": "^10.5.0",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.9",
-    "postcss": "^8.5.15",
+    "postcss": "^8.5.26",
     "prisma": "^5.22.0",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.62.0",
     "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "postcss": "^8.5.26",
+    "sharp": "^0.35.3",
+    "nanoid": "^3.3.18"
   }
 }

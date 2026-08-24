@@ -61,10 +61,19 @@ export function NotificationBell() {
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 
-  // Realtime updates via SSE; falls back to the 60s poll above on error
+  // Realtime updates via SSE; falls back to the poll above on error.
+  // Closes after repeated failures (e.g. expired session) instead of retrying forever.
   useEffect(() => {
     if (typeof window === 'undefined' || !('EventSource' in window)) return;
+    let failures = 0;
     const es = new EventSource('/api/notifications/stream');
+    es.onerror = () => {
+      failures += 1;
+      if (failures >= 3) es.close();
+    };
+    es.onopen = () => {
+      failures = 0;
+    };
     es.onmessage = (e) => {
       let data: { unreadCount?: number; bye?: boolean };
       try {

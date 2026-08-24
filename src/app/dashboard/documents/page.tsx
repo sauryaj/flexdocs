@@ -53,6 +53,7 @@ const categories = [
 export default function DocumentsPage() {
   const { selectedOrg } = useOrganization();
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [totalDocs, setTotalDocs] = useState(0);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('all');
   const [showArchived, setShowArchived] = useState(false);
@@ -78,6 +79,7 @@ export default function DocumentsPage() {
     const res = await fetch(`/api/documents?${params.toString()}`);
     const data = await res.json();
     setDocuments(data.items || data);
+    setTotalDocs(typeof data.total === 'number' ? data.total : (data.items || data).length);
     setLoading(false);
   };
 
@@ -215,7 +217,7 @@ export default function DocumentsPage() {
           selectedFolderId={selectedFolderId}
           onSelectFolder={setSelectedFolderId}
           refreshTrigger={folderRefresh}
-          totalCount={documents.length}
+          totalCount={totalDocs}
         />
       </div>
 
