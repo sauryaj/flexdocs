@@ -215,7 +215,17 @@ Open your browser and go to:
 http://localhost:3001
 ```
 
-You should see the FlexDocs login page. The app auto-creates a default admin user — no login required in single-user mode.
+You should see the FlexDocs login page. Log in with the seeded admin account:
+
+| Email | Password |
+|---|---|
+| `admin@flexdocs.local` | `admin12345` |
+
+> **Change this password immediately** (Settings → Profile). The credentials are public
+> in the source code, so any instance that keeps them is effectively open.
+
+A second admin (`admin@flexdocs.io`, same password) and three sample organizations are
+also seeded so you can explore with data.
 
 **That's it! You're done!**
 
@@ -238,8 +248,25 @@ docker-compose up -d
 ### Rebuild After Code Changes
 
 ```bash
-docker-compose build
+git pull
+docker-compose build init app
+docker-compose run --rm init   # applies DB migrations + seeds (safe to re-run)
 docker-compose up -d
+```
+
+> **Always rebuild and re-run `init` after pulling.** The init container applies
+> database migrations (`prisma migrate deploy`). Skipping it after a schema change
+> causes silent errors like missing columns.
+
+### Back Up Before Updating (Recommended)
+
+```bash
+docker-compose exec -T db pg_dump -U flexdocs flexdocs > backup-$(date +%F).sql
+```
+
+Restore if needed:
+```bash
+cat backup-2026-01-15.sql | docker-compose exec -T db psql -U flexdocs -d flexdocs
 ```
 
 ### View Logs
@@ -334,15 +361,20 @@ PostgreSQL from a local install is using the port. Options:
 
 ### "flexdocs-init-1" keeps failing
 
-The init container runs database setup. Check its logs:
+The init container applies database migrations and seeds. Check its logs:
 ```bash
 docker-compose logs init
 ```
 
-Common fix — rebuild:
+Common fixes:
 ```bash
-docker-compose build init
+docker-compose build init     # stale image after a schema change is the usual cause
 docker-compose up -d
+```
+
+If it complains about migrations, check status:
+```bash
+docker-compose run --rm init npx prisma migrate status
 ```
 
 ### App shows "Internal Server Error"
@@ -353,6 +385,22 @@ docker-compose logs app
 ```
 
 Usually means the database isn't ready. Wait 30 seconds and refresh.
+
+### Everything rate-limited / 429 errors
+
+Rate-limit counters live in Redis and persist across restarts. To flush them:
+```bash
+docker-compose exec -T redis redis-cli --scan --pattern 'ratelimit:*' | \
+  xargs -r docker-compose exec -T redis redis-cli del
+```
+
+### Docker won't start at all (macOS, Colima)
+
+If you use Colima and commands hang or fail with socket errors:
+```bash
+colima start
+```
+then retry the compose command.
 
 ### Docker is slow on macOS
 
