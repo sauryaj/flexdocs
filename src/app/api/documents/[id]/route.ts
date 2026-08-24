@@ -61,7 +61,7 @@ export async function PUT(
       ...(folderId !== undefined ? { folderId: folderId || null } : {}),
       ...(isPinned !== undefined ? { isPinned } : {}),
       ...(isArchived !== undefined ? { isArchived } : {}),
-      ...(tags !== undefined ? { tags } : {}),
+      // tags are synced by the raw join-table block below (body sends names, not ids)
       ...(reviewDate !== undefined
         ? { reviewDate: reviewDate ? new Date(reviewDate) : null }
         : {}),
