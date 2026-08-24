@@ -56,10 +56,11 @@ IT documentation & management platform — a self-hosted IT Glue / Hudu alternat
 ```bash
 git clone https://github.com/sauryaj/flexdocs.git
 cd flexdocs
-cp .env.example .env
-# Edit .env — set ENCRYPTION_KEY and NEXTAUTH_SECRET (openssl rand -hex 32)
-docker compose up -d
+bash scripts/setup.sh
 ```
+
+The script checks Docker, generates secrets, starts everything, and waits for health.
+(Manual alternative: `cp .env.example .env`, fill in secrets, `docker compose up -d --build`.)
 
 Open http://localhost:3001 and log in with the seeded admin:
 
