@@ -67,3 +67,5 @@ Before pushing:
 - Redis rate-limit counters can poison testing:
   `docker-compose exec -T redis redis-cli --scan --pattern 'ratelimit:*' | xargs -r docker-compose exec -T redis redis-cli del`
 - In zsh, `UID` is readonly — use another variable name.
+- Schema changes now go through migrations: `npx prisma migrate dev --name x`, then rebuild + re-run the init container (`migrate deploy`). CI validates migrations against a fresh DB on every push.
+- The AI assistant (`/api/ai/ask`) must NEVER include password secrets in provider context — metadata/names only. MCP endpoint (`/api/mcp`) authenticates via `X-API-Key` and enforces the same org scoping as the UI.

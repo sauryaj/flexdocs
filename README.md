@@ -25,7 +25,10 @@ IT documentation & management platform — a self-hosted IT Glue / Hudu alternat
 - **Tickets** — Client/staff threads, internal notes, assignment, SLA first-response targets (urgent 1h → low 24h)
 - **Client Portal** — Org-scoped summary, knowledge base, ticket filing for client users
 - **Renewals Tracker** — Licenses & contracts with renewal sweep alerts
-- **Magic Dashboard** — Per-org pulse: expiring items, SLA breaches, offline agents, stale docs
+- **Magic Dashboard** — Per-org pulse: expiring items, SLA breaches, offline agents, stale docs, documentation completeness score
+- **Ask the Docs** — AI assistant grounded in your documentation (BYO OpenAI-compatible key; secrets never leave the vault)
+- **MCP Server** — Native Model Context Protocol endpoint so AI agents (Claude, Copilot, custom) can query docs with full scoping
+- **IPAM** — CIDR networks with VLAN tags and utilization computed from server IPs
 - **Domains & SSL Radar** — WHOIS/DNS tracking, certificate monitoring, expiry alerts
 - **Flexible Assets** — Custom layouts with typed fields (text/number/date/select/checkbox/url); starter layouts included
 - **Servers & Agents** — Heartbeat monitoring, software inventory, patch status
@@ -112,6 +115,8 @@ Never use `db push` against shared databases — it skips the migration history.
 | `SMTP_PORT` / `SMTP_SECURE` | SMTP port / TLS | `587` / `false` |
 | `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | SMTP auth + sender | — |
 | `MAINTENANCE_ON_BOOT` | Run maintenance sweeps at startup (`true`) | unset |
+| `AI_API_KEY` | Enables the Ask-the-Docs assistant (OpenAI-compatible) | Disabled if empty |
+| `AI_MODEL` / `AI_BASE_URL` | Model + endpoint override (OpenRouter, Ollama, …) | `gpt-4o-mini` / OpenAI |
 | `LOG_LEVEL` | Logging verbosity | `info` |
 | `BACKUP_DIR` / `BACKUP_RETENTION_DAYS` | Backup location & pruning | `./backups` / `30` |
 | `POCKETID_*` | Passkey auth via PocketID (optional) | Disabled |
