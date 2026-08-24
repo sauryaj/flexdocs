@@ -19,7 +19,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const now = Date.now();
   const soonCutoff = new Date(now + SOON_DAYS * 86400000);
 
-  const [domains, certs, renewals, servers, tickets, docs] = await Promise.all([
+  const ninetyDaysAgo = new Date(now - 90 * 86400000);
+
+  const [domains, certs, renewals, servers, tickets, docs, pwCount, assetCount, networkDocs, runbookDocs, backupDocs, freshDocs, orgRow] =
+    await Promise.all([
     prisma.domain.findMany({
       where: { organizationId: id, expiresAt: { lte: soonCutoff } },
       select: { id: true, name: true, expiresAt: true },
@@ -54,6 +57,28 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       orderBy: { updatedAt: 'asc' },
       take: 10,
     }),
+    prisma.password.count({ where: { organizationId: id } }),
+    prisma.flexibleAsset.count({ where: { organizationId: id, isArchived: false } }),
+    prisma.document.count({
+      where: { organizationId: id, isArchived: false, category: { in: ['network', 'infrastructure'] } },
+    }),
+    prisma.document.count({
+      where: { organizationId: id, isArchived: false, category: { in: ['runbook', 'procedure'] } },
+    }),
+    prisma.document.count({
+      where: {
+        organizationId: id,
+        isArchived: false,
+        OR: [{ category: 'backup' }, { title: { contains: 'backup', mode: 'insensitive' } }],
+      },
+    }),
+    prisma.document.count({
+      where: { organizationId: id, isArchived: false, updatedAt: { gte: ninetyDaysAgo } },
+    }),
+    prisma.organization.findUnique({
+      where: { id },
+      select: { email: true, phone: true },
+    }),
   ]);
 
   const daysLeft = (d: Date | null) => (d ? Math.ceil((d.getTime() - now) / 86400000) : null);
@@ -85,11 +110,27 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     daysSinceUpdate: Math.floor((now - d.updatedAt.getTime()) / 86400000),
   }));
 
+  // Documentation completeness: what a handover-ready client file should contain
+  const checks = [
+    { key: 'credentials', label: 'Credentials documented', done: pwCount > 0, href: '/dashboard/passwords' },
+    { key: 'network', label: 'Network documentation', done: networkDocs > 0, href: '/dashboard/documents?category=network' },
+    { key: 'runbook', label: 'Runbook / procedures', done: runbookDocs > 0, href: '/dashboard/documents?category=runbook' },
+    { key: 'backup', label: 'Backup documentation', done: backupDocs > 0, href: '/dashboard/documents' },
+    { key: 'assets', label: 'Assets tracked', done: assetCount > 0, href: '/dashboard/assets' },
+    { key: 'servers', label: 'Servers documented', done: servers.length > 0, href: '/dashboard/servers' },
+    { key: 'domains', label: 'Domains registered', done: domains.length > 0 || certs.length > 0, href: '/dashboard/domains' },
+    { key: 'renewals', label: 'Renewals tracked', done: renewals.length > 0, href: '/dashboard/renewals' },
+    { key: 'contacts', label: 'Contact details on file', done: !!(orgRow?.email || orgRow?.phone), href: '/dashboard/organizations/' + id },
+    { key: 'fresh', label: 'Docs reviewed in last 90 days', done: freshDocs > 0, href: '/dashboard/documents' },
+  ];
+  const score = Math.round((checks.filter((c) => c.done).length / checks.length) * 100);
+
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
     expiringSoon,
     tickets: { open: openTickets, breached: breachedTickets, oldestOpenDays },
     offlineAgents,
     staleDocs,
+    completeness: { score, checks },
   });
 }

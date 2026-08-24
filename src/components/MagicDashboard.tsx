@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
   Globe, ShieldCheck, CalendarClock, Ticket, Server, FileText,
-  AlertTriangle, Activity,
+  AlertTriangle, Activity, Check,
 } from 'lucide-react';
 
 const KIND_META: Record<string, { icon: typeof Globe; label: string; hrefPrefix?: string }> = {
@@ -19,6 +19,34 @@ interface Pulse {
   tickets: { open: number; breached: number; oldestOpenDays: number };
   offlineAgents: { id: string; name: string; hoursSilent: number }[];
   staleDocs: { id: string; title: string; daysSinceUpdate: number }[];
+  completeness?: {
+    score: number;
+    checks: { key: string; label: string; done: boolean; href: string }[];
+  };
+}
+
+function scoreColor(score: number): string {
+  if (score >= 80) return 'var(--success)';
+  if (score >= 50) return 'var(--warning)';
+  return 'var(--danger)';
+}
+
+function ScoreRing({ score }: { score: number }) {
+  const radius = 34;
+  const circ = 2 * Math.PI * radius;
+  const offset = circ * (1 - score / 100);
+  return (
+    <svg width="88" height="88" viewBox="0 0 88 88" role="img" aria-label={`Documentation completeness ${score}%`}>
+      <circle cx="44" cy="44" r={radius} fill="none" stroke="var(--surface-2)" strokeWidth="8" />
+      <circle
+        cx="44" cy="44" r={radius} fill="none"
+        stroke={scoreColor(score)} strokeWidth="8" strokeLinecap="round"
+        strokeDasharray={circ} strokeDashoffset={offset}
+        transform="rotate(-90 44 44)"
+      />
+      <text x="44" y="50" textAnchor="middle" fontSize="22" fontWeight="700" fill="var(--foreground)">{score}</text>
+    </svg>
+  );
 }
 
 function daysTone(days: number): string {
@@ -76,6 +104,43 @@ export function MagicDashboard({ orgId }: { orgId: string }) {
           </p>
         </div>
       </div>
+
+      {/* Completeness */}
+      {pulse.completeness && (
+        <div className="card p-5">
+          <div className="flex items-center gap-5 flex-wrap">
+            <ScoreRing score={pulse.completeness.score} />
+            <div className="min-w-48">
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--foreground)' }}>Documentation completeness</h3>
+              <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                {pulse.completeness.score >= 80
+                  ? 'Handover-ready client file.'
+                  : pulse.completeness.score >= 50
+                    ? 'Solid base — close the gaps below.'
+                    : 'Significant documentation gaps.'}
+              </p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 flex-1 min-w-64">
+              {pulse.completeness.checks.map((c) => (
+                <Link
+                  key={c.key}
+                  href={c.href}
+                  className="flex items-center gap-2 text-xs group"
+                  style={{ color: c.done ? 'var(--foreground)' : 'var(--muted)' }}
+                >
+                  <span
+                    className="w-4 h-4 rounded-full flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: c.done ? 'var(--success)' : 'transparent', border: c.done ? 'none' : '1.5px dashed var(--card-border)' }}
+                  >
+                    {c.done && <Check className="w-2.5 h-2.5 text-white" />}
+                  </span>
+                  <span className={c.done ? '' : 'group-hover:underline'}>{c.label}</span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Tickets */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
