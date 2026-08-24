@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/UIComponents';
+import { RelatedItems } from '@/components/RelatedItems';
 
 interface Asset {
   id: string;
@@ -165,6 +166,8 @@ export default function AssetDetailPage() {
           </button>
         </div>
       </div>
+
+      <RelatedItems entityType="asset" entityId={String(params.id)} />
 
       <ConfirmDialog
         isOpen={showDelete}

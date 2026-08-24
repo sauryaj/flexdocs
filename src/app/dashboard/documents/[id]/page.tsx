@@ -26,6 +26,7 @@ import { ConfirmDialog } from '@/components/UIComponents';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { Eye, Edit3, Columns } from 'lucide-react';
+import { RelatedItems } from '@/components/RelatedItems';
 
 const categories = [
   'general',
@@ -714,6 +715,9 @@ export default function DocumentDetailPage() {
 
         {/* Right: Sidebar panels */}
         <div className="w-80 shrink-0 space-y-4 sticky top-24">
+          {/* Related Items */}
+          {doc?.id && <RelatedItems entityType="document" entityId={doc.id} />}
+
           {/* Version History */}
           <div className="card overflow-hidden">
             <button

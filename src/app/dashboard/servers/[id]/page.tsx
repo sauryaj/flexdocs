@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft, Trash2 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/UIComponents';
+import { RelatedItems } from '@/components/RelatedItems';
 
 export default function ServerDetailPage() {
   const router = useRouter();
@@ -88,6 +89,7 @@ export default function ServerDetailPage() {
         <div><label className="block text-sm font-medium mb-1">Tags</label><input className="input-field" value={form.tags} onChange={(e) => update('tags', e.target.value)} placeholder="comma-separated" /></div>
         <button type="submit" disabled={saving} className="btn-primary">{saving ? 'Saving...' : 'Save Changes'}</button>
       </form>
+      <RelatedItems entityType="server" entityId={id} />
       <ConfirmDialog isOpen={showDelete} onClose={() => setShowDelete(false)} onConfirm={handleDelete} title="Delete Server" message="This action cannot be undone." />
     </div>
   );
