@@ -4,19 +4,32 @@ import bcrypt from 'bcryptjs';
 const prisma = new PrismaClient();
 
 async function main() {
-  const hashedPassword = await bcrypt.hash('admin123', 12);
+  // Demo credentials used by the login page and scripts/smoke-test.sh
+  const hashedPassword = await bcrypt.hash('admin12345', 12);
 
   const user = await prisma.user.upsert({
+    where: { email: 'admin@flexdocs.local' },
+    update: {},
+    create: {
+      name: 'System Admin',
+      email: 'admin@flexdocs.local',
+      password: hashedPassword,
+      role: 'admin',
+    },
+  });
+
+  const legacyUser = await prisma.user.upsert({
     where: { email: 'admin@flexdocs.io' },
     update: {},
     create: {
       name: 'Admin User',
       email: 'admin@flexdocs.io',
       password: hashedPassword,
+      role: 'admin',
     },
   });
 
-  console.log('Created user:', user.email);
+  console.log('Created users:', user.email, legacyUser.email);
 
   const tags = await Promise.all([
     prisma.tag.upsert({
