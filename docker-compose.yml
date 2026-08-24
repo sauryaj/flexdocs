@@ -32,6 +32,9 @@ services:
       - SMTP_FROM=${SMTP_FROM:-FlexDocs <noreply@flexdocs.local>}
       - SMTP_SECURE=${SMTP_SECURE:-false}
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - AI_API_KEY=${AI_API_KEY:-}
+      - AI_MODEL=${AI_MODEL:-gpt-4o-mini}
+      - AI_BASE_URL=${AI_BASE_URL:-https://api.openai.com/v1}
       - BACKUP_DIR=${BACKUP_DIR:-/backups}
       - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
     depends_on:
