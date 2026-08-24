@@ -76,7 +76,7 @@ jobs:
       - run: npm ci
 
       - name: Apply schema
-        run: npx prisma db push --skip-generate
+        run: npx prisma migrate deploy
 
       - name: Seed database (creates admin@flexdocs.local)
         run: npx -y tsx prisma/seed.ts

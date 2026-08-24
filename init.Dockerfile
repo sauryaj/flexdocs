@@ -16,4 +16,4 @@ COPY src/lib ./src/lib
 RUN npx prisma generate
 
 ENTRYPOINT ["sh", "-c"]
-CMD ["npx prisma db push --accept-data-loss && (npx tsx prisma/seed.ts || true) && (npx tsx prisma/seed-orgs || true)"]
+CMD ["npx prisma migrate deploy && (npx tsx prisma/seed.ts || true) && (npx tsx prisma/seed-orgs || true)"]
