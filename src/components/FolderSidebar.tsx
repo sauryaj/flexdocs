@@ -34,9 +34,10 @@ interface FolderSidebarProps {
   selectedFolderId: string | null;
   onSelectFolder: (id: string | null) => void;
   refreshTrigger?: number;
+  totalCount?: number;
 }
 
-export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger }: FolderSidebarProps) {
+export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger, totalCount }: FolderSidebarProps) {
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -308,7 +309,7 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger
           <FileText className="w-4 h-4" />
           <span className="text-sm flex-1">All Documents</span>
           <span className="text-xs text-slate-400">
-            {folders.reduce((sum, f) => sum + f._count.documents, 0)}
+            {totalCount ?? folders.reduce((sum, f) => sum + f._count.documents, 0)}
           </span>
         </button>
 

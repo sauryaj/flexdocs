@@ -44,13 +44,25 @@ export async function GET(req: Request) {
   const priorityRank: Record<string, number> = { urgent: 4, high: 3, medium: 2, low: 1 };
   tickets.sort((a, b) => (priorityRank[b.priority] ?? 0) - (priorityRank[a.priority] ?? 0));
 
+  // SLA targets (hours) for first response
+  const slaHours: Record<string, number> = { urgent: 1, high: 4, medium: 8, low: 24 };
+  const now = Date.now();
+
   return NextResponse.json(
-    tickets.map((t) => ({
-      ...t,
-      createdByName: t.createdBy.name || t.createdBy.email,
-      replyCount: t._count.replies,
-      _count: undefined,
-    })),
+    tickets.map((t) => {
+      const target = slaHours[t.priority] ?? 8;
+      const ageH = (now - t.createdAt.getTime()) / 3600000;
+      const slaBreached =
+        !t.firstResponseAt && ageH > target && (t.status === 'open' || t.status === 'pending');
+      return {
+        ...t,
+        createdByName: t.createdBy.name || t.createdBy.email,
+        replyCount: t._count.replies,
+        firstResponseAt: t.firstResponseAt?.toISOString() || null,
+        slaBreached,
+        _count: undefined,
+      };
+    }),
   );
 }
 

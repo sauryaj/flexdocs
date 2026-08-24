@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import {
   Building2, Key, Globe, FileText, ShieldCheck, Check,
-  ArrowRight, ArrowLeft, PartyPopper,
+  ArrowRight, ArrowLeft, PartyPopper, CalendarClock,
 } from 'lucide-react';
 
 interface StepState {
@@ -17,6 +17,7 @@ const STEPS = [
   { id: 'org', label: 'Set up an organization', icon: Building2, description: 'Group every asset under a client or business unit.', href: '/dashboard/organizations', cta: 'Manage organizations' },
   { id: 'vault', label: 'Import your credentials', icon: Key, description: 'Bring passwords in from Bitwarden, 1Password, or Chrome in one CSV.', href: '/dashboard/settings/import-export', cta: 'Import vault' },
   { id: 'infra', label: 'Add domains & infrastructure', icon: Globe, description: 'Register what you manage so expiry radar can watch it.', href: '/dashboard/domains', cta: 'Add domains' },
+  { id: 'renewals', label: 'Track licenses & contracts', icon: CalendarClock, description: 'Renewal dates that would otherwise auto-renew unnoticed.', href: '/dashboard/renewals', cta: 'Add renewals' },
   { id: 'docs', label: 'Create your first document', icon: FileText, description: 'Runbooks, procedures, network notes — markdown with templates.', href: '/dashboard/documents/new', cta: 'New document' },
   { id: 'safety', label: 'Configure a safety net', icon: ShieldCheck, description: 'Name an emergency contact so your team is never locked out.', href: '/dashboard/settings/emergency-access', cta: 'Emergency access' },
 ] as const;
@@ -31,24 +32,27 @@ export default function OnboardingPage() {
   useEffect(() => {
     (async () => {
       try {
-        const [orgRes, pwRes, domRes, docRes, eaRes] = await Promise.all([
+        const [orgRes, pwRes, domRes, docRes, eaRes, renRes] = await Promise.all([
           fetch('/api/organizations'),
           fetch('/api/passwords'),
           fetch('/api/domains'),
           fetch('/api/documents'),
           fetch('/api/emergency-access'),
+          fetch('/api/renewals'),
         ]);
         const orgs = await orgRes.json().catch(() => []);
         const pws = await pwRes.json().catch(() => []);
         const doms = await domRes.json().catch(() => []);
         const docs = await docRes.json().catch(() => []);
         const eas = await eaRes.json().catch(() => []);
+        const rens = await renRes.json().catch(() => []);
 
         const count = (d: unknown) => (Array.isArray(d) ? d.length : Array.isArray((d as any)?.items) ? (d as any).items.length : 0);
         setStates({
           org: { done: count(orgs) > 0, detail: `${count(orgs)} organization${count(orgs) === 1 ? '' : 's'}` },
           vault: { done: count(pws) > 0, detail: `${count(pws)} credential${count(pws) === 1 ? '' : 's'}` },
           infra: { done: count(doms) > 0, detail: `${count(doms)} domain${count(doms) === 1 ? '' : 's'}` },
+          renewals: { done: count(rens) > 0, detail: `${count(rens)} tracked` },
           docs: { done: count(docs) > 0, detail: `${count(docs)} document${count(docs) === 1 ? '' : 's'}` },
           safety: { done: count(eas) > 0, detail: count(eas) > 0 ? 'contact configured' : 'none yet' },
         });
@@ -60,6 +64,7 @@ export default function OnboardingPage() {
               !((s.id === 'org' && count(orgs) > 0) ||
                 (s.id === 'vault' && count(pws) > 0) ||
                 (s.id === 'infra' && count(doms) > 0) ||
+                (s.id === 'renewals' && count(rens) > 0) ||
                 (s.id === 'docs' && count(docs) > 0) ||
                 (s.id === 'safety' && count(eas) > 0)),
           ),
@@ -110,7 +115,7 @@ export default function OnboardingPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight" style={{ color: 'var(--foreground)' }}>Welcome to FlexDocs</h1>
         <p className="text-sm mt-1" style={{ color: 'var(--muted)' }}>
-          Five quick steps to make this your single source of truth.
+          Six quick steps to make this your single source of truth.
         </p>
         <div className="flex gap-1.5 mt-4">
           {STEPS.map((s, i) => (

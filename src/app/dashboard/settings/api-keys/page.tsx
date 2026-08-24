@@ -16,6 +16,7 @@ export default function APIKeysPage() {
   const [loading, setLoading] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newKeyName, setNewKeyName] = useState('');
+  const [newKeyExpiry, setNewKeyExpiry] = useState('');
   const [newKey, setNewKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -46,12 +47,13 @@ export default function APIKeysPage() {
       const res = await fetch('/api/api-keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newKeyName }),
+        body: JSON.stringify({ name: newKeyName, expiresAt: newKeyExpiry || undefined }),
       });
       if (!res.ok) throw new Error('Failed to create API key');
       const data = await res.json();
       setNewKey(data.key);
       setNewKeyName('');
+      setNewKeyExpiry('');
       await loadKeys();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create API key');
@@ -154,7 +156,12 @@ export default function APIKeysPage() {
                     </div>
                     <div className="text-xs text-gray-400 dark:text-gray-500">
                       Created: {new Date(key.createdAt).toLocaleDateString()}
-                      {key.expiresAt && ` • Expires: ${new Date(key.expiresAt).toLocaleDateString()}`}
+                      {key.expiresAt &&
+                        (new Date(key.expiresAt) < new Date() ? (
+                          <span className="badge badge-red ml-2">Expired</span>
+                        ) : (
+                          ` • Expires: ${new Date(key.expiresAt).toLocaleDateString()}`
+                        ))}
                     </div>
                   </div>
                   <button
@@ -193,6 +200,18 @@ export default function APIKeysPage() {
                   onChange={(e) => setNewKeyName(e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                   placeholder="e.g., Production Server"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1.5" style={{ color: 'var(--muted)' }}>
+                  Expires (optional)
+                </label>
+                <input
+                  type="date"
+                  aria-label="Key expiry date"
+                  value={newKeyExpiry}
+                  onChange={(e) => setNewKeyExpiry(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
               </div>
             </div>

@@ -85,8 +85,15 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         ? 'pending'
         : 'open'
       : undefined;
-  if (newStatus) {
-    await prisma.ticket.update({ where: { id: ticket.id }, data: { status: newStatus } });
+  if (newStatus || (!ticket.firstResponseAt && isStaff)) {
+    await prisma.ticket.update({
+      where: { id: ticket.id },
+      data: {
+        ...(newStatus ? { status: newStatus } : {}),
+        // SLA: stamp the first staff response
+        ...(!ticket.firstResponseAt && isStaff ? { firstResponseAt: new Date() } : {}),
+      },
+    });
   }
 
   // Notify the counterpart

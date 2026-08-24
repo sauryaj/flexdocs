@@ -13,6 +13,9 @@ interface TicketDetail {
   priority: string;
   createdByName: string;
   organizationName?: string | null;
+  createdAt: string;
+  firstResponseAt?: string | null;
+  assignedTo?: { id: string; name: string } | null;
   replies: {
     id: string;
     body: string;
@@ -22,6 +25,8 @@ interface TicketDetail {
     isSelf: boolean;
   }[];
 }
+
+const SLA_HOURS: Record<string, number> = { urgent: 1, high: 4, medium: 8, low: 24 };
 
 const STATUS_STYLES: Record<string, string> = {
   open: 'badge-blue',
@@ -37,6 +42,8 @@ export function TicketDetail({ id, backHref, isStaff }: { id: string; backHref: 
   const [internal, setInternal] = useState(false);
   const [sending, setSending] = useState(false);
   const [staffMode, setStaffMode] = useState(!!isStaff);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [staffUsers, setStaffUsers] = useState<{ id: string; name: string | null; email: string }[]>([]);
 
   const fetchTicket = useCallback(async () => {
     const res = await fetch(`/api/tickets/${id}`);
@@ -52,7 +59,26 @@ export function TicketDetail({ id, backHref, isStaff }: { id: string; backHref: 
         .then((d) => setStaffMode(d.mode === 'all'))
         .catch(() => {});
     }
+    // Assignment picker is admin-only (user.manage permission)
+    fetch('/api/rbac/users')
+      .then((r) => (r.ok ? r.json() : []))
+      .then((users) => {
+        if (Array.isArray(users) && users.length > 0) {
+          setIsAdmin(true);
+          setStaffUsers(users.filter((u: { role?: string }) => !u.role || u.role !== 'viewer'));
+        }
+      })
+      .catch(() => {});
   }, [fetchTicket, isStaff]);
+
+  const assign = async (userId: string) => {
+    await fetch(`/api/tickets/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ assignedToUserId: userId || null }),
+    });
+    fetchTicket();
+  };
 
   const sendReply = async () => {
     if (sending || !reply.trim()) return;
@@ -112,8 +138,43 @@ export function TicketDetail({ id, backHref, isStaff }: { id: string; backHref: 
             >
               {ticket.priority}
             </span>
+            {(() => {
+              const target = SLA_HOURS[ticket.priority] ?? 8;
+              const ageH = (Date.now() - new Date(ticket.createdAt).getTime()) / 3600000;
+              const breached =
+                !ticket.firstResponseAt && ageH > target && (ticket.status === 'open' || ticket.status === 'pending');
+              if (breached) {
+                return <span className="badge badge-red">SLA breached {Math.floor(ageH - target)}h</span>;
+              }
+              if (!ticket.firstResponseAt && (ticket.status === 'open' || ticket.status === 'pending')) {
+                return <span className="badge badge-slate">SLA {Math.max(0, Math.ceil(target - ageH))}h left</span>;
+              }
+              return null;
+            })()}
           </div>
         </div>
+        {staffMode && (
+          <div className="flex items-center gap-2 text-xs flex-wrap" style={{ color: 'var(--muted)' }}>
+            <span>Assignee:</span>
+            {isAdmin ? (
+              <select
+                aria-label="Assign to"
+                value={ticket.assignedTo?.id || ''}
+                onChange={(e) => assign(e.target.value)}
+                className="input-field w-auto text-xs py-1"
+              >
+                <option value="">Unassigned</option>
+                {staffUsers.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name || u.email}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="font-medium" style={{ color: 'var(--foreground)' }}>
+                {ticket.assignedTo?.name || 'Unassigned'}
+              </span>
+            )}
+          </div>
+        )}
         <div className="pt-2 border-t text-sm whitespace-pre-wrap" style={{ borderColor: 'var(--card-border)', color: 'var(--foreground)' }}>
           {ticket.description}
         </div>

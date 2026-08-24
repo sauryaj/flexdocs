@@ -215,6 +215,7 @@ export default function DocumentsPage() {
           selectedFolderId={selectedFolderId}
           onSelectFolder={setSelectedFolderId}
           refreshTrigger={folderRefresh}
+          totalCount={documents.length}
         />
       </div>
 

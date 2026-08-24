@@ -14,6 +14,7 @@ interface TicketRow {
   organizationName?: string | null;
   assignedTo?: { name: string } | null;
   replyCount: number;
+  slaBreached?: boolean;
   updatedAt: string;
 }
 
@@ -97,6 +98,10 @@ export default function TicketsPage() {
               >
                 {t.priority}
               </span>
+              {t.assignedTo && (
+                <span className="text-xs shrink-0 hidden md:block" style={{ color: 'var(--muted)' }}>→ {t.assignedTo.name}</span>
+              )}
+              {t.slaBreached && <span className="badge badge-red shrink-0">SLA</span>}
               {t.replyCount > 0 && (
                 <span className="text-xs w-8 text-right shrink-0" style={{ color: 'var(--muted)' }}>{t.replyCount}💬</span>
               )}
