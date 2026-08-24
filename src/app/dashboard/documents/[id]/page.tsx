@@ -124,6 +124,35 @@ export default function DocumentDetailPage() {
   const [viewMode, setViewMode] = useState<'write' | 'preview' | 'split'>('write');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  // --- Autosave -------------------------------------------------------------
+  const lastSavedRef = useRef<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const [savedAt, setSavedAt] = useState<Date | null>(null);
+
+  const currentSnapshot = () =>
+    JSON.stringify({ t: title, c: content, cat: category, tg: tags, rd: reviewDate, v: visibility });
+
+  useEffect(() => {
+    if (loading || !doc) return;
+    if (lastSavedRef.current === null) return;
+    if (currentSnapshot() === lastSavedRef.current) return;
+    setDirty(true);
+    const timer = setTimeout(() => {
+      void doSave();
+    }, 2000);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [title, content, category, tags, reviewDate, visibility, loading, doc]);
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (!dirty) return;
+      e.preventDefault();
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirty]);
+
   const insertFormatting = (prefix: string, suffix: string = '', defaultText: string = '') => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -184,7 +213,18 @@ export default function DocumentDetailPage() {
           setReviewDate(new Date(data.reviewDate).toISOString().slice(0, 10));
           setReviewDue(new Date(data.reviewDate).getTime() <= Date.now());
         }
-        setVisibility(data.visibility || 'private');
+        const vis = data.visibility || 'private';
+        setVisibility(vis);
+        // Autosave baseline: what the server has right now
+        lastSavedRef.current = JSON.stringify({
+          t: data.title,
+          c: data.content,
+          cat: data.category,
+          tg: data.tags.map((t: any) => t.name).join(', '),
+          rd: data.reviewDate ? new Date(data.reviewDate).toISOString().slice(0, 10) : '',
+          v: vis,
+        });
+        setDirty(false);
         setLoading(false);
       });
   }, [params.id]);
@@ -265,28 +305,43 @@ export default function DocumentDetailPage() {
     }
   }, [showRelationshipForm, relTargetType]);
 
-  const handleSave = async () => {
+  const doSave = async (): Promise<boolean> => {
     setSaving(true);
     const tagList = tags
       .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
 
-    await fetch(`/api/documents/${params.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title,
-        content,
-        category,
-        tags: tagList,
-        isPinned: doc?.isPinned,
-        isArchived: doc?.isArchived,
-        reviewDate: reviewDate || null,
-        visibility,
-      }),
-    });
-    setSaving(false);
+    let ok = false;
+    try {
+      const res = await fetch(`/api/documents/${params.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          content,
+          category,
+          tags: tagList,
+          isPinned: doc?.isPinned,
+          isArchived: doc?.isArchived,
+          reviewDate: reviewDate || null,
+          visibility,
+        }),
+      });
+      ok = res.ok;
+    } finally {
+      setSaving(false);
+    }
+    if (ok) {
+      lastSavedRef.current = currentSnapshot();
+      setDirty(false);
+      setSavedAt(new Date());
+    }
+    return ok;
+  };
+
+  const handleSave = () => {
+    void doSave();
   };
 
   const togglePin = async () => {
@@ -632,10 +687,27 @@ export default function DocumentDetailPage() {
               </div>
             )}
           </div>
-          <div className="flex justify-end gap-3">
-            <Link href="/dashboard/documents" className="btn-secondary">Cancel</Link>
+          <div className="flex justify-end items-center gap-3">
+            <span aria-live="polite" className="text-xs mr-auto" style={{ color: 'var(--muted)' }}>
+              {saving
+                ? 'Saving…'
+                : dirty
+                  ? 'Unsaved changes — autosaving…'
+                  : savedAt
+                    ? `All changes saved (${savedAt.toLocaleTimeString()})`
+                    : ''}
+            </span>
+            <Link
+              href="/dashboard/documents"
+              className="btn-secondary"
+              onClick={(e) => {
+                if (dirty && !window.confirm('Discard unsaved changes?')) e.preventDefault();
+              }}
+            >
+              Cancel
+            </Link>
             <button onClick={handleSave} disabled={saving} className="btn-primary flex items-center gap-2">
-              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Changes
+              {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} Save Now
             </button>
           </div>
         </div>
