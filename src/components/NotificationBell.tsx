@@ -56,7 +56,8 @@ export function NotificationBell() {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 60000);
+    // SSE drives realtime updates; this slow poll is only a fallback
+    const interval = setInterval(fetchNotifications, 300000);
     return () => clearInterval(interval);
   }, [fetchNotifications]);
 

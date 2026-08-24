@@ -97,6 +97,9 @@ const navigation: NavGroup[] = [
   },
 ];
 
+const ORG_CACHE_TTL = 2 * 60 * 1000;
+let orgCache: { orgs: Organization[]; at: number } | null = null;
+
 export function Sidebar() {
   const pathname = usePathname();
   useTheme();
@@ -119,11 +122,19 @@ export function Sidebar() {
   }, []);
 
   useEffect(() => {
+    // Module-level cache: the sidebar remounts on every navigation, but the
+    // org list rarely changes — avoid hammering /api/organizations.
+    if (orgCache && Date.now() - orgCache.at < ORG_CACHE_TTL) {
+      setOrganizations(orgCache.orgs);
+      return;
+    }
     setLoadingOrgs(true);
     fetch('/api/organizations')
       .then((res) => res.json())
       .then((data) => {
-        setOrganizations(Array.isArray(data) ? data : data.organizations || []);
+        const orgs = Array.isArray(data) ? data : data.organizations || [];
+        orgCache = { orgs, at: Date.now() };
+        setOrganizations(orgs);
       })
       .catch(() => {})
       .finally(() => setLoadingOrgs(false));
