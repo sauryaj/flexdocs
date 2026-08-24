@@ -4,6 +4,8 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import Link from 'next/link';
 import { FileText, Key, Globe, HardDrive, Server } from 'lucide-react';
+import { MermaidDiagram } from '@/components/MermaidDiagram';
+import { useTheme } from '@/lib/ThemeContext';
 
 interface MarkdownPreviewProps {
   content: string;
@@ -65,12 +67,29 @@ function MentionLink({ href, children }: { href: string; children: React.ReactNo
 }
 
 export function MarkdownPreview({ content, className = '' }: MarkdownPreviewProps) {
+  const { resolvedMode } = useTheme();
   return (
     <div className={`md-preview ${className}`}>
       <ReactMarkdown
         remarkPlugins={[remarkGfm]}
         components={{
           a: ({ href = '', children }) => <MentionLink href={href}>{children}</MentionLink>,
+          pre: ({ children }) => {
+            // Detect mermaid fenced blocks: <pre><code class="language-mermaid">…</code></pre>
+            const child = Array.isArray(children) ? children[0] : children;
+            const cls =
+              child && typeof child === 'object' && 'props' in (child as Record<string, unknown>)
+                ? String((child as { props?: { className?: string } }).props?.className ?? '')
+                : '';
+            if (cls.includes('language-mermaid')) {
+              const raw =
+                child && typeof child === 'object' && 'props' in (child as Record<string, unknown>)
+                  ? String((child as { props?: { children?: unknown } }).props?.children ?? '')
+                  : '';
+              return <MermaidDiagram code={raw.replace(/\n$/, '')} dark={resolvedMode === 'dark'} />;
+            }
+            return <pre>{children}</pre>;
+          },
         }}
       >
         {content}
