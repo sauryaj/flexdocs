@@ -63,6 +63,41 @@ export async function PUT(
     },
   });
 
+  // Snapshot the overwritten content so manual saves AND autosaves stay
+  // recoverable. Skips when the latest revision already holds that exact
+  // content (redundant) or when saves land <15s apart (burst throttle).
+  if (typeof content === 'string' && content !== document.content) {
+    const latest = await prisma.documentRevision.findFirst({
+      where: { documentId: id },
+      orderBy: { version: 'desc' },
+    });
+    const redundant = !!latest && latest.content === document.content;
+    const burst = !!latest && Date.now() - latest.createdAt.getTime() < 15_000;
+    if (!redundant && !burst) {
+      await prisma.documentRevision.create({
+        data: {
+          documentId: id,
+          title: document.title,
+          content: document.content,
+          category: document.category,
+          version: (latest?.version || 0) + 1,
+          message: 'Auto-saved before overwrite',
+          userId: user.id,
+        },
+      });
+      // keep history bounded to the latest 50 revisions
+      const stale = await prisma.documentRevision.findMany({
+        where: { documentId: id },
+        orderBy: { version: 'desc' },
+        skip: 50,
+        select: { id: true },
+      });
+      if (stale.length > 0) {
+        await prisma.documentRevision.deleteMany({ where: { id: { in: stale.map((r) => r.id) } } });
+      }
+    }
+  }
+
   if (tags !== undefined) {
     await prisma.$executeRaw`DELETE FROM "_DocumentToTag" WHERE "A" = ${id}`;
     if (tags.length > 0) {

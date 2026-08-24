@@ -6,6 +6,10 @@ import { Lock, Mail, Key, Loader2, ArrowRight, ShieldCheck } from 'lucide-react'
 
 export default function LoginPage() {
   const router = useRouter();
+  const [expired] = useState(() =>
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('expired') === '1',
+  );
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [mfaRequired, setMfaRequired] = useState(false);
@@ -74,6 +78,12 @@ export default function LoginPage() {
         {error && (
           <div className="p-3.5 rounded-xl bg-red-950/70 border border-red-800 text-xs text-red-300 text-center font-medium">
             {error}
+          </div>
+        )}
+
+        {expired && !error && (
+          <div className="p-3.5 rounded-xl bg-amber-950/60 border border-amber-800 text-xs text-amber-300 text-center font-medium">
+            Your session expired. Sign in again to continue.
           </div>
         )}
 

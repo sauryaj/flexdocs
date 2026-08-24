@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma';
 
 const COOKIE_NAME = 'flexdocs_session';
 const SESSION_TTL_DAYS = 7;
-const MAX_SESSIONS_PER_USER = 10;
+const MAX_SESSIONS_PER_USER = 25;
 
 function getSigningKey(): Buffer {
   const secret = process.env.SESSION_SECRET || process.env.NEXTAUTH_SECRET;
