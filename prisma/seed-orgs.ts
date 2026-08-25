@@ -40,21 +40,34 @@ async function main() {
 
   const [org1, org2, org3] = createdOrgs;
 
-  const docs = await prisma.document.findMany({ select: { id: true } });
+  // Only assign UNLINKED records owned by the seed admin — never touch
+  // user-created data or records already linked to an organization.
+  const seedAdmin = await prisma.user.findUnique({ where: { email: 'admin@flexdocs.local' }, select: { id: true } });
+  if (!seedAdmin) throw new Error('seed admin missing; run seed.ts first');
+  const docs = await prisma.document.findMany({
+    where: { organizationId: null, userId: seedAdmin.id },
+    select: { id: true },
+  });
   for (let i = 0; i < docs.length; i++) {
     const orgId = [org1.id, org2.id, org3.id][i % 3];
     await prisma.document.update({ where: { id: docs[i].id }, data: { organizationId: orgId } });
   }
   console.log(`Assigned ${docs.length} documents`);
 
-  const pwds = await prisma.password.findMany({ select: { id: true } });
+  const pwds = await prisma.password.findMany({
+    where: { organizationId: null, userId: seedAdmin.id },
+    select: { id: true },
+  });
   for (let i = 0; i < pwds.length; i++) {
     const orgId = [org1.id, org2.id, org3.id][i % 3];
     await prisma.password.update({ where: { id: pwds[i].id }, data: { organizationId: orgId } });
   }
   console.log(`Assigned ${pwds.length} passwords`);
 
-  const doms = await prisma.domain.findMany({ select: { id: true } });
+  const doms = await prisma.domain.findMany({
+    where: { organizationId: null, userId: seedAdmin.id },
+    select: { id: true },
+  });
   for (let i = 0; i < doms.length; i++) {
     const orgId = [org1.id, org2.id, org3.id][i % 3];
     await prisma.domain.update({ where: { id: doms[i].id }, data: { organizationId: orgId } });

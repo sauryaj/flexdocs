@@ -21,7 +21,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const ninetyDaysAgo = new Date(now - 90 * 86400000);
 
-  const [domains, certs, renewals, servers, tickets, docs, pwCount, assetCount, networkDocs, runbookDocs, backupDocs, freshDocs, orgRow] =
+  const [domains, certs, renewals, servers, tickets, docs, pwCount, assetCount, networkDocs, runbookDocs, backupDocs, freshDocs, orgRow, allDomains, allRenewals, allServers] =
     await Promise.all([
     prisma.domain.findMany({
       where: { organizationId: id, expiresAt: { lte: soonCutoff } },
@@ -79,6 +79,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       where: { id },
       select: { email: true, phone: true },
     }),
+    // Completeness counts: ANY linked record counts, not just soon-expiring ones
+    prisma.domain.count({ where: { organizationId: id } }),
+    prisma.renewalItem.count({ where: { organizationId: id } }),
+    prisma.server.count({ where: { organizationId: id } }),
   ]);
 
   const daysLeft = (d: Date | null) => (d ? Math.ceil((d.getTime() - now) / 86400000) : null);
@@ -117,9 +121,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     { key: 'runbook', label: 'Runbook / procedures', done: runbookDocs > 0, href: '/dashboard/documents?category=runbook' },
     { key: 'backup', label: 'Backup documentation', done: backupDocs > 0, href: '/dashboard/documents' },
     { key: 'assets', label: 'Assets tracked', done: assetCount > 0, href: '/dashboard/assets' },
-    { key: 'servers', label: 'Servers documented', done: servers.length > 0, href: '/dashboard/servers' },
-    { key: 'domains', label: 'Domains registered', done: domains.length > 0 || certs.length > 0, href: '/dashboard/domains' },
-    { key: 'renewals', label: 'Renewals tracked', done: renewals.length > 0, href: '/dashboard/renewals' },
+    { key: 'servers', label: 'Servers documented', done: allServers > 0, href: '/dashboard/servers' },
+    { key: 'domains', label: 'Domains registered', done: allDomains > 0 || certs.length > 0, href: '/dashboard/domains' },
+    { key: 'renewals', label: 'Renewals tracked', done: allRenewals > 0, href: '/dashboard/renewals' },
     { key: 'contacts', label: 'Contact details on file', done: !!(orgRow?.email || orgRow?.phone), href: '/dashboard/organizations/' + id },
     { key: 'fresh', label: 'Docs reviewed in last 90 days', done: freshDocs > 0, href: '/dashboard/documents' },
   ];
