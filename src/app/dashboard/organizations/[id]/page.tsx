@@ -1,5 +1,7 @@
 'use client';
 
+import { RequireStaff } from '@/components/RequireStaff';
+
 import { useState, useEffect, use } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -172,6 +174,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
     .toUpperCase();
 
   return (
+    <RequireStaff>
     <div className="space-y-6">
       {/* Top Navigation Back Button */}
       <div className="flex items-center justify-between">
@@ -744,6 +747,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
         )}
       </Modal>
     </div>
+    </RequireStaff>
   );
 }
 

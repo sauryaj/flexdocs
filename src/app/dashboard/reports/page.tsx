@@ -1,5 +1,7 @@
 'use client';
 
+import { RequireStaff } from '@/components/RequireStaff';
+
 import { useState } from 'react';
 import { useOrganization } from '@/lib/OrganizationContext';
 
@@ -91,6 +93,7 @@ export default function ReportsPage() {
   };
 
   return (
+    <RequireStaff>
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Reports</h1>
@@ -165,5 +168,6 @@ export default function ReportsPage() {
         </p>
       </div>
     </div>
+    </RequireStaff>
   );
 }

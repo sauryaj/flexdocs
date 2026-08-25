@@ -1,5 +1,7 @@
 'use client';
 
+import { RequireStaff } from '@/components/RequireStaff';
+
 import { useEffect, useState, useCallback } from 'react';
 
 interface Backup {
@@ -84,6 +86,7 @@ export default function BackupsPage() {
   };
 
   return (
+    <RequireStaff>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -181,5 +184,6 @@ export default function BackupsPage() {
         </p>
       </div>
     </div>
+    </RequireStaff>
   );
 }

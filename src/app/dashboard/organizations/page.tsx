@@ -1,5 +1,7 @@
 'use client';
 
+import { RequireStaff } from '@/components/RequireStaff';
+
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -95,6 +97,7 @@ export default function OrganizationsPage() {
   }
 
   return (
+    <RequireStaff>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -309,5 +312,6 @@ export default function OrganizationsPage() {
         </div>
       </Modal>
     </div>
+    </RequireStaff>
   );
 }

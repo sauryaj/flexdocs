@@ -1,5 +1,7 @@
 'use client';
 
+import { RequireStaff } from '@/components/RequireStaff';
+
 import { useCallback, useEffect, useState } from 'react';
 import { useOrganization } from '@/lib/OrganizationContext';
 import { Network, Plus, Trash2, Loader2 } from 'lucide-react';
@@ -72,6 +74,7 @@ export default function IpamPage() {
   };
 
   return (
+    <RequireStaff>
     <div className="max-w-5xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -158,5 +161,6 @@ export default function IpamPage() {
         message="Remove this network from IPAM? Servers and assets are not affected."
       />
     </div>
+    </RequireStaff>
   );
 }

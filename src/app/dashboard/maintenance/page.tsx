@@ -1,5 +1,7 @@
 'use client';
 
+import { RequireStaff } from '@/components/RequireStaff';
+
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
@@ -71,6 +73,7 @@ export default function MaintenancePage() {
   });
 
   return (
+    <RequireStaff>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -181,5 +184,6 @@ export default function MaintenancePage() {
         message="This action cannot be undone."
       />
     </div>
+    </RequireStaff>
   );
 }

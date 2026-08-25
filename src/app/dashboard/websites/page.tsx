@@ -1,5 +1,7 @@
 'use client';
 
+import { RequireStaff } from '@/components/RequireStaff';
+
 import { useCallback, useEffect, useState } from 'react';
 import { useOrganization } from '@/lib/OrganizationContext';
 import { Globe, Plus, Trash2, Loader2, RefreshCw } from 'lucide-react';
@@ -81,6 +83,7 @@ export default function WebsitesPage() {
   const downCount = sites.filter((s) => s.status === 'down').length;
 
   return (
+    <RequireStaff>
     <div className="max-w-4xl mx-auto space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -168,5 +171,6 @@ export default function WebsitesPage() {
         message="Remove this site from monitoring?"
       />
     </div>
+    </RequireStaff>
   );
 }

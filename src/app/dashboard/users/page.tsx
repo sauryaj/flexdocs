@@ -1,5 +1,7 @@
 'use client';
 
+import { RequireStaff } from '@/components/RequireStaff';
+
 import { useState, useEffect } from 'react';
 import { Users, Mail, Trash2, UserPlus, Loader2 } from 'lucide-react';
 
@@ -99,6 +101,7 @@ export default function UsersPage() {
   };
 
   return (
+    <RequireStaff>
     <div className="max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
@@ -215,5 +218,6 @@ export default function UsersPage() {
         </div>
       )}
     </div>
+    </RequireStaff>
   );
 }

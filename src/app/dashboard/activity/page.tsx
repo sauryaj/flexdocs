@@ -18,6 +18,7 @@ import {
   Clock,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { RequireStaff } from '@/components/RequireStaff';
 
 interface LogEntry {
   id: string;
@@ -144,6 +145,7 @@ export default function ActivityPage() {
   }
 
   return (
+    <RequireStaff>
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
@@ -227,5 +229,6 @@ export default function ActivityPage() {
         </button>
       </div>
     </div>
+    </RequireStaff>
   );
 }
