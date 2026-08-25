@@ -34,6 +34,8 @@ interface Organization {
   logo: string | null;
   createdAt: string;
   updatedAt: string;
+  contacts?: { id: string; name: string; title: string | null; email: string | null; phone: string | null; mobile: string | null }[];
+  locations?: { id: string; name: string; address: string | null; city: string | null; state: string | null; country: string | null }[];
   documents: { id: string; title: string; category: string; updatedAt: string }[];
   passwords: { id: string; name: string; username: string; updatedAt: string }[];
   domains: { id: string; name: string; expiresAt: string | null }[];
@@ -58,7 +60,7 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
   const [loading, setLoading] = useState(true);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [activeTab, setActiveTab] = useState<'health' | 'overview' | 'documents' | 'passwords' | 'domains' | 'assets' | 'checklists'>('health');
+  const [activeTab, setActiveTab] = useState<'health' | 'overview' | 'documents' | 'passwords' | 'domains' | 'assets' | 'checklists' | 'contacts' | 'locations'>('health');
 
   const [editForm, setEditForm] = useState({
     name: '',
@@ -374,6 +376,8 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
           { key: 'domains', label: `Domains (${org.domains.length})` },
           { key: 'assets', label: `Flexible Assets (${org.assets.length})` },
           { key: 'checklists', label: `Checklists (${org.checklists.length})` },
+          { key: 'contacts', label: `Contacts (${org.contacts?.length ?? 0})` },
+          { key: 'locations', label: `Locations (${org.locations?.length ?? 0})` },
         ].map((tab) => (
           <button
             key={tab.key}
@@ -571,6 +575,10 @@ export default function OrganizationDetailPage({ params }: { params: Promise<{ i
           onLink={() => openLinkModal('asset')}
           onUnlink={(itemId) => handleUnlink('asset', itemId)}
         />
+      ) : activeTab === 'contacts' ? (
+        <ContactsPanel orgId={org.id} contacts={org.contacts ?? []} onChanged={fetchOrg} />
+      ) : activeTab === 'locations' ? (
+        <LocationsPanel orgId={org.id} locations={org.locations ?? []} onChanged={fetchOrg} />
       ) : (
         <ResourceSection
           title="Checklists"
@@ -813,6 +821,180 @@ function ResourceSection({
           ))
         )}
       </div>
+    </div>
+  );
+}
+
+/* ================= Contacts & Locations panels ================= */
+
+function ContactsPanel({
+  orgId,
+  contacts,
+  onChanged,
+}: {
+  orgId: string;
+  contacts: { id: string; name: string; title: string | null; email: string | null; phone: string | null; mobile: string | null }[];
+  onChanged: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ name: '', title: '', email: '', phone: '', mobile: '' });
+  const [busy, setBusy] = useState(false);
+
+  const add = async () => {
+    if (!form.name.trim()) return;
+    setBusy(true);
+    await fetch('/api/contacts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...form, organizationId: orgId }),
+    });
+    setForm({ name: '', title: '', email: '', phone: '', mobile: '' });
+    setAdding(false);
+    setBusy(false);
+    onChanged();
+  };
+
+  const remove = async (id: string) => {
+    await fetch(`/api/contacts/${id}`, { method: 'DELETE' });
+    onChanged();
+  };
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-slate-900 dark:text-white">People</h3>
+        <button onClick={() => setAdding((v) => !v)} className="btn-secondary text-xs flex items-center gap-1">
+          {adding ? 'Cancel' : '+ Add Contact'}
+        </button>
+      </div>
+      {adding && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4 p-3 rounded-lg" style={{ backgroundColor: 'var(--surface-2)' }}>
+          {(['name', 'title', 'email', 'phone', 'mobile'] as const).map((k) => (
+            <input
+              key={k}
+              value={form[k]}
+              onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+              placeholder={k === 'name' ? 'Full name *' : k.charAt(0).toUpperCase() + k.slice(1)}
+              aria-label={k}
+              className="input-field text-xs"
+            />
+          ))}
+          <button onClick={add} disabled={busy || !form.name.trim()} className="btn-primary text-xs disabled:opacity-50">
+            Save Contact
+          </button>
+        </div>
+      )}
+      {contacts.length === 0 ? (
+        <p className="text-sm text-slate-500">No contacts yet. Add the people who answer when things break.</p>
+      ) : (
+        <div className="divide-y" style={{ borderColor: 'var(--card-border)' }}>
+          {contacts.map((c) => (
+            <div key={c.id} className="py-3 flex items-start justify-between gap-3 group">
+              <div className="min-w-0">
+                <p className="font-medium text-sm text-slate-900 dark:text-white">
+                  {c.name} {c.title && <span className="text-slate-500 font-normal">· {c.title}</span>}
+                </p>
+                <p className="text-xs text-slate-500 flex flex-wrap gap-x-4">
+                  {c.email && <span>{c.email}</span>}
+                  {c.phone && <span>☎ {c.phone}</span>}
+                  {c.mobile && <span>📱 {c.mobile}</span>}
+                </p>
+              </div>
+              <button
+                onClick={() => remove(c.id)}
+                aria-label={`Delete ${c.name}`}
+                className="opacity-0 group-hover:opacity-100 text-xs text-red-500 hover:underline transition-opacity"
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LocationsPanel({
+  orgId,
+  locations,
+  onChanged,
+}: {
+  orgId: string;
+  locations: { id: string; name: string; address: string | null; city: string | null; state: string | null; country: string | null }[];
+  onChanged: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ name: '', address: '', city: '', state: '', country: '' });
+  const [busy, setBusy] = useState(false);
+
+  const add = async () => {
+    if (!form.name.trim()) return;
+    setBusy(true);
+    await fetch('/api/locations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...form, organizationId: orgId }),
+    });
+    setForm({ name: '', address: '', city: '', state: '', country: '' });
+    setAdding(false);
+    setBusy(false);
+    onChanged();
+  };
+
+  const remove = async (id: string) => {
+    await fetch(`/api/locations/${id}`, { method: 'DELETE' });
+    onChanged();
+  };
+
+  return (
+    <div className="card p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="font-semibold text-slate-900 dark:text-white">Sites</h3>
+        <button onClick={() => setAdding((v) => !v)} className="btn-secondary text-xs flex items-center gap-1">
+          {adding ? 'Cancel' : '+ Add Location'}
+        </button>
+      </div>
+      {adding && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4 p-3 rounded-lg" style={{ backgroundColor: 'var(--surface-2)' }}>
+          {(['name', 'address', 'city', 'state', 'country'] as const).map((k) => (
+            <input
+              key={k}
+              value={form[k]}
+              onChange={(e) => setForm({ ...form, [k]: e.target.value })}
+              placeholder={k === 'name' ? 'Site name *' : k.charAt(0).toUpperCase() + k.slice(1)}
+              aria-label={k}
+              className="input-field text-xs"
+            />
+          ))}
+          <button onClick={add} disabled={busy || !form.name.trim()} className="btn-primary text-xs disabled:opacity-50">
+            Save Location
+          </button>
+        </div>
+      )}
+      {locations.length === 0 ? (
+        <p className="text-sm text-slate-500">No locations yet. Add the sites you support.</p>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {locations.map((l) => (
+            <div key={l.id} className="p-3 rounded-lg group" style={{ backgroundColor: 'var(--surface-2)' }}>
+              <div className="flex items-start justify-between">
+                <p className="font-medium text-sm text-slate-900 dark:text-white">{l.name}</p>
+                <button
+                  onClick={() => remove(l.id)}
+                  aria-label={`Delete ${l.name}`}
+                  className="opacity-0 group-hover:opacity-100 text-xs text-red-500 hover:underline transition-opacity"
+                >
+                  Remove
+                </button>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {[l.address, l.city, l.state, l.country].filter(Boolean).join(', ') || '—'}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

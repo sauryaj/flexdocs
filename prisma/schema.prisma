@@ -54,6 +54,8 @@ model User {
   emergencyTrusted EmergencyAccess[] @relation("EmergencyTrusted")
   networkDocuments NetworkDocument[]
   ipamNetworks     IpamNetwork[]
+  contacts         Contact[] @relation("OrgContacts")
+  locations        Location[] @relation("OrgLocations")
   servers         Server[]
   maintenanceWindows MaintenanceWindow[]
   cloudResources  CloudResource[]
@@ -403,6 +405,8 @@ model Organization {
   sslCertificates SslCertificate[]
   networkDocuments NetworkDocument[]
   ipamNetworks     IpamNetwork[]
+  contacts         Contact[]
+  locations        Location[]
   servers       Server[]
   maintenanceWindows MaintenanceWindow[]
   cloudResources CloudResource[]
@@ -1100,4 +1104,42 @@ model IpamNetwork {
 
   @@index([userId])
   @@index([organizationId])
+}
+
+model Contact {
+  id             String        @id @default(cuid())
+  name           String
+  title          String?
+  email          String?
+  phone          String?
+  mobile         String?
+  notes          String?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  userId         String
+  user           User          @relation("OrgContacts", fields: [userId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([organizationId])
+  @@index([userId])
+}
+
+model Location {
+  id             String        @id @default(cuid())
+  name           String
+  address        String?
+  city           String?
+  state          String?
+  country        String?
+  notes          String?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  userId         String
+  user           User          @relation("OrgLocations", fields: [userId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([organizationId])
+  @@index([userId])
 }

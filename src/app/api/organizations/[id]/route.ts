@@ -24,6 +24,8 @@ export async function GET(
       checklists: {
         include: { items: true },
       },
+      contacts: true,
+      locations: true,
     },
   });
 
