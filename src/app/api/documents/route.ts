@@ -42,7 +42,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const { title, content, category, folderId, organizationId, tags, reviewDate } = await req.json();
+  const { title, content, category, folderId, organizationId, tags, reviewDate, visibility } = await req.json();
 
   const document = await prisma.document.create({
     data: {
@@ -51,6 +51,7 @@ export async function POST(req: Request) {
       folderId: folderId || null,
       reviewDate: reviewDate ? new Date(reviewDate) : null,
       organizationId: organizationId || null, userId: user.id,
+      visibility: visibility === 'org' && organizationId ? 'org' : 'private',
       tags: tags?.length
         ? {
             connectOrCreate: tags.map((tag: string) => ({

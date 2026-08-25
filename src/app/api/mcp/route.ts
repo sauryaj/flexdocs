@@ -51,23 +51,28 @@ async function toolSearch(user: { id: string; role: string }, args: Record<strin
   const orgWhere = isStaff
     ? (organizationId ? { organizationId } : {})
     : { organizationId: scope.orgIds.length ? { in: scope.orgIds } : { in: ['__none__'] } };
-  const contains = { contains: q, mode: 'insensitive' as const };
+  const terms = q.split(/\s+/).filter((t: string) => t.length > 2).slice(0, 8);
+  const docContains = terms.length
+    ? { OR: terms.flatMap((t: string) => [{ title: { contains: t, mode: 'insensitive' as const } }, { content: { contains: t, mode: 'insensitive' as const } }]) }
+    : undefined;
+  const firstTerm = terms[0] ?? q;
+  const simpleContains = { contains: firstTerm, mode: 'insensitive' as const };
 
   const [documents, servers, assets] = await Promise.all([
     prisma.document.findMany({
       where: isStaff
-        ? { userId: user.id, isArchived: false, ...orgWhere, OR: [{ title: contains }, { content: contains }] }
-        : { ...orgWhere, isArchived: false, visibility: 'org', OR: [{ title: contains }, { content: contains }] },
+        ? { userId: user.id, isArchived: false, ...orgWhere, ...(docContains ? { OR: docContains.OR } : {}) }
+        : { ...orgWhere, isArchived: false, visibility: 'org', ...(docContains ? { OR: docContains.OR } : {}) },
       select: { id: true, title: true, category: true, content: true },
       take: 8,
     }),
     prisma.server.findMany({
-      where: { ...orgWhere, OR: [{ name: contains }, { hostname: contains }] },
+      where: { ...orgWhere, OR: [{ name: simpleContains }, { hostname: simpleContains }] },
       select: { id: true, name: true, hostname: true, ipAddress: true },
       take: 5,
     }),
     prisma.flexibleAsset.findMany({
-      where: { ...orgWhere, isArchived: false, OR: [{ name: contains }, { assetType: contains }] },
+      where: { ...orgWhere, isArchived: false, OR: [{ name: simpleContains }, { assetType: simpleContains }] },
       select: { id: true, name: true, assetType: true },
       take: 5,
     }),
