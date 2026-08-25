@@ -21,6 +21,17 @@ export async function register() {
           });
         });
 
+        // Website uptime checks every 5 minutes
+        cron.schedule('*/5 * * * *', () => {
+          void (async () => {
+            const { checkAllWebsites } = await import('@/lib/uptime');
+            const r = await checkAllWebsites();
+            if (r.down > 0) console.log(`[uptime] ${r.down}/${r.checked} sites down`);
+          })().catch((err) => {
+            console.error('[instrumentation] uptime check failed', err);
+          });
+        });
+
         if (process.env.MAINTENANCE_ON_BOOT === 'true') {
           void runDailyMaintenance().catch((err) => {
             console.error('[instrumentation] on-boot maintenance failed', err);

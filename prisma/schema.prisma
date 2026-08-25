@@ -56,6 +56,7 @@ model User {
   ipamNetworks     IpamNetwork[]
   contacts         Contact[] @relation("OrgContacts")
   locations        Location[] @relation("OrgLocations")
+  websites         Website[]
   servers         Server[]
   maintenanceWindows MaintenanceWindow[]
   cloudResources  CloudResource[]
@@ -407,6 +408,7 @@ model Organization {
   ipamNetworks     IpamNetwork[]
   contacts         Contact[]
   locations        Location[]
+  websites         Website[]
   servers       Server[]
   maintenanceWindows MaintenanceWindow[]
   cloudResources CloudResource[]
@@ -1142,4 +1144,38 @@ model Location {
 
   @@index([organizationId])
   @@index([userId])
+}
+
+model Website {
+  id             String        @id @default(cuid())
+  name           String
+  url            String
+  status         String        @default("unknown") // up | down | unknown
+  lastCheckedAt  DateTime?
+  lastStatusCode Int?
+  lastLatencyMs  Int?
+  failCount      Int           @default(0)
+  uptimePercent  Float         @default(100)
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+  userId         String
+  user           User          @relation(fields: [userId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([organizationId])
+  @@index([userId])
+  checkLogs      WebsiteCheckLog[]
+}
+
+model WebsiteCheckLog {
+  id        String   @id @default(cuid())
+  websiteId String
+  website   Website  @relation(fields: [websiteId], references: [id], onDelete: Cascade)
+  ok        Boolean
+  statusCode Int?
+  latencyMs Int
+  checkedAt DateTime @default(now())
+
+  @@index([websiteId, checkedAt])
 }
