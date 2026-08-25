@@ -23,7 +23,9 @@ IT documentation & management platform — a self-hosted IT Glue / Hudu alternat
 ### Operations
 - **My Day** — Cross-org daily queue: assigned tickets, SLA breaches, docs due for review, expiries this week, offline agents
 - **Tickets** — Client/staff threads, internal notes, assignment, SLA first-response targets (urgent 1h → low 24h)
-- **Client Portal** — Org-scoped summary, knowledge base, ticket filing for client users
+- **Client Portal** — Org-scoped summary, knowledge base, ticket filing, and shared credential vault for client users
+- **Contacts & Locations** — First-class people and site records per organization
+- **Website Monitoring** — 5-minute uptime checks with down-alerts and 24h uptime history
 - **Renewals Tracker** — Licenses & contracts with renewal sweep alerts
 - **Magic Dashboard** — Per-org pulse: expiring items, SLA breaches, offline agents, stale docs, documentation completeness score
 - **Ask the Docs** — AI assistant grounded in your documentation (BYO OpenAI-compatible key; secrets never leave the vault)
