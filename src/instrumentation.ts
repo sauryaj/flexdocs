@@ -32,6 +32,16 @@ export async function register() {
           });
         });
 
+        // Password rotation for overdue auto-rotate credentials (3am daily)
+        cron.schedule('0 3 * * *', () => {
+          void (async () => {
+            const { rotateOverduePasswords } = await import('@/lib/password-rotation');
+            await rotateOverduePasswords();
+          })().catch((err) => {
+            console.error('[instrumentation] password rotation failed', err);
+          });
+        });
+
         if (process.env.MAINTENANCE_ON_BOOT === 'true') {
           void runDailyMaintenance().catch((err) => {
             console.error('[instrumentation] on-boot maintenance failed', err);

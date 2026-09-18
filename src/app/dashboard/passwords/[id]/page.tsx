@@ -108,6 +108,13 @@ export default function PasswordDetailPage() {
 
   // New fields
   const [rotationDays, setRotationDays] = useState<number | ''>('');
+  const [rotationEnabled, setRotationEnabled] = useState(false);
+  const [rotationMethod, setRotationMethod] = useState<'manual' | 'ssh'>('manual');
+  const [rotationTarget, setRotationTarget] = useState('');
+  const [rotationPort, setRotationPort] = useState<number | ''>(22);
+  const [rotationUsername, setRotationUsername] = useState('');
+  const [rotating, setRotating] = useState(false);
+  const [rotationMsg, setRotationMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [totpSecret, setTotpSecret] = useState('');
   const [totpIssuer, setTotpIssuer] = useState('');
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
@@ -142,6 +149,11 @@ export default function PasswordDetailPage() {
       setCategory(data.category);
       setTags(data.tags.map((t: { name: string }) => t.name).join(', '));
       setRotationDays(data.rotationDays || '');
+      setRotationEnabled(!!data.rotationEnabled);
+      setRotationMethod(data.rotationMethod || 'manual');
+      setRotationTarget(data.rotationTarget || '');
+      setRotationPort(data.rotationPort || 22);
+      setRotationUsername(data.rotationUsername || '');
       setTotpIssuer(data.totpIssuer || '');
       setCustomFields(data.customFields || []);
       setAutofillSelector(data.autofillSelector || '');
@@ -182,6 +194,11 @@ export default function PasswordDetailPage() {
         category, isFavorite: pass?.isFavorite, tags: tagList,
         clientVisible,
         rotationDays: rotationDays || null,
+        rotationEnabled,
+        rotationMethod,
+        rotationTarget: rotationTarget || null,
+        rotationPort: Number(rotationPort) || 22,
+        rotationUsername: rotationUsername || null,
         totpSecret: totpSecret || undefined, totpIssuer: totpIssuer || null,
         customFields, autofillSelector: autofillSelector || null,
         autofillNotes: autofillNotes || null,
@@ -269,6 +286,16 @@ export default function PasswordDetailPage() {
     navigator.clipboard.writeText(text);
     setCopiedField(field);
     setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const handleRotate = async () => {
+    setRotating(true);
+    setRotationMsg(null);
+    const res = await fetch(`/api/passwords/${params.id}/rotate`, { method: 'POST' });
+    const data = await res.json();
+    setRotationMsg({ ok: res.ok && data.ok, text: data.message || (data.ok ? 'Rotated' : 'Rotation failed') });
+    setRotating(false);
+    fetchData();
   };
 
   const addCustomField = () => setCustomFields([...customFields, { key: '', value: '', type: 'text' }]);
@@ -447,9 +474,60 @@ export default function PasswordDetailPage() {
                   </p>
                 </div>
               </div>
+
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={rotationEnabled} onChange={(e) => setRotationEnabled(e.target.checked)} className="w-4 h-4" />
+                Auto-rotate when overdue (daily job)
+              </label>
+
+              {rotationEnabled && (
+                <div className="space-y-3 border-t border-slate-200 pt-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm text-slate-600 mb-1">Method</label>
+                      <select value={rotationMethod} onChange={(e) => setRotationMethod(e.target.value as 'manual' | 'ssh')} className="input-field">
+                        <option value="manual">Manual (notify only)</option>
+                        <option value="ssh">SSH (apply on server)</option>
+                      </select>
+                    </div>
+                    {rotationMethod === 'ssh' && (
+                      <>
+                        <div>
+                          <label className="block text-sm text-slate-600 mb-1">Target host</label>
+                          <input value={rotationTarget} onChange={(e) => setRotationTarget(e.target.value)} className="input-field" placeholder="db01.corp.local" />
+                        </div>
+                        <div>
+                          <label className="block text-sm text-slate-600 mb-1">SSH user</label>
+                          <input value={rotationUsername} onChange={(e) => setRotationUsername(e.target.value)} className="input-field" placeholder="root / sudo user" />
+                        </div>
+                        <div>
+                          <label className="block text-sm text-slate-600 mb-1">Port</label>
+                          <input type="number" value={rotationPort} onChange={(e) => setRotationPort(e.target.value ? Number(e.target.value) : '')} className="input-field" min={1} max={65535} />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500">SSH rotates the login on a Linux host via chpasswd/passwd. Manual generates + archives a new secret and notifies you to update the target system.</p>
+                </div>
+              )}
+
               {pass.lastRotatedAt && (
                 <p className="text-xs text-slate-500">Last rotated: {formatDate(pass.lastRotatedAt)}</p>
               )}
+
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handleRotate}
+                  disabled={rotating}
+                  className="px-3 py-2 text-sm bg-slate-900 text-white rounded-lg hover:bg-slate-700 disabled:opacity-50 inline-flex items-center gap-2"
+                >
+                  <RefreshCw className={`w-4 h-4 ${rotating ? 'animate-spin' : ''}`} />
+                  {rotating ? 'Rotating…' : 'Rotate now'}
+                </button>
+                {rotationMsg && (
+                  <span className={`text-sm ${rotationMsg.ok ? 'text-green-600' : 'text-red-600'}`}>{rotationMsg.text}</span>
+                )}
+              </div>
             </div>
           )}
 

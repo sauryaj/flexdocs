@@ -214,6 +214,54 @@ async function main() {
     console.log('Created starter asset layouts');
   }
 
+  // Global service request templates (used by every tenant in the client portal)
+  const existingTemplates = await prisma.serviceRequestTemplate.count();
+  if (existingTemplates === 0) {
+    const starters = [
+      {
+        name: 'New User Setup',
+        description: 'Everything needed to provision a new employee’s access and hardware.',
+        category: 'support',
+        priority: 'medium',
+        fields: JSON.stringify([
+          { key: 'name', label: 'Employee full name', type: 'text', required: true },
+          { key: 'role', label: 'Role / department', type: 'text', required: false },
+          { key: 'start', label: 'Start date', type: 'text', required: true },
+          { key: 'hardware', label: 'Hardware needed', type: 'select', required: true, options: ['Laptop', 'Workstation', 'Both', 'None'] },
+          { key: 'apps', label: 'Apps / permissions needed', type: 'textarea', required: false },
+        ]),
+      },
+      {
+        name: 'Password Reset',
+        description: 'Reset access to a system or account.',
+        category: 'support',
+        priority: 'medium',
+        fields: JSON.stringify([
+          { key: 'system', label: 'Which system or account', type: 'text', required: true },
+          { key: 'username', label: 'Username (if known)', type: 'text', required: false },
+          { key: 'urgent', label: 'Urgent — locked out now', type: 'boolean', required: false },
+        ]),
+      },
+      {
+        name: 'Equipment Request',
+        description: 'Order new hardware or peripherals.',
+        category: 'hardware',
+        priority: 'low',
+        fields: JSON.stringify([
+          { key: 'item', label: 'What do you need', type: 'text', required: true },
+          { key: 'qty', label: 'Quantity', type: 'select', required: true, options: ['1', '2', '3', '5+'] },
+          { key: 'budget', label: 'Budget owner / PO', type: 'text', required: false },
+        ]),
+      },
+    ];
+    for (const t of starters) {
+      await prisma.serviceRequestTemplate.create({
+        data: { ...t, active: true, userId: user.id },
+      });
+    }
+    console.log('Created starter service request templates');
+  }
+
   console.log('Seed completed!');
 }
 

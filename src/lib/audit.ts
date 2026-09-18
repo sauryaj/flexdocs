@@ -32,7 +32,10 @@ export type AuditAction =
   | 'checklist.update'
   | 'checklist.complete'
   | 'checklist.delete'
-  | 'auth.attempt.failed';
+  | 'auth.attempt.failed'
+  | 'data.export'
+  | 'data.import'
+  | 'password.rotate';
 
 interface LogEntry {
   userId?: string;

@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasAnyPermission } from '@/lib/rbac';
+import { auditLog } from '@/lib/audit';
+import { encrypt } from '@/lib/encryption';
+import { restoreBackup } from '@/lib/import';
 import { type UserRole } from '@prisma/client';
 
 function parseCsv(text: string): { headers: string[]; rows: string[][] } {
@@ -14,7 +17,7 @@ function parseCsv(text: string): { headers: string[]; rows: string[][] } {
   return { headers, rows };
 }
 
-function mapRowToModule(row: string[], headers: string[], _module: string): Record<string, any> {
+function mapRowToModule(row: string[], headers: string[]): Record<string, any> {
   const data: Record<string, any> = {};
   headers.forEach((h, i) => {
     const val = row[i] || '';
@@ -24,61 +27,179 @@ function mapRowToModule(row: string[], headers: string[], _module: string): Reco
   return data;
 }
 
+function dateOrNull(v: any): Date | null {
+  if (!v) return null;
+  const d = new Date(v);
+  return isNaN(d.getTime()) ? null : d;
+}
+
+const CSV_MODULES = ['documents', 'passwords', 'domains', 'assets', 'servers', 'network', 'cloud', 'maintenance'];
+
 export async function POST(req: Request) {
   const user = await auth();
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const body = await req.json().catch(() => ({}));
+  const { module, type, data, format, organizationId } = body;
+  const target = module || type;
+
+  if (!target || !data) {
+    return NextResponse.json({ error: 'module/type and data required' }, { status: 400 });
+  }
+
+  // Full portable backup restore (admin only)
+  if (target === 'flexdocs-backup') {
+    if (user.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    const report = await restoreBackup(data, user.id);
+    void auditLog({ userId: user.id, action: 'data.import', resourceType: 'backup', resourceName: 'full', details: report.imported });
+    return NextResponse.json({ success: report.success, imported: report.imported, skipped: report.skipped, errors: report.errors });
+  }
+
+  if (target === 'itglue') {
+    // IT Glue exports arrive as JSON arrays or CSV text; route by detected shape
+    let rows: Record<string, any>[] | null = null;
+    if (typeof data === 'string') {
+      try {
+        rows = JSON.parse(data);
+      } catch {
+        const { headers, rows: csvRows } = parseCsv(data);
+        rows = csvRows.map((r) => mapRowToModule(r, headers));
+      }
+    } else {
+      rows = Array.isArray(data) ? data : null;
+    }
+    if (!rows || !Array.isArray(rows)) return NextResponse.json({ error: 'expected JSON array or CSV text of IT Glue rows' }, { status: 400 });
+    let created = 0;
+    const errors: string[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      try {
+        const r = rows[i];
+        const isPassword = 'password' in r || 'username' in r;
+        if (isPassword) {
+          await prisma.password.create({
+            data: {
+              name: String(r.name || r.title || `ITGlue ${i + 1}`),
+              username: String(r.username || ''),
+              password: encrypt(String(r.password || '')),
+              url: r.url || null,
+              category: 'general',
+              organizationId: organizationId || null,
+              userId: user.id,
+            },
+          });
+        } else {
+          await prisma.document.create({
+            data: {
+              title: String(r.name || r.title || `ITGlue ${i + 1}`),
+              content: String(r.body || r.content || JSON.stringify(r)),
+              category: r.category || 'general',
+              organizationId: organizationId || null,
+              userId: user.id,
+            },
+          });
+        }
+        created++;
+      } catch (e: any) {
+        errors.push(`row ${i}: ${e?.message || e}`);
+      }
+    }
+    return NextResponse.json({ success: true, imported: created, skipped: rows.length - created, errors });
+  }
+
   if (!hasAnyPermission(user.role as UserRole, ['document.create', 'password.create'])) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const { module, data, format, organizationId } = await req.json();
-
-  if (!module || !data) {
-    return NextResponse.json({ error: 'module and data required' }, { status: 400 });
-  }
-
   let records: Record<string, any>[] = [];
-
-  if (format === 'csv') {
-    const { headers, rows } = parseCsv(data);
-    records = rows.map((row) => mapRowToModule(row, headers, module));
-  } else if (format === 'json') {
-    try {
-      const parsed = JSON.parse(data);
-      records = Array.isArray(parsed) ? parsed : [parsed];
-    } catch {
-      return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 });
-    }
+  if (format === 'csv' || typeof data === 'string') {
+    const { headers, rows } = parseCsv(typeof data === 'string' ? data : String(data));
+    records = rows.map((row) => mapRowToModule(row, headers));
+  } else if (format === 'json' || Array.isArray(data)) {
+    records = Array.isArray(data) ? data : [data];
   } else {
     return NextResponse.json({ error: 'format must be csv or json' }, { status: 400 });
   }
 
-  const created = [];
-  const errors = [];
+  const created: unknown[] = [];
+  const errors: Array<{ index: number; error: string }> = [];
 
   for (let i = 0; i < records.length; i++) {
     const record = records[i];
     try {
       let item: any;
 
-      switch (module) {
+      switch (target) {
+        case 'documents':
+          item = await prisma.document.create({
+            data: {
+              title: record.title || record.name || `Document ${i + 1}`,
+              content: record.content || record.body || '',
+              category: record.category || 'general',
+              organizationId: organizationId || null,
+              userId: user.id,
+            },
+          });
+          break;
+
+        case 'passwords':
+          item = await prisma.password.create({
+            data: {
+              name: record.name || record.title || `Password ${i + 1}`,
+              username: record.username || record.user || '',
+              password: encrypt(String(record.password || '')),
+              url: record.url || record.website || null,
+              notes: record.notes || null,
+              category: record.category || 'general',
+              organizationId: organizationId || null,
+              userId: user.id,
+            },
+          });
+          break;
+
+        case 'domains':
+          item = await prisma.domain.create({
+            data: {
+              name: record.name || record.domain || `Domain ${i + 1}`,
+              registrar: record.registrar || null,
+              nameservers: record.nameservers || record['nameserver,nameservers'] || null,
+              expiresAt: dateOrNull(record.expiresat || record.expiry || record.expirydate),
+              autoRenew: String(record.autorenew === undefined || record.autorenew === true).toLowerCase() === 'true',
+              organizationId: organizationId || null,
+              userId: user.id,
+            },
+          });
+          break;
+
+        case 'assets':
+          item = await prisma.flexibleAsset.create({
+            data: {
+              name: record.name || record.title || `Asset ${i + 1}`,
+              assetType: record.assettype || record.type || 'generic',
+              fields: record.fields || '{}',
+              notes: record.notes || null,
+              organizationId: organizationId || null,
+              userId: user.id,
+            },
+          });
+          break;
+
         case 'servers':
           item = await prisma.server.create({
             data: {
-              name: record.name || record.Name || `Server ${i + 1}`,
-              hostname: record.hostname || record.Hostname,
-              ipAddress: record.ipaddress || record.ip || record.IP,
-              os: record.os || record.OperatingSystem,
-              osVersion: record.osversion || record['OS Version'],
-              cpu: record.cpu || record.CPU,
-              cpuCores: parseInt(record.cpucores || record.Cores) || null,
-              ramGB: parseFloat(record.ramgb || record.RAM) || null,
-              storageGB: parseFloat(record.storagegb || record.Storage) || null,
-              storageType: record.storagetype || record['Storage Type'],
+              name: record.name || `Server ${i + 1}`,
+              hostname: record.hostname || null,
+              ipAddress: record.ipaddress || record.ip || null,
+              os: record.os || null,
+              osVersion: record.osversion || record['os version'] || null,
+              cpu: record.cpu || null,
+              cpuCores: parseInt(record.cpucores || record.cores || '') || null,
+              ramGB: parseFloat(record.ramgb || record.ram || '') || null,
+              storageGB: parseFloat(record.storagegb || record.storage || '') || null,
+              storageType: record.storagetype || null,
               status: record.status || 'active',
-              location: record.location || record.Location,
-              serialNumber: record.serialnumber || record['Serial Number'],
-              notes: record.notes || record.Notes,
+              location: record.location || null,
+              serialNumber: record.serialnumber || null,
+              notes: record.notes || null,
               organizationId: organizationId || null,
               userId: user.id,
             },
@@ -88,10 +209,10 @@ export async function POST(req: Request) {
         case 'network':
           item = await prisma.networkDocument.create({
             data: {
-              name: record.name || record.Name || `Network ${i + 1}`,
-              type: record.type || record.Type || 'ip-schema',
-              content: record.content || record.Content || JSON.stringify(record),
-              notes: record.notes || record.Notes,
+              name: record.name || `Network ${i + 1}`,
+              type: record.type || 'ip-schema',
+              content: record.content || JSON.stringify(record),
+              notes: record.notes || null,
               organizationId: organizationId || null,
               userId: user.id,
             },
@@ -101,15 +222,15 @@ export async function POST(req: Request) {
         case 'cloud':
           item = await prisma.cloudResource.create({
             data: {
-              name: record.name || record.Name || `Resource ${i + 1}`,
-              provider: record.provider || record.Provider || 'aws',
-              service: record.service || record.Service || 'unknown',
-              resourceId: record.resourceid || record['Resource ID'],
-              region: record.region || record.Region,
+              name: record.name || `Resource ${i + 1}`,
+              provider: record.provider || 'aws',
+              service: record.service || 'unknown',
+              resourceId: record.resourceid || null,
+              region: record.region || null,
               status: record.status || 'active',
-              cost: parseFloat(record.cost || record.Cost) || null,
-              cloudTags: record.tags || record.Tags || '{}',
-              notes: record.notes || record.Notes,
+              cost: parseFloat(record.cost || '') || null,
+              cloudTags: record.tags || '{}',
+              notes: record.notes || null,
               organizationId: organizationId || null,
               userId: user.id,
             },
@@ -119,13 +240,13 @@ export async function POST(req: Request) {
         case 'maintenance':
           item = await prisma.maintenanceWindow.create({
             data: {
-              name: record.name || record.Name || `Maintenance ${i + 1}`,
-              description: record.description || record.Description,
-              startTime: new Date(record.starttime || record['Start Time'] || Date.now()),
-              endTime: new Date(record.endtime || record['End Time'] || Date.now() + 3600000),
+              name: record.name || `Maintenance ${i + 1}`,
+              description: record.description || null,
+              startTime: dateOrNull(record.starttime || record['start time']) || new Date(),
+              endTime: dateOrNull(record.endtime || record['end time']) || new Date(Date.now() + 3600000),
               status: record.status || 'scheduled',
               priority: record.priority || 'medium',
-              impact: record.impact || record.Impact,
+              impact: record.impact || null,
               organizationId: organizationId || null,
               userId: user.id,
             },
@@ -133,7 +254,7 @@ export async function POST(req: Request) {
           break;
 
         default:
-          errors.push({ index: i, error: `Unknown module: ${module}` });
+          errors.push({ index: i, error: `Unknown module: ${target}` });
           continue;
       }
 
@@ -143,10 +264,12 @@ export async function POST(req: Request) {
     }
   }
 
+  void auditLog({ userId: user.id, action: 'data.import', resourceType: target, resourceName: `${created.length}/${records.length}`, details: { module: target } });
+
   return NextResponse.json({
-    total: records.length,
-    created: created.length,
-    errors: errors.length,
-    errorDetails: errors,
+    success: errors.length === 0,
+    imported: created.length,
+    skipped: records.length - created.length - errors.length,
+    errors: errors.map((e) => e.error),
   });
 }

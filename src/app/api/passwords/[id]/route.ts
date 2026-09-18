@@ -52,6 +52,7 @@ export async function PUT(
     name, username, password, url, notes, category, isFavorite, tags,
     rotationDays, totpSecret, totpIssuer, totpPeriod, totpDigits,
     customFields, autofillSelector, autofillNotes, clientVisible,
+    rotationEnabled, rotationMethod, rotationTarget, rotationPort, rotationUsername,
   } = await req.json();
 
   const existing = await prisma.password.findFirst({
@@ -91,6 +92,11 @@ export async function PUT(
       autofillSelector: autofillSelector !== undefined ? autofillSelector : undefined,
       autofillNotes: autofillNotes !== undefined ? autofillNotes : undefined,
       clientVisible: clientVisible !== undefined ? clientVisible : undefined,
+      rotationEnabled: rotationEnabled !== undefined ? rotationEnabled : undefined,
+      rotationMethod: rotationMethod !== undefined ? rotationMethod : undefined,
+      rotationTarget: rotationTarget !== undefined ? rotationTarget : undefined,
+      rotationPort: rotationPort !== undefined ? Number(rotationPort) : undefined,
+      rotationUsername: rotationUsername !== undefined ? rotationUsername : undefined,
     },
   });
 

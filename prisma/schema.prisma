@@ -74,6 +74,7 @@ model User {
   k8sClusters     K8sCluster[]
   infraChanges    InfraChange[]
   notifications   Notification[]
+  serviceRequestTemplates ServiceRequestTemplate[]
 }
 
 model Folder {
@@ -141,6 +142,11 @@ model Password {
   expiresAt      DateTime? // When password should be rotated
   rotationDays   Int?      // Auto-calculate expiresAt from updatedAt + rotationDays
   lastRotatedAt  DateTime? // When password was last rotated
+  rotationEnabled Boolean  @default(false) // auto-rotate when overdue
+  rotationMethod  String   @default("manual") // manual | ssh
+  rotationTarget  String?  // SSH host to apply the new secret on
+  rotationPort    Int      @default(22)
+  rotationUsername String? // SSH login user
   // Client portal sharing
   clientVisible  Boolean  @default(true) // org members can reveal this credential
   // TOTP/2FA
@@ -419,6 +425,7 @@ model Organization {
   dockerHosts   DockerHost[]
   k8sClusters   K8sCluster[]
   infraChanges  InfraChange[]
+  serviceRequestTemplates ServiceRequestTemplate[]
 }
 
 model Ticket {
@@ -1178,4 +1185,24 @@ model WebsiteCheckLog {
   checkedAt DateTime @default(now())
 
   @@index([websiteId, checkedAt])
+}
+
+model ServiceRequestTemplate {
+  id             String       @id @default(cuid())
+  name           String
+  description    String
+  category       String       @default("general") // general | support | hardware | software | network | other
+  priority       String       @default("medium") // low | medium | high | urgent
+  active         Boolean      @default(true)
+  // JSON array of { key, label, type: text|textarea|select|boolean, required, options?: string[] }
+  fields         String       @default("[]")
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String       // staff who created/owns this template
+  user           User         @relation(fields: [userId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId])
+  @@index([active])
 }

@@ -20,6 +20,7 @@ import {
   Activity,
   FileStack,
   Users,
+  ClipboardList,
   FileBarChart,
   ChevronDown,
   Building,
@@ -95,6 +96,7 @@ const navigation: NavGroup[] = [
     label: 'Admin',
     items: [
       { name: 'Organizations', href: '/dashboard/organizations', icon: Building2 },
+      { name: 'Service Requests', href: '/dashboard/service-requests', icon: ClipboardList },
       { name: 'Activity', href: '/dashboard/activity', icon: Activity },
       { name: 'Users', href: '/dashboard/users', icon: Users },
       { name: 'Reports', href: '/dashboard/reports', icon: FileBarChart },
@@ -169,6 +171,7 @@ export function Sidebar() {
           label: 'Overview',
           items: [
             { name: 'Client Portal', href: '/dashboard/portal', icon: Building },
+            { name: 'Request Service', href: '/dashboard/portal/request', icon: ClipboardList },
             { name: 'My Tickets', href: '/dashboard/portal/tickets', icon: Ticket },
             { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
           ],
