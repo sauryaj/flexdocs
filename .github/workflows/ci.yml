@@ -65,6 +65,8 @@ jobs:
       NEXTAUTH_SECRET: ci-session-secret
       ENCRYPTION_KEY: ci-encryption-key
       NEXTAUTH_URL: http://localhost:3000
+      BOOTSTRAP_ADMIN_PASSWORD: ci-disposable-admin-password
+      SMOKE_PASSWORD: ci-disposable-admin-password
     steps:
       - uses: actions/checkout@v4
 
@@ -96,3 +98,9 @@ jobs:
 
       - name: Run smoke tests
         run: bash scripts/smoke-test.sh http://localhost:3000
+
+      - name: Documentation reliability checks
+        env:
+          DOCUMENT_TEST_ISOLATED: '1'
+          TEST_BASE_URL: http://localhost:3000
+        run: npm run test:documents

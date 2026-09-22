@@ -10,9 +10,11 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:smoke": "bash scripts/smoke-test.sh",
-    "db:push": "npx prisma db push",
     "db:seed": "npx prisma db seed",
-    "db:studio": "npx prisma studio"
+    "db:studio": "npx prisma studio",
+    "test:documents": "node scripts/document-reliability-test.mjs",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "prisma migrate deploy"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"

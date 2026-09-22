@@ -1,3 +1,4 @@
+import { z } from 'zod';
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { storeFile } from '@/lib/file-storage';
@@ -37,15 +38,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const { filename, mimeType, size, data, documentId } = await req.json();
+  const parsed = z.object({
+    filename: z.string().min(1).max(255), mimeType: z.string().min(1).max(255),
+    data: z.string().min(1).max(14_000_000), size: z.number().nonnegative().optional(),
+    documentId: z.string().nullable().optional(),
+  }).safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid attachment (maximum encoded size: 14 MB)' }, { status: 400 });
+  const { filename, mimeType, size, data, documentId } = parsed.data;
 
-  if (!filename || !mimeType || !data) {
-    return NextResponse.json(
-      { error: 'filename, mimeType, and data are required' },
-      { status: 400 }
-    );
+  if (documentId && (typeof documentId !== 'string' || !await prisma.document.findFirst({ where: { id: documentId, userId: user.id } }))) {
+    return NextResponse.json({ error: 'Document not found' }, { status: 404 });
   }
 
-  const attachment = await storeFile(data, filename, mimeType, size || 0, user.id, documentId);
+  const attachment = await storeFile(data, filename, mimeType, size || 0, user.id, documentId || undefined);
   return NextResponse.json(attachment, { status: 201 });
 }

@@ -1,35 +1,19 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { bootstrapPassword } from '../src/lib/bootstrap-admin';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  // Demo credentials used by the login page and scripts/smoke-test.sh
-  const hashedPassword = await bcrypt.hash('admin12345', 12);
-
-  const user = await prisma.user.upsert({
-    where: { email: 'admin@flexdocs.local' },
-    update: {},
-    create: {
-      name: 'System Admin',
-      email: 'admin@flexdocs.local',
-      password: hashedPassword,
-      role: 'admin',
+  const email = 'admin@flexdocs.local';
+  const existing = await prisma.user.findUnique({ where: { email } });
+  const user = existing ?? await prisma.user.create({
+    data: {
+      name: 'System Admin', email, role: 'admin',
+      password: await bcrypt.hash(bootstrapPassword(), 12),
     },
   });
-
-  const legacyUser = await prisma.user.upsert({
-    where: { email: 'admin@flexdocs.io' },
-    update: {},
-    create: {
-      name: 'Admin User',
-      email: 'admin@flexdocs.io',
-      password: hashedPassword,
-      role: 'admin',
-    },
-  });
-
-  console.log('Created users:', user.email, legacyUser.email);
+  console.log(existing ? 'Existing admin preserved' : 'Bootstrap admin created');
 
   const tags = await Promise.all([
     prisma.tag.upsert({

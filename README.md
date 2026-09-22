@@ -67,13 +67,13 @@ bash scripts/setup.sh
 The script checks Docker, generates secrets, starts everything, and waits for health.
 (Manual alternative: `cp .env.example .env`, fill in secrets, `docker compose up -d --build`.)
 
-Open http://localhost:3001 and log in with the seeded admin:
+Open http://localhost:3001 and log in with the bootstrap admin:
 
 | Email | Password |
 |---|---|
-| `admin@flexdocs.local` | `admin12345` |
+| `admin@flexdocs.local` | Value of `BOOTSTRAP_ADMIN_PASSWORD` in your private `.env` |
 
-> Change the seeded password immediately in Settings → Profile.
+> Setup generates a unique bootstrap password. Manual installation must set `BOOTSTRAP_ADMIN_PASSWORD` to at least 16 characters. Existing accounts are never reset by seeding. Older installations must rotate both legacy admin accounts if they still use the old public password.
 
 Schema migrations apply automatically on container start (`prisma migrate deploy`). See [DEPLOY.md](DEPLOY.md) for the full guide.
 
@@ -88,6 +88,7 @@ docker run -d --name flexdocs-redis -p 6379:6379 redis:7-alpine
 
 npm install
 cp .env.example .env
+# Set BOOTSTRAP_ADMIN_PASSWORD to a unique 16+ character value in .env
 npx prisma migrate deploy     # or: npx prisma migrate dev (fresh DB applies baseline)
 npx tsx prisma/seed.ts
 npx tsx prisma/seed-orgs.ts
@@ -150,3 +151,9 @@ Popular endpoints:
 ## License
 
 MIT
+
+## Documentation reliability and recovery
+
+See [the reliability review](docs/DOCUMENTATION-RELIABILITY.md) for verified fixes, save-conflict behavior, access boundaries, and remaining deployment work. Follow [the recovery guide](docs/RECOVERY.md) to protect document history, uploaded files, and encryption keys. SQL backups alone are not full disaster recovery.
+
+Local Docker discovery is disabled by default. Opt in with `docker-compose -f docker-compose.yml -f docker-compose.discovery.yml up -d --build` only when needed; the Docker socket grants control of the host. Database and Redis host ports bind only to loopback.

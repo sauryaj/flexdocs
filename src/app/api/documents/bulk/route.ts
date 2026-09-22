@@ -17,7 +17,7 @@ export async function POST(req: Request) {
   if (!valid.includes(action)) {
     return NextResponse.json({ error: `action must be one of: ${valid.join(', ')}` }, { status: 400 });
   }
-  if (!Array.isArray(ids) || ids.length === 0) {
+  if (!Array.isArray(ids) || ids.length === 0 || ids.some(id => typeof id !== 'string' || !id)) {
     return NextResponse.json({ error: 'ids array required' }, { status: 400 });
   }
   if (ids.length > 200) {
@@ -33,8 +33,7 @@ export async function POST(req: Request) {
   let updated = 0;
 
   if (action === 'delete') {
-    // Revisions & attachments cascade by FK design; clean join table explicitly
-    await prisma.$executeRaw`DELETE FROM "_DocumentToTag" WHERE "A" IN (${ownedIds.length ? ownedIds : ['']})`;
+    if (!hasPermission(user.role, 'document.delete')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
     const res = await prisma.document.deleteMany({ where: { id: { in: ownedIds }, userId: user.id } });
     updated = res.count;
   } else if (action === 'tag') {

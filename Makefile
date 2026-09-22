@@ -54,32 +54,16 @@ seed: ## Re-run database seed (app must be running)
 
 backup: ## Create a database backup
 	@mkdir -p backups
-	docker-compose exec db pg_dump -U flexdocs flexdocs > backups/flexdocs-$$(date +%Y%m%d-%H%M%S).sql
+	bash scripts/database-backup.sh
 	@echo "✅ Backup saved to backups/"
 
 restore: ## Restore from backup: make restore FILE=backups/flexdocs-XXXX.sql
 	@if [ -z "$(FILE)" ]; then echo "Usage: make restore FILE=backups/flexdocs-XXXX.sql"; exit 1; fi
-	docker-compose exec -T db psql -U flexdocs flexdocs < $(FILE)
+	docker-compose exec -T db psql -v ON_ERROR_STOP=1 --single-transaction -U flexdocs flexdocs < "$(FILE)"
 	@echo "✅ Restored from $(FILE)"
 
 restore-drill: ## Verify a backup restores cleanly into a scratch DB (safe, no live data touched)
-	@mkdir -p backups
-	@BACKUP=backups/flexdocs-$$(date +%Y%m%d-%H%M%S).sql; \
-	echo "1. Creating fresh backup: $$BACKUP"; \
-	docker-compose exec db pg_dump -U flexdocs flexdocs > $$BACKUP; \
-	echo "2. Creating scratch database"; \
-	docker-compose exec -T db dropdb -U flexdocs --if-exists flexdocs_restore_drill; \
-	docker-compose exec -T db createdb -U flexdocs flexdocs_restore_drill; \
-	echo "3. Restoring backup into scratch DB"; \
-	docker-compose exec -T db psql -U flexdocs flexdocs_restore_drill < $$BACKUP > /dev/null && echo "   Restore OK"; \
-	echo "4. Comparing row counts"; \
-	SRC=$$(docker-compose exec -T db psql -U flexdocs flexdocs -tAc "select count(*) from \"User\" limit 1" | tr -d '[:space:]'); \
-	DST=$$(docker-compose exec -T db psql -U flexdocs flexdocs_restore_drill -tAc "select count(*) from \"User\" limit 1" | tr -d '[:space:]'); \
-	echo "   source User rows: $$SRC | drill User rows: $$DST"; \
-	echo "5. Cleaning up scratch database"; \
-	docker-compose exec -T db dropdb -U flexdocs flexdocs_restore_drill; \
-	if [ "$$SRC" != "$$DST" ]; then echo "❌ Drill FAILED: row counts differ"; exit 1; fi; \
-	echo "✅ Restore drill passed: backup verified, scratch DB cleaned up"
+	bash scripts/restore-drill.sh
 
 shell-db: ## Open psql shell to database
 	docker-compose exec db psql -U flexdocs flexdocs

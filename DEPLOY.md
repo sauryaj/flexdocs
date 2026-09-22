@@ -30,9 +30,9 @@ Then open **http://localhost:3001** and log in:
 
 | Email | Password |
 |---|---|
-| `admin@flexdocs.local` | `admin12345` |
+| `admin@flexdocs.local` | `BOOTSTRAP_ADMIN_PASSWORD` from the private `.env` |
 
-> **Change this password immediately** (Profile → Change Password) — it's public in the source code.
+> Setup generates a unique first-install password. Existing account passwords are preserved; review legacy admin accounts during upgrades.
 
 Custom port: `PORT=8080 bash scripts/setup.sh`
 
@@ -139,7 +139,7 @@ Restore: `make restore FILE=backup-2026-01-15.sql`
 
 Schedule a nightly backup with cron:
 ```
-0 3 * * * cd /path/to/flexdocs && docker compose exec db pg_dump -U flexdocs flexdocs > backups/flexdocs-$(date +\%F).sql
+0 3 * * * cd /path/to/flexdocs && bash scripts/database-backup.sh
 ```
 
 ---
@@ -170,3 +170,7 @@ Schedule a nightly backup with cron:
 | Forgot admin password entirely | `docker compose run --rm init` re-seeds only missing users; to force-reset, restore a backup or use `make reset` |
 
 Still stuck? Open an issue with the output of `docker compose logs app init` and `make status`.
+
+See [RECOVERY.md](docs/RECOVERY.md) for backup scope and isolated restore verification. Protect uploads and the encryption key separately from SQL dumps.
+
+Fresh installations require a unique `BOOTSTRAP_ADMIN_PASSWORD` of at least 16 characters. `scripts/setup.sh` generates it into a mode-restricted `.env`. Existing accounts are not reset. Remove old public passwords from both legacy admins before exposing an upgraded installation. `docker-compose.discovery.yml` explicitly enables privileged local Docker discovery; base Compose does not mount the Docker socket.

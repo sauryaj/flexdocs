@@ -1,22 +1,14 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { bootstrapPassword } from '../src/lib/bootstrap-admin';
 
 const prisma = new PrismaClient();
 
 async function seedAdmin() {
   const email = 'admin@flexdocs.local';
-  const password = 'admin12345';
-  const hashedPassword = await bcrypt.hash(password, 12);
-
-  const user = await prisma.user.upsert({
-    where: { email },
-    update: { password: hashedPassword },
-    create: {
-      name: 'System Admin',
-      email,
-      password: hashedPassword,
-      role: 'admin',
-    },
+  const existing = await prisma.user.findUnique({ where: { email } });
+  const user = existing ?? await prisma.user.create({
+    data: { name: 'System Admin', email, password: await bcrypt.hash(bootstrapPassword(), 12), role: 'admin' },
   });
 
   console.log(`Admin user ready: ${user.email} (${user.id})`);
