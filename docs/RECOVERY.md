@@ -4,7 +4,7 @@ A recoverable FlexDocs installation needs three separately protected components:
 
 1. PostgreSQL SQL dump: documents, versions, users, attachment metadata, and encrypted vault records.
 2. Uploaded file bytes: the Compose `uploads` volume (or `UPLOAD_DIR` for a local installation).
-3. Configuration and keys: especially the original `ENCRYPTION_KEY`, plus application/SMTP/integration configuration. Store secrets separately from a publicly accessible backup.
+3. Configuration and keys: especially the original `ENCRYPTION_KEY` and `ENCRYPTION_SALT` if configured, plus application/SMTP/integration configuration. Store secrets separately from a publicly accessible backup.
 
 The Backups screen and `make backup` create **database-only** backups. They do not copy uploads or keys, and there is no implemented S3/GCS environment-variable switch for automatic offsite copying.
 
@@ -26,6 +26,14 @@ This proves the database dump can be restored. To prove disaster recovery, run a
 - A viewer cannot download a database backup or modify documents/revisions.
 
 Use synthetic records for drills. Do not test restoration over the live database.
+
+## Automated full-recovery regression
+
+After `docker compose build app init`, run `npm run test:recovery`. It requires Docker and the built `flexdocs-app:latest` and `flexdocs-init:latest` images; alternate tags can be supplied with `RECOVERY_APP_IMAGE` and `RECOVERY_INIT_IMAGE`.
+
+The drill creates a unique internal Docker network and disposable PostgreSQL, Redis, initializer, and application containers. It does not publish host ports or read your `.env`. It creates synthetic documents, history, an attachment, and a vault secret, downloads a database backup, copies uploads, and restores them into a separate installation with the original generated key. It checks exact document/attachment content, prior revision recovery, vault decryption, readiness, and anonymous/viewer restrictions. It removes its containers and temporary files on completion. If the process is forcibly killed, remove only resources with the printed `flexdocs-recovery-...` prefix after inspecting them.
+
+CI runs the same drill. It tests application recovery mechanics; it does not verify your offsite storage, production keys, or real recovery time objectives.
 
 ## Restore after an incident
 

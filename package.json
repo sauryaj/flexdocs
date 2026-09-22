@@ -14,7 +14,8 @@
     "db:studio": "npx prisma studio",
     "test:documents": "node scripts/document-reliability-test.mjs",
     "typecheck": "tsc --noEmit",
-    "db:migrate": "prisma migrate deploy"
+    "db:migrate": "prisma migrate deploy",
+    "test:recovery": "node scripts/full-recovery-test.mjs"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"
@@ -68,6 +69,7 @@
     "postcss": "^8.5.26",
     "prisma": "^5.22.0",
     "tailwindcss": "^3.4.19",
+    "tsx": "4.23.15",
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.62.0",
     "vitest": "^4.1.9"

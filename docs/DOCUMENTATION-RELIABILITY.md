@@ -16,6 +16,7 @@ Review date: 2026-09-22. Scope: the Next.js application at the repository root, 
 | High | Readiness returned HTTP 200 during database failure; seed errors were swallowed. | Readiness returns 503 for database or configured Redis failure. Initialization stops on seed failure. |
 | High | Fresh installs created public default admin passwords and the secondary seed could reset credentials. | Require a unique bootstrap password, preserve existing credentials, remove legacy-account creation and login autofill. |
 | High | Default deployment exposed database/cache host ports broadly and mounted the Docker socket. | Bind database/cache ports to loopback and require an explicit discovery override for socket access. |
+| High | Initialization depended on downloading an undeclared TypeScript runner at startup. | Pin `tsx` in the lockfile and verify initialization on an internal network without internet access. |
 | Medium | Backup execution blocked the Node.js event loop. | Run `pg_dump` asynchronously and coalesce concurrent requests per process. |
 | Medium | Rotation password generation sometimes omitted required character classes, making an existing test flaky. | Guarantee each class and shuffle with cryptographic random integers. |
 | Medium | Shared documents appeared in lists but could not be opened; limited editors could lose their own private docs from the list. | List and detail routes share the same owner-or-visible-organization policy; non-owners/viewers get a read-only document view. |
@@ -43,11 +44,11 @@ Final results: 117 unit tests, 44 live documentation checks, and all 27 existing
 The checks used a disposable PostgreSQL 16 / Redis instance on loopback ports 55432 / 56379, not the shared development database.
 
 - Unit tests cover payload validation, timestamp conflicts, history capture, revision roles, backup roles, partial backup failures, bootstrap requirements, password generation, and readiness failures.
-- The production build, TypeScript checking, and ESLint error checks pass. Existing lint warnings remain.
+- The production build, TypeScript checking, and ESLint error checks pass. Existing lint warnings remain. Compatible dependency updates removed all five advisories reported by `npm audit` during this review (zero remaining at verification time).
 - `scripts/document-reliability-test.mjs` exercises real authenticated HTTP requests, admin/editor/viewer boundaries, shared/private reads, rapid saves, simultaneous writers, recovery history, and restoration. It removes its fixtures and requires `DOCUMENT_TEST_ISOLATED=1`.
 - The existing 27-check API smoke suite is also run against the isolated instance.
 - Browser checks verified save status, restore behavior, and a stale second-tab draft remaining visible after a conflict.
-- A SQL dump restored successfully into a separate scratch database, including documents and revisions. This is a database-only drill, not proof of full attachment/vault recovery.
+- A SQL dump restored successfully into a separate scratch database, including documents and revisions. The automated full-recovery drill also restores uploaded bytes and verifies a synthetic vault secret using the original encryption key. This does not certify production backup storage or keys.
 
 Run the live documentation suite only with a disposable seeded database and matching application:
 
@@ -58,7 +59,7 @@ DATABASE_URL=postgresql://USER:PASSWORD@127.0.0.1:PORT/DISPOSABLE_DB \
 npm run test:documents
 ```
 
-CI now runs this suite after the existing smoke tests against its disposable database.
+CI runs this suite after the existing smoke tests against its disposable database, plus a separate Docker-based full-recovery job.
 
 ## Remaining limits and deployment work
 
