@@ -16,6 +16,7 @@ Review date: 2026-09-22. Scope: the Next.js application at the repository root, 
 | High | Readiness returned HTTP 200 during database failure; seed errors were swallowed. | Readiness returns 503 for database or configured Redis failure. Initialization stops on seed failure. |
 | High | Fresh installs created public default admin passwords and the secondary seed could reset credentials. | Require a unique bootstrap password, preserve existing credentials, remove legacy-account creation and login autofill. |
 | High | Default deployment exposed database/cache host ports broadly and mounted the Docker socket. | Bind database/cache ports to loopback and require an explicit discovery override for socket access. |
+| High | A fresh Git checkout could not build the Docker image because the empty `public/` directory was absent. | Track a placeholder and exercise clean-checkout Docker builds in CI. |
 | High | Initialization depended on downloading an undeclared TypeScript runner at startup. | Pin `tsx` in the lockfile and verify initialization on an internal network without internet access. |
 | Medium | Backup execution blocked the Node.js event loop. | Run `pg_dump` asynchronously and coalesce concurrent requests per process. |
 | Medium | Rotation password generation sometimes omitted required character classes, making an existing test flaky. | Guarantee each class and shuffle with cryptographic random integers. |
