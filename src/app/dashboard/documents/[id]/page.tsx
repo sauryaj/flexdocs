@@ -27,6 +27,7 @@ import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { Eye, Edit3, Columns } from 'lucide-react';
 import { RelatedItems } from '@/components/RelatedItems';
+import { uploadDocumentAttachment } from '@/lib/document-client';
 
 const categories = [
   'general',
@@ -81,8 +82,13 @@ function formatBytes(bytes: number): string {
 }
 
 export default function DocumentDetailPage() {
+  const params = useParams<{ id: string }>();
+  return <DocumentEditor key={params.id} documentId={params.id} />;
+}
+
+function DocumentEditor({ documentId }: { documentId: string }) {
   const router = useRouter();
-  const params = useParams();
+  const params = { id: documentId };
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [doc, setDoc] = useState<Document | null>(null);
@@ -94,6 +100,8 @@ export default function DocumentDetailPage() {
   const [reviewDue, setReviewDue] = useState(false);
   const [visibility, setVisibility] = useState('private');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [viewMode, setViewMode] = useState<'write' | 'preview' | 'split'>('write');
@@ -154,6 +162,7 @@ export default function DocumentDetailPage() {
   // Version History
   const [revisions, setRevisions] = useState<Revision[]>([]);
   const [revisionsLoading, setRevisionsLoading] = useState(false);
+  const [revisionsError, setRevisionsError] = useState('');
   const [showRevisionForm, setShowRevisionForm] = useState(false);
   const [revisionMessage, setRevisionMessage] = useState('');
   const [savingRevision, setSavingRevision] = useState(false);
@@ -163,14 +172,20 @@ export default function DocumentDetailPage() {
   // Attachments
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachmentsLoading, setAttachmentsLoading] = useState(false);
+  const [attachmentsError, setAttachmentsError] = useState('');
+  const [attachmentActionError, setAttachmentActionError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [deletingAttachment, setDeletingAttachment] = useState<string | null>(null);
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
 
   useEffect(() => {
-    fetch(`/api/documents/${params.id}`)
-      .then((r) => { if (!r.ok) throw new Error('Unable to load document'); return r.json(); })
+    const controller = new AbortController();
+    setLoading(true);
+    setLoadError('');
+    fetch(`/api/documents/${params.id}`, { signal: controller.signal })
+      .then((r) => { if (!r.ok) throw new Error(r.status === 404 ? 'Document not found or unavailable.' : 'Unable to load document. Please try again.'); return r.json(); })
       .then((data) => {
+        if (controller.signal.aborted) return;
         versionRef.current = data.updatedAt;
         setDoc(data);
         setTitle(data.title);
@@ -194,17 +209,24 @@ export default function DocumentDetailPage() {
         });
         setDirty(false);
         setLoading(false);
-      }).catch(() => { setDoc(null); setLoading(false); });
-  }, [params.id]);
+      }).catch((error) => {
+        if (controller.signal.aborted) return;
+        setLoadError(error instanceof Error ? error.message : 'Unable to load document. Please try again.');
+        setDoc(null);
+        setLoading(false);
+      });
+    return () => controller.abort();
+  }, [params.id, loadAttempt]);
 
   const fetchRevisions = async () => {
     setRevisionsLoading(true);
+    setRevisionsError('');
     try {
       const res = await fetch(`/api/documents/${params.id}/revisions`);
-      if (res.ok) {
-        const data = await res.json();
-        setRevisions(data);
-      }
+      if (!res.ok) throw new Error('Unable to load revision history.');
+      setRevisions(await res.json());
+    } catch {
+      setRevisionsError('Unable to load revision history. Please try again.');
     } finally {
       setRevisionsLoading(false);
     }
@@ -212,12 +234,13 @@ export default function DocumentDetailPage() {
 
   const fetchAttachments = async () => {
     setAttachmentsLoading(true);
+    setAttachmentsError('');
     try {
       const res = await fetch(`/api/attachments?documentId=${params.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setAttachments(data);
-      }
+      if (!res.ok) throw new Error('Unable to load attachments.');
+      setAttachments(await res.json());
+    } catch {
+      setAttachmentsError('Unable to load attachments. Please try again.');
     } finally {
       setAttachmentsLoading(false);
     }
@@ -348,38 +371,27 @@ export default function DocumentDetailPage() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
+    setAttachmentActionError('');
     try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-        const res = await fetch('/api/attachments', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            documentId: params.id,
-            filename: file.name,
-            mimeType: file.type,
-            size: file.size,
-            data: base64,
-          }),
-        });
-        if (res.ok) {
-          fetchAttachments();
-        }
-        setUploading(false);
-      };
-      reader.readAsDataURL(file);
-    } catch {
+      await uploadDocumentAttachment(params.id, file);
+      await fetchAttachments();
+    } catch (error) {
+      setAttachmentActionError(error instanceof Error ? error.message : 'Unable to confirm the upload. Refresh the attachment list before trying again.');
+    } finally {
       setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleDeleteAttachment = async (attachmentId: string) => {
     setDeletingAttachment(attachmentId);
+    setAttachmentActionError('');
     try {
-      await fetch(`/api/attachments/${attachmentId}`, { method: 'DELETE' });
-      fetchAttachments();
+      const response = await fetch(`/api/attachments/${attachmentId}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('The attachment could not be deleted.');
+      await fetchAttachments();
+    } catch {
+      setAttachmentActionError('Unable to confirm deletion. Refresh the attachment list before trying again.');
     } finally {
       setDeletingAttachment(null);
     }
@@ -397,7 +409,8 @@ export default function DocumentDetailPage() {
     return (
       <div className="text-center py-20">
         <FileText className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-slate-900">Document not found</h2>
+        <h2 role="alert" className="text-xl font-semibold text-slate-900">{loadError || 'Document not found'}</h2>
+        <button onClick={() => setLoadAttempt(value => value + 1)} className="btn-secondary mt-3">Retry loading document</button>
         <Link href="/dashboard/documents" className="text-blue-600 hover:underline mt-2 inline-block">
           Back to documents
         </Link>
@@ -632,7 +645,7 @@ export default function DocumentDetailPage() {
               <div className="border-t border-slate-100 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-slate-500">
-                    {revisionsLoading ? 'Loading...' : `${revisions.length} revision${revisions.length !== 1 ? 's' : ''}`}
+                    {revisionsLoading ? 'Loading...' : revisionsError ? 'History unavailable' : `${revisions.length} revision${revisions.length !== 1 ? 's' : ''}`}
                   </p>
                   <button onClick={() => setShowRevisionForm(!showRevisionForm)} className="btn-primary text-xs flex items-center gap-1">
                     <Save className="w-3 h-3" /> Save Revision
@@ -651,6 +664,11 @@ export default function DocumentDetailPage() {
                 )}
                 {revisionsLoading ? (
                   <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+                ) : revisionsError ? (
+                  <div role="alert" className="text-sm text-red-600">
+                    <p>{revisionsError}</p>
+                    <button onClick={() => void fetchRevisions()} className="btn-secondary mt-2">Retry loading history</button>
+                  </div>
                 ) : revisions.length === 0 ? (
                   <p className="text-center text-slate-400 py-6 text-sm">No revisions yet</p>
                 ) : (
@@ -691,7 +709,7 @@ export default function DocumentDetailPage() {
               <div className="border-t border-slate-100 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-slate-500">
-                    {attachmentsLoading ? 'Loading...' : `${attachments.length} file${attachments.length !== 1 ? 's' : ''}`}
+                    {attachmentsLoading ? 'Loading...' : attachmentsError ? 'Attachments unavailable' : `${attachments.length} file${attachments.length !== 1 ? 's' : ''}`}
                   </p>
                   <div>
                     <input ref={fileInputRef} type="file" onChange={handleFileUpload} className="hidden" />
@@ -700,8 +718,12 @@ export default function DocumentDetailPage() {
                     </button>
                   </div>
                 </div>
+                {attachmentActionError && <p role="alert" className="text-sm text-red-600">{attachmentActionError}</p>}
+                <button onClick={() => void fetchAttachments()} disabled={attachmentsLoading} className="btn-secondary text-xs">Refresh attachments</button>
                 {attachmentsLoading ? (
                   <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+                ) : attachmentsError ? (
+                  <p role="alert" className="text-sm text-red-600">{attachmentsError}</p>
                 ) : attachments.length === 0 ? (
                   <p className="text-center text-slate-400 py-6 text-sm">No attachments</p>
                 ) : (
