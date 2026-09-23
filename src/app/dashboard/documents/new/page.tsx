@@ -215,6 +215,9 @@ function NewDocumentForm() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const submittingRef = useRef(false);
+  const createdRef = useRef(false);
 
   const [viewMode, setViewMode] = useState<'write' | 'preview' | 'split'>('write');
   const [isMentionOpen, setIsMentionOpen] = useState(false);
@@ -260,7 +263,7 @@ function NewDocumentForm() {
 
   // Auto-save draft on changes
   useEffect(() => {
-    if (!title && !content) return;
+    if (loading || createdRef.current || (!title && !content)) return;
     const timeout = setTimeout(() => {
       try {
         localStorage.setItem(
@@ -283,7 +286,7 @@ function NewDocumentForm() {
     }, 1000);
 
     return () => clearTimeout(timeout);
-  }, [title, content, category, folderId, organizationId, tags]);
+  }, [title, content, category, folderId, organizationId, tags, loading]);
 
   const clearDraft = () => {
     localStorage.removeItem(DRAFT_KEY);
@@ -349,32 +352,44 @@ function NewDocumentForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current || createdRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
+    setSaveError('');
 
     const tagList = tags
       .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
 
-    const res = await fetch('/api/documents', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title,
-        content,
-        category,
-        folderId: folderId || null,
-        organizationId: organizationId || null,
-        tags: tagList,
-      }),
-    });
-
-    if (res.ok) {
-      localStorage.removeItem(DRAFT_KEY);
+    try {
+      const res = await fetch('/api/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title,
+          content,
+          category,
+          folderId: folderId || null,
+          organizationId: organizationId || null,
+          tags: tagList,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setSaveError(data?.error || 'The document could not be saved. Your draft is still here.');
+        return;
+      }
       const doc = await res.json();
+      createdRef.current = true;
+      try { localStorage.removeItem(DRAFT_KEY); } catch { /* Storage may be disabled by the browser. */ }
       router.push(`/dashboard/documents/${doc.id}`);
+    } catch {
+      setSaveError('Could not confirm whether the document was saved. Your draft is still here. Check the document list before trying again to avoid creating a duplicate.');
+    } finally {
+      submittingRef.current = false;
+      if (!createdRef.current) setLoading(false);
     }
-    setLoading(false);
   };
 
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
@@ -419,6 +434,7 @@ function NewDocumentForm() {
             <button
               type="button"
               onClick={clearDraft}
+              disabled={loading}
               className="ml-2 underline text-amber-900 dark:text-amber-200 hover:text-red-600 font-semibold"
             >
               Clear
@@ -428,6 +444,8 @@ function NewDocumentForm() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6">
+        {saveError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
+        <fieldset disabled={loading} className="space-y-6">
         {/* Templates Selector */}
         <div className="card p-4 space-y-3 bg-gradient-to-r from-blue-50/50 via-white to-indigo-50/50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900/80 border border-blue-100 dark:border-slate-800">
           <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
@@ -668,8 +686,8 @@ function NewDocumentForm() {
             </div>
           </div>
         </div>
+        </fieldset>
       </form>
     </div>
   );
 }
-
