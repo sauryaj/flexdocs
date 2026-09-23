@@ -113,7 +113,7 @@ export default function ImportExportPage() {
       setExporting(true);
       setError(null);
       const res = await fetch('/api/export');
-      if (!res.ok) throw new Error('Full export failed (admin only)');
+      if (!res.ok) { const failure = await res.json(); throw new Error([failure.error, ...(failure.issues || [])].join(' — ')); }
       const blob = await res.blob();
       download(blob, `flexdocs-backup-${new Date().toISOString().slice(0, 10)}.json`);
     } catch (err) {
@@ -129,7 +129,7 @@ export default function ImportExportPage() {
       setExporting(true);
       setError(null);
       const res = await fetch(`/api/organizations/${selectedOrg}/export`);
-      if (!res.ok) throw new Error('Org export failed');
+      if (!res.ok) { const failure = await res.json(); throw new Error([failure.error, ...(failure.issues || [])].join(' — ')); }
       const blob = await res.blob();
       download(blob, `cap-${selectedOrg.slice(-6)}.json`);
     } catch (err) {
@@ -187,7 +187,7 @@ export default function ImportExportPage() {
       <div className="flex gap-2 flex-wrap">
         {tabBtn('import', 'Import')}
         {tabBtn('vault', 'Password Vault')}
-        {tabBtn('backup', 'Full Backup')}
+        {tabBtn('backup', 'Portable Export')}
         {tabBtn('export', 'Domains Export')}
       </div>
 
@@ -284,18 +284,20 @@ export default function ImportExportPage() {
       {activeTab === 'backup' && (
         <div className="space-y-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Portable Full Backup (JSON)</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Portable Data Export (JSON)</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Everything: tenants, documents (+ attachments), vault (decrypted for portability), domains, assets,
-              checklists, servers, IPAM, contacts, locations, websites, tickets and audit-safe audit trail.
-              Admin only — the bundle contains secret material.
+              Exports organizations, document history and attachments, vault secrets, domains, assets,
+              checklists, servers, IPAM, contacts, locations, websites, tickets and links.
+              This is not a complete system backup: accounts, sessions, audit history and integration settings are excluded.
+              Use database, uploads and configuration backups for disaster recovery.
+              Admin only — vault secrets are decrypted in the downloaded file.
             </p>
             <button
               onClick={handleFullExport}
               disabled={exporting}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
             >
-              {exporting ? 'Building…' : 'Export Full Backup'}
+              {exporting ? 'Building…' : 'Export Data'}
             </button>
 
             {isAdmin && orgs.length > 0 && (

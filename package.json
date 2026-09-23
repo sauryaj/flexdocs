@@ -15,7 +15,8 @@
     "test:documents": "node scripts/document-reliability-test.mjs",
     "typecheck": "tsc --noEmit",
     "db:migrate": "prisma migrate deploy",
-    "test:recovery": "node scripts/full-recovery-test.mjs"
+    "test:recovery": "node scripts/full-recovery-test.mjs",
+    "test:features": "node scripts/feature-workflows-test.mjs"
   },
   "prisma": {
     "seed": "npx tsx prisma/seed.ts"

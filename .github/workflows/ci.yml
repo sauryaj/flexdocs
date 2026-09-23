@@ -105,6 +105,12 @@ jobs:
           TEST_BASE_URL: http://localhost:3000
         run: npm run test:documents
 
+      - name: Export, linking, search and onboarding checks
+        env:
+          DOCUMENT_TEST_ISOLATED: '1'
+          TEST_BASE_URL: http://localhost:3000
+        run: npm run test:features
+
   recovery:
     name: Isolated full recovery drill
     runs-on: ubuntu-latest

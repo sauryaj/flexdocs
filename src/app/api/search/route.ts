@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
+import { documentReadWhere } from '@/lib/document-access';
 import { auth } from '@/lib/auth';
 import { getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
 
@@ -34,13 +35,11 @@ export async function GET(req: Request) {
   const lc = q.toLowerCase();
 
   const [
-    documents, passwords, domains, assets, checklists, servers, tickets, organizations,
+    documents, passwords, domains, assets, checklists, servers, tickets, organizations, certificates, networks,
   ] = await Promise.all([
     // Documents: staff search their own vault; clients search org-visible docs
     prisma.document.findMany({
-      where: isStaff
-        ? { userId: user.id, ...(organizationId ? { organizationId } : {}), OR: [{ title: contains }, { content: contains }] }
-        : { ...orgWhere, isArchived: false, visibility: 'org', OR: [{ title: contains }, { content: contains }] },
+      where: { AND: [documentReadWhere(user.id, scope), organizationId ? orgWhere : {}, { OR: [{ title: contains }, { content: contains }] }] },
       take: MAX_PER_TYPE * 4,
       orderBy: { updatedAt: 'desc' },
       select: { id: true, title: true, content: true, updatedAt: true },
@@ -49,7 +48,7 @@ export async function GET(req: Request) {
     prisma.password.findMany({
       where: isStaff
         ? { userId: user.id, ...(organizationId ? { organizationId } : {}), OR: [{ name: contains }, { username: contains }, { url: contains }] }
-        : { ...orgWhere, OR: [{ name: contains }, { username: contains }] },
+        : { ...orgWhere, clientVisible: true, OR: [{ name: contains }, { username: contains }] },
       take: MAX_PER_TYPE * 2,
       orderBy: { updatedAt: 'desc' },
       select: { id: true, name: true, username: true, url: true, updatedAt: true },
@@ -107,6 +106,8 @@ export async function GET(req: Request) {
           select: { id: true, name: true, updatedAt: true },
         })
       : Promise.resolve([]),
+    prisma.sslCertificate.findMany({ where: { ...orgWhere, hostname: contains }, take: MAX_PER_TYPE, orderBy: { updatedAt: 'desc' }, select: { id: true, hostname: true } }),
+    prisma.networkDocument.findMany({ where: { ...orgWhere, name: contains }, take: MAX_PER_TYPE, orderBy: { updatedAt: 'desc' }, select: { id: true, name: true } }),
   ]);
 
   // Relevance: title hits outrank body hits; recent records break ties
@@ -174,6 +175,8 @@ export async function GET(req: Request) {
         id: o.id, title: o.name, url: `/dashboard/organizations/${o.id}`,
       })),
     },
+    { type: 'ssl', label: 'Certificates', items: certificates.map(c => ({ id: c.id, title: c.hostname, url: `/dashboard/ssl` })) },
+    { type: 'network', label: 'Networks', items: networks.map(n => ({ id: n.id, title: n.name, url: `/dashboard/network/${n.id}` })) },
   ].filter((g) => g.items.length > 0);
 
   return NextResponse.json({ query: q, groups });

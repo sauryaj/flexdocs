@@ -399,6 +399,7 @@ model Organization {
   logo        String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  invitations Invitation[]
   members     OrganizationMember[]
   tickets     Ticket[]
   renewalItems RenewalItem[]
@@ -705,6 +706,8 @@ model ApiKey {
 }
 
 model Invitation {
+  organizationId String?
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   id        String   @id @default(cuid())
   email     String
   role      UserRole @default(editor)

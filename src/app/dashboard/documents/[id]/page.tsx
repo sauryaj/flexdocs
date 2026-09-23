@@ -13,7 +13,6 @@ import {
   Trash2,
   FileText,
   Upload,
-  Link2,
   History,
   Paperclip,
   Plus,
@@ -39,16 +38,6 @@ const categories = [
   'compliance',
   'onboarding',
 ];
-
-function getRelUrl(type: string, id: string): string {
-  switch (type) {
-    case 'document': return `/dashboard/documents/${id}`;
-    case 'password': return `/dashboard/passwords/${id}`;
-    case 'domain': return `/dashboard/domains/${id}`;
-    case 'asset': return `/dashboard/assets/${id}`;
-    default: return '#';
-  }
-}
 
 interface Document {
   id: string;
@@ -81,23 +70,6 @@ interface Attachment {
   size: number;
   createdAt: string;
   uploadedBy: { id: string; name: string; email: string } | null;
-}
-
-interface Relationship {
-  id: string;
-  name: string;
-  sourceType: string;
-  sourceId: string;
-  sourceName: string;
-  targetType: string;
-  targetId: string;
-  targetName: string;
-  createdAt: string;
-}
-
-interface ResourceOption {
-  id: string;
-  title: string;
 }
 
 function formatBytes(bytes: number): string {
@@ -195,20 +167,6 @@ export default function DocumentDetailPage() {
   const [deletingAttachment, setDeletingAttachment] = useState<string | null>(null);
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
 
-  // Relationships
-  const [outgoingRelationships, setOutgoingRelationships] = useState<Relationship[]>([]);
-  const [incomingRelationships, setIncomingRelationships] = useState<Relationship[]>([]);
-  const [relationshipsLoading, setRelationshipsLoading] = useState(false);
-  const [showRelationshipForm, setShowRelationshipForm] = useState(false);
-  const [relName, setRelName] = useState('');
-  const [relTargetType, setRelTargetType] = useState('document');
-  const [relTargetId, setRelTargetId] = useState('');
-  const [relTargetOptions, setRelTargetOptions] = useState<ResourceOption[]>([]);
-  const [relLoadingTargets, setRelLoadingTargets] = useState(false);
-  const [creatingRelationship, setCreatingRelationship] = useState(false);
-  const [deletingRelationship, setDeletingRelationship] = useState<string | null>(null);
-  const [relationshipsExpanded, setRelationshipsExpanded] = useState(false);
-
   useEffect(() => {
     fetch(`/api/documents/${params.id}`)
       .then((r) => { if (!r.ok) throw new Error('Unable to load document'); return r.json(); })
@@ -265,20 +223,6 @@ export default function DocumentDetailPage() {
     }
   };
 
-  const fetchRelationships = async () => {
-    setRelationshipsLoading(true);
-    try {
-      const [outRes, inRes] = await Promise.all([
-        fetch(`/api/relationships?sourceType=document&sourceId=${params.id}`),
-        fetch(`/api/relationships?targetType=document&targetId=${params.id}`),
-      ]);
-      if (outRes.ok) setOutgoingRelationships(await outRes.json());
-      if (inRes.ok) setIncomingRelationships(await inRes.json());
-    } finally {
-      setRelationshipsLoading(false);
-    }
-  };
-
   useEffect(() => {
     if (revisionsExpanded) fetchRevisions();
   }, [revisionsExpanded]);
@@ -286,34 +230,6 @@ export default function DocumentDetailPage() {
   useEffect(() => {
     if (attachmentsExpanded) fetchAttachments();
   }, [attachmentsExpanded]);
-
-  useEffect(() => {
-    if (relationshipsExpanded) fetchRelationships();
-  }, [relationshipsExpanded]);
-
-  useEffect(() => {
-    if (showRelationshipForm && relTargetType) {
-      setRelLoadingTargets(true);
-      setRelTargetId('');
-      let url = '';
-      if (relTargetType === 'document') url = '/api/documents';
-      else if (relTargetType === 'password') url = '/api/passwords';
-      else if (relTargetType === 'domain') url = '/api/domains';
-      else if (relTargetType === 'asset') url = '/api/assets';
-
-      fetch(url)
-        .then((r) => r.json())
-        .then((data) => {
-          const options = data.map((item: any) => ({
-            id: item.id,
-            title: item.title || item.name || item.hostname || item.id,
-          }));
-          setRelTargetOptions(options);
-          setRelLoadingTargets(false);
-        })
-        .catch(() => setRelLoadingTargets(false));
-    }
-  }, [showRelationshipForm, relTargetType]);
 
   const doSave = async (): Promise<boolean> => {
     if (savingRef.current || doc?.canEdit === false) return false;
@@ -469,42 +385,6 @@ export default function DocumentDetailPage() {
     }
   };
 
-  const handleCreateRelationship = async () => {
-    if (!relName.trim() || !relTargetId) return;
-    setCreatingRelationship(true);
-    try {
-      const res = await fetch('/api/relationships', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: relName,
-          sourceType: 'document',
-          sourceId: params.id,
-          targetType: relTargetType,
-          targetId: relTargetId,
-        }),
-      });
-      if (res.ok) {
-        setRelName('');
-        setRelTargetId('');
-        setShowRelationshipForm(false);
-        fetchRelationships();
-      }
-    } finally {
-      setCreatingRelationship(false);
-    }
-  };
-
-  const handleDeleteRelationship = async (relationshipId: string) => {
-    setDeletingRelationship(relationshipId);
-    try {
-      await fetch(`/api/relationships/${relationshipId}`, { method: 'DELETE' });
-      fetchRelationships();
-    } finally {
-      setDeletingRelationship(null);
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -533,11 +413,6 @@ export default function DocumentDetailPage() {
       <MarkdownPreview content={doc.content} />
     </div>
   );
-
-  const allRelationships = [
-    ...outgoingRelationships.map((r) => ({ ...r, direction: 'outgoing' as const })),
-    ...incomingRelationships.map((r) => ({ ...r, direction: 'incoming' as const })),
-  ];
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
@@ -854,90 +729,6 @@ export default function DocumentDetailPage() {
             )}
           </div>
 
-          {/* Relationships */}
-          <div className="card overflow-hidden">
-            <button
-              onClick={() => setRelationshipsExpanded(!relationshipsExpanded)}
-              className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Link2 className="w-5 h-5 text-slate-500" />
-                <span className="font-semibold text-slate-900">Relationships</span>
-                {allRelationships.length > 0 && !relationshipsExpanded && (
-                  <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{allRelationships.length}</span>
-                )}
-              </div>
-              {relationshipsExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
-            </button>
-            {relationshipsExpanded && (
-              <div className="border-t border-slate-100 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-slate-500">
-                    {relationshipsLoading ? 'Loading...' : `${allRelationships.length} link${allRelationships.length !== 1 ? 's' : ''}`}
-                  </p>
-                  <button onClick={() => setShowRelationshipForm(!showRelationshipForm)} className="btn-primary text-xs flex items-center gap-1">
-                    <Plus className="w-3 h-3" /> Add
-                  </button>
-                </div>
-                {showRelationshipForm && (
-                  <div className="bg-slate-50 rounded-lg p-3 space-y-2">
-                    <input type="text" value={relName} onChange={(e) => setRelName(e.target.value)} className="input-field text-sm" placeholder="e.g. hosted_on, managed_by" />
-                    <select value={relTargetType} onChange={(e) => setRelTargetType(e.target.value)} className="input-field text-sm">
-                      <option value="document">Document</option>
-                      <option value="password">Password</option>
-                      <option value="domain">Domain</option>
-                      <option value="asset">Asset</option>
-                    </select>
-                    <select value={relTargetId} onChange={(e) => setRelTargetId(e.target.value)} className="input-field text-sm" disabled={relLoadingTargets}>
-                      <option value="">{relLoadingTargets ? 'Loading...' : 'Select target'}</option>
-                      {relTargetOptions.map((opt) => (
-                        <option key={opt.id} value={opt.id}>{opt.title}</option>
-                      ))}
-                    </select>
-                    <div className="flex justify-end gap-2">
-                      <button onClick={() => { setShowRelationshipForm(false); setRelName(''); setRelTargetId(''); }} className="btn-secondary text-xs">Cancel</button>
-                      <button onClick={handleCreateRelationship} disabled={creatingRelationship || !relName.trim() || !relTargetId} className="btn-primary text-xs flex items-center gap-1">
-                        {creatingRelationship ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Create
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {relationshipsLoading ? (
-                  <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
-                ) : allRelationships.length === 0 ? (
-                  <p className="text-center text-slate-400 py-6 text-sm">No relationships</p>
-                ) : (
-                  <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                    {allRelationships.map((rel) => {
-                      const isOut = rel.direction === 'outgoing';
-                      const srcType = isOut ? rel.sourceType : rel.targetType;
-                      const srcId = isOut ? rel.sourceId : rel.targetId;
-                      const srcName = isOut ? rel.sourceName : rel.targetName;
-                      const tgtType = isOut ? rel.targetType : rel.sourceType;
-                      const tgtId = isOut ? rel.targetId : rel.sourceId;
-                      const tgtName = isOut ? rel.targetName : rel.sourceName;
-                      return (
-                        <div key={rel.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg hover:bg-slate-100">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1 text-xs">
-                              <span className="font-medium text-slate-900">{rel.name}</span>
-                              <span className="text-slate-400">·</span>
-                              <Link href={getRelUrl(srcType, srcId)} className="text-blue-600 hover:underline truncate">{srcName}</Link>
-                              <span className="text-slate-400">→</span>
-                              <Link href={getRelUrl(tgtType, tgtId)} className="text-emerald-600 hover:underline truncate">{tgtName}</Link>
-                            </div>
-                          </div>
-                          <button onClick={() => handleDeleteRelationship(rel.id)} disabled={deletingRelationship === rel.id} className="p-1 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded ml-2">
-                            {deletingRelationship === rel.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
