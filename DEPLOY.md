@@ -107,13 +107,23 @@ curl http://localhost:3001/api/health
 
 ```bash
 git pull
-docker compose build init app
-docker compose run --rm init     # applies DB migrations + seeds (idempotent)
-docker compose up -d
+make update
 ```
 
-> **Always re-run the init container after pulling.** It applies database migrations
-> (`prisma migrate deploy`). Skipping it after a schema change causes missing-column errors.
+`make update` creates a database backup, rebuilds the app and migration images, runs
+the migration/seed container, starts the new app, and checks health. It is safe to
+run repeatedly. If you do not have `make`, use the equivalent commands below:
+
+```bash
+bash scripts/database-backup.sh
+docker compose build init app
+docker compose run --rm init
+docker compose up -d app
+curl http://localhost:3001/api/health
+```
+
+Always run the init container after pulling. It applies `prisma migrate deploy`;
+skipping it after a schema change causes missing-column errors.
 
 **Back up first (recommended):**
 

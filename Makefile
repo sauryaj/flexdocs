@@ -1,4 +1,4 @@
-.PHONY: help deploy stop restart logs status clean reset dev seed health
+.PHONY: help deploy update stop restart logs status clean reset dev seed health
 
 # Default port (change if 3001 is taken)
 PORT ?= 3001
@@ -8,6 +8,14 @@ help: ## Show this help
 
 deploy: ## First-time setup or update: secrets, migrations, build, start
 	@./scripts/setup.sh
+
+update: ## Update an existing install: backup, rebuild, migrate, restart
+	@test -f .env || (echo "No .env found. Run: make deploy"; exit 1)
+	@./scripts/database-backup.sh
+	docker compose build init app
+	docker compose run --rm init
+	docker compose up -d app
+	@$(MAKE) health
 
 stop: ## Stop all containers
 	docker-compose down
