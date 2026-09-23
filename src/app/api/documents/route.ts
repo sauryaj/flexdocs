@@ -21,20 +21,31 @@ export async function GET(req: Request) {
 
   const scope = await getOrgScope(user.id, user.role);
   const trash = url.searchParams.get('trash') === 'true';
-  const where = { ...(trash ? { userId: user.id, deletedAt: { not: null } } : documentReadWhere(user.id, scope)), ...(organizationId ? { organizationId } : {}) };
+  const baseWhere = { ...(trash ? { userId: user.id, deletedAt: { not: null } } : documentReadWhere(user.id, scope)), ...(organizationId ? { organizationId } : {}) };
+  const query = url.searchParams.get('q')?.trim() || '';
+  if (query.length > 500) return NextResponse.json({ error: 'Search is limited to 500 characters' }, { status: 400 });
+  const category = url.searchParams.get('category');
+  const folderId = url.searchParams.get('folderId');
+  const where = { AND: [baseWhere, {
+    ...(query ? { OR: [{ title: { contains: query, mode: 'insensitive' as const } }, { content: { contains: query, mode: 'insensitive' as const } }] } : {}),
+    ...(category ? { category } : {}),
+    ...(folderId ? { folderId } : {}),
+    ...(url.searchParams.get('archived') === 'false' ? { isArchived: false } : {}),
+  }] };
 
-  const [documents, total] = await Promise.all([
+  const [documents, total, totalAvailable] = await Promise.all([
     prisma.document.findMany({
       where,
       include: { tags: true, folder: true },
-      orderBy: { updatedAt: 'desc' },
+      orderBy: [{ isPinned: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
       skip: page * limit,
       take: limit,
     }),
     prisma.document.count({ where }),
+    prisma.document.count({ where: baseWhere }),
   ]);
 
-  return NextResponse.json({ items: documents, total, page, limit, hasMore: (page + 1) * limit < total });
+  return NextResponse.json({ items: documents, total, totalAvailable, page, limit, hasMore: (page + 1) * limit < total });
 }
 
 export async function POST(req: Request) {

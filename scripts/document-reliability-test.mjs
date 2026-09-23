@@ -126,6 +126,38 @@ try {
   const editorDoc = await call('/documents', sessions.editor, 'POST', { title: 'Editor trash fixture' });
   check((await call(`/documents/${editorDoc.body.id}`, sessions.editor, 'DELETE')).status === 200, 'editor can trash own document');
   check((await call(`/documents/${editorDoc.body.id}/restore`, sessions.editor, 'POST')).status === 200, 'editor can restore own document');
+  const listFolder = await db.folder.create({ data: { userId: users[0].id, name: 'Pagination folder' } });
+  const listPrefix = `${suffix}-list-`;
+  await db.document.createMany({ data: Array.from({ length: 106 }, (_, index) => ({
+    id: `${listPrefix}${String(index).padStart(3, '0')}`, title: `${listPrefix}${index}`,
+    content: index === 100 ? 'needle beyond the first fifty' : '',
+    userId: users[0].id, organizationId: index === 105 ? otherOrg.id : org.id,
+    visibility: index === 102 ? 'private' : 'org',
+    isArchived: index === 104, isPinned: index === 103,
+    folderId: index === 100 ? listFolder.id : null,
+    category: index === 100 ? 'runbook' : 'general',
+    createdAt: new Date('2020-01-01'), updatedAt: new Date('2020-01-01'),
+  })) });
+  const listPath = `/documents?q=${listPrefix}&organizationId=${org.id}&archived=false`;
+  const pages = await Promise.all([0, 1, 2].map(page => call(`${listPath}&page=${page}`, sessions.admin)));
+  check(pages.every(r => r.status === 200 && r.body.total === 104), 'pagination returns the full filtered count');
+  check(pages[0].body.items.length === 50 && pages[1].body.items.length === 50 && pages[2].body.items.length === 4, 'documents beyond fifty are reachable across pages');
+  check(new Set(pages.flatMap(r => r.body.items.map(d => d.id))).size === 104, 'equal timestamps paginate without duplicates');
+  check(pages[0].body.items[0].isPinned, 'pinned documents sort before unpinned documents');
+  check(pages[0].body.hasMore && !pages[2].body.hasMore, 'last page is correctly reported');
+  const searchList = await call(`/documents?q=NEEDLE%20BEYOND&organizationId=${org.id}`, sessions.admin);
+  check(searchList.body.total === 1 && searchList.body.items[0].id === `${listPrefix}100`, 'case-insensitive search finds body text beyond the first page');
+  check((await call(`${listPath}&category=runbook`, sessions.admin)).body.total === 1, 'category filters the full collection');
+  check((await call(`${listPath}&folderId=${listFolder.id}`, sessions.admin)).body.total === 1, 'folder filters the full collection');
+  check((await call(`${listPath}&folderId=${listFolder.id}&category=general`, sessions.admin)).body.total === 0, 'combined filters intersect');
+  check((await call(`/documents?q=${listPrefix}&organizationId=${org.id}`, sessions.admin)).body.total === 105, 'omitting archive filter preserves API compatibility');
+  for (const role of ['editor', 'viewer']) {
+    const scoped = await call(`/documents?q=${listPrefix}&limit=100`, sessions[role]);
+    check(scoped.body.total === 103 && !scoped.body.items.some(d => d.id === `${listPrefix}102` || d.id === `${listPrefix}105`), `${role} list filtering preserves private and organization boundaries`);
+    check((await call(`/documents?q=${listPrefix}&organizationId=${otherOrg.id}`, sessions[role])).body.total === 0, `${role} cannot expand access with query filters`);
+  }
+  check((await call(listPath, null)).status === 401, 'anonymous paginated search blocked');
+  check((await call(`/documents?q=${'x'.repeat(501)}`, sessions.admin)).status === 400, 'oversized search rejected');
   console.log(`${checks} reliability checks passed`);
 } finally {
   const ids = users.map(u => u.id);

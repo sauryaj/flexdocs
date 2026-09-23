@@ -20,6 +20,10 @@ These JSON files are portable data snapshots, not complete system backups. They 
 
 ## Search and linking
 
+The document library applies title/body search, category, folder, and archive filters on the server before paginating. Previous/Next controls expose the whole collection in pages of 50. Pinned documents sort first, followed by update time and a unique ID tie-breaker. The count reflects all matching documents, while the sidebar count covers the selected organization's accessible library. Changing organization resets filters and selection; changing filters or pages clears selection and cancels obsolete requests. Failed loads show a Retry action instead of an empty library. Moves, archive actions, and trash actions refresh the list and recover from an emptied final page.
+
+`GET /api/documents` supports `q` (up to 500 characters), `category`, `folderId`, and `archived=false` alongside existing pagination and organization parameters. Omitting the archive parameter retains the earlier API behavior. All filters intersect the caller's access policy, and Trash remains owner-only. The live document suite covers more than 100 records with identical timestamps, full-library filters, pinned order, and private/cross-organization boundaries.
+
 Folder moves from the document list send only `folderId` and the last observed `updatedAt` as `expectedUpdatedAt`. They never resend cached content, titles, or tags. A concurrent edit rejects the move with a reload instruction, and failed or interrupted requests leave the displayed folder unchanged. Successful moves use the complete server response, including its new version timestamp.
 
 Document search follows the same owner-or-visible-organization access policy as document reads. Limited users only find client-visible credential metadata. Mentions and related items consume the current grouped search response. One related-items component serves document and password pages; the obsolete password component and duplicate inline document form were removed.
