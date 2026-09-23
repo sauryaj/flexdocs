@@ -1,5 +1,17 @@
 # Export, linking, and onboarding reliability
 
+## Document Trash
+
+Single and bulk document deletion set `deletedAt` rather than removing rows. The owner can list Trash from Documents and restore a document with editing permission. Trashed documents are excluded from normal lists, search, AI/MCP queries, organization views, knowledge-base pages, reports, reminders, related items, and attachment access. Revision and attachment records remain intact. Restore makes the document private to avoid silently republishing it; existing archive status is preserved.
+
+This workflow covers the Next.js application used by the main Docker deployment. The separate `flexdocs-go` implementation still uses permanent deletion and does not enforce Trash visibility. Do not run it against this application's database until its document paths have equivalent recovery and access controls.
+
+`GET /api/documents?trash=true` is owner-scoped and paginated. `POST /api/documents/:id/restore` restores only a currently trashed document owned by the caller. Viewers and unauthenticated callers cannot restore. There is no automatic expiry or permanent-delete endpoint. Deletion and restoration are audited. Concurrent revision writes lock the parent; updates cannot edit an already trashed document.
+
+Administrative portable exports include Trash and preserve `deletedAt` on import, so recovery cannot silently reactivate deleted articles. Full SQL/uploads backups also retain this state. Apply the `document_trash` migration and regenerate Prisma before starting the updated app; rebuild and rerun the initializer for Docker installations.
+
+The local preview on port 3101 was verified against the disposable `flexdocs-features-db` PostgreSQL database at `127.0.0.1:55432`, with Redis at port 56379. The repository `.env` defaults to database port 5432, which may be a historical tunnel. Do not assume an unqualified `npm run dev` uses the disposable database; pass the intended connection explicitly. Production database identity and backups require separate verification.
+
 ## Portable exports
 
 Full and organization JSON exports are administrator-only because they include decrypted vault secrets. Organization exports include records assigned to that organization; unassigned documents and links to records outside the export are excluded. Revision history and attachment bytes are included. A missing/unreadable file, an attachment exceeding 14 MB, or a vault decryption failure returns HTTP 422 with an issue list instead of a successful incomplete file. The export screen displays these issues.

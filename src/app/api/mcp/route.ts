@@ -60,9 +60,9 @@ async function toolSearch(user: { id: string; role: string }, args: Record<strin
 
   const [documents, servers, assets] = await Promise.all([
     prisma.document.findMany({
-      where: isStaff
+      where: { deletedAt: null, ...isStaff
         ? { userId: user.id, isArchived: false, ...orgWhere, ...(docContains ? { OR: docContains.OR } : {}) }
-        : { ...orgWhere, isArchived: false, visibility: 'org', ...(docContains ? { OR: docContains.OR } : {}) },
+        : { ...orgWhere, isArchived: false, visibility: 'org', ...(docContains ? { OR: docContains.OR } : {}) } },
       select: { id: true, title: true, category: true, content: true },
       take: 8,
     }),
@@ -87,7 +87,7 @@ async function toolSearch(user: { id: string; role: string }, args: Record<strin
 
 async function toolGetDocument(user: { id: string; role: string }, args: Record<string, unknown>) {
   const id = String(args.id ?? '');
-  const doc = await prisma.document.findUnique({ where: { id } });
+  const doc = await prisma.document.findUnique({ where: { deletedAt: null, id } });
   if (!doc) return { error: 'not found' };
 
   const scope = await getOrgScope(user.id, user.role);
@@ -119,7 +119,7 @@ async function toolOrgPulse(user: { id: string; role: string }, args: Record<str
     prisma.domain.count({ where: { organizationId } }),
     prisma.server.count({ where: { organizationId } }),
     prisma.ticket.count({ where: { organizationId, status: { in: ['open', 'pending'] } } }),
-    prisma.document.count({ where: { organizationId, isArchived: false } }),
+    prisma.document.count({ where: { deletedAt: null, organizationId, isArchived: false } }),
   ]);
   return { organizationId, domains, servers, openTickets: tickets, documents: docs };
 }

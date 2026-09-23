@@ -39,7 +39,7 @@ export async function GET(req: Request) {
   ] = await Promise.all([
     // Documents: staff search their own vault; clients search org-visible docs
     prisma.document.findMany({
-      where: { AND: [documentReadWhere(user.id, scope), organizationId ? orgWhere : {}, { OR: [{ title: contains }, { content: contains }] }] },
+      where: { deletedAt: null, AND: [documentReadWhere(user.id, scope), organizationId ? orgWhere : {}, { OR: [{ title: contains }, { content: contains }] }] },
       take: MAX_PER_TYPE * 4,
       orderBy: { updatedAt: 'desc' },
       select: { id: true, title: true, content: true, updatedAt: true },

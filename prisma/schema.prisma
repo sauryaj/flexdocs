@@ -106,6 +106,7 @@ model Document {
   category    String   @default("general")
   isPinned    Boolean  @default(false)
   isArchived  Boolean  @default(false)
+  deletedAt   DateTime?
   reviewDate     DateTime?
   lastReviewedAt DateTime?
   visibility     String   @default("private") // private | org (client-facing KB)
@@ -126,6 +127,7 @@ model Document {
   @@index([category])
   @@index([isPinned])
   @@index([isArchived])
+  @@index([userId, deletedAt])
   @@index([createdAt])
 }
 

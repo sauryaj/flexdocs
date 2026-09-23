@@ -33,7 +33,7 @@ export async function withDocumentWrite<T>(
   return prisma.$transaction(async tx => {
     // All revision writers lock the parent first so version allocation and snapshots are serialized.
     await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${id} AND "userId" = ${userId} FOR UPDATE`;
-    const document = await tx.document.findFirst({ where: { id, userId } });
+    const document = await tx.document.findFirst({ where: { deletedAt: null, id, userId } });
     if (!document) throw new DocumentWriteError(404, 'Document not found');
     if (expectedUpdatedAt && document.updatedAt.toISOString() !== expectedUpdatedAt) {
       throw new DocumentWriteError(409, 'This document changed since you loaded it. Copy your edits before reloading to compare the latest version.');

@@ -128,7 +128,7 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
 
   // 4. Documents + attachments
   for (const doc of bundle.documents as (Record<string, unknown> & { attachments?: Record<string, unknown>[]; revisions?: Record<string, unknown>[]; tagNames?: string[] })[]) {
-    const data: any = pick(doc, ['id', 'title', 'content', 'type', 'category', 'isPinned', 'isArchived', 'reviewDate', 'lastReviewedAt', 'visibility', 'organizationId', 'createdAt', 'updatedAt']);
+    const data: any = pick(doc, ['id', 'title', 'content', 'type', 'category', 'isPinned', 'isArchived', 'deletedAt', 'reviewDate', 'lastReviewedAt', 'visibility', 'organizationId', 'createdAt', 'updatedAt']);
     data.userId = adminId;
     if (doc.folderId && createdFolderIds.has(String(doc.folderId))) data.folderId = doc.folderId;
     const r = await tryCreate('document', data);

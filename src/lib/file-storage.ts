@@ -56,7 +56,7 @@ export async function storeFile(
 
 export async function getAttachmentData(attachmentId: string, userId: string) {
   const attachment = await prisma.attachment.findFirst({
-    where: { id: attachmentId, userId },
+    where: { id: attachmentId, userId, OR: [{ documentId: null }, { document: { deletedAt: null } }] },
   });
 
   if (!attachment) return null;
@@ -74,7 +74,7 @@ export async function getAttachmentData(attachmentId: string, userId: string) {
 
 export async function deleteFile(attachmentId: string, userId: string) {
   const attachment = await prisma.attachment.findFirst({
-    where: { id: attachmentId, userId },
+    where: { id: attachmentId, userId, OR: [{ documentId: null }, { document: { deletedAt: null } }] },
   });
 
   if (!attachment) return null;

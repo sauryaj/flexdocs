@@ -19,7 +19,7 @@ export async function GET(req: Request) {
       ...(organizationId ? { organizationId } : {}),
     },
     include: {
-      _count: { select: { documents: true, children: true } },
+      _count: { select: { documents: { where: { deletedAt: null } }, children: true } },
     },
     orderBy: { name: 'asc' },
   });

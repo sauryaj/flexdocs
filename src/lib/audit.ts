@@ -15,6 +15,8 @@ export type AuditAction =
   | 'document.create'
   | 'document.update'
   | 'document.delete'
+  | 'document.restore'
+  | 'document.trash.bulk'
   | 'document.view'
   | 'document.move'
   | 'password.create'

@@ -58,6 +58,7 @@ export default function DocumentsPage() {
   const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [error, setError] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -92,11 +93,13 @@ export default function DocumentsPage() {
   };
 
   const runBulk = async (action: 'archive' | 'unarchive' | 'tag', tag?: string) => {
-    await fetch('/api/documents/bulk', {
+    const res = await fetch('/api/documents/bulk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action, ids: Array.from(selectedIds), tag }),
     });
+    if (!res.ok) { setError('Could not update the selected documents. Please try again.'); return; }
+    setError('');
     setSelectedIds(new Set());
     fetchDocuments();
   };
@@ -104,11 +107,13 @@ export default function DocumentsPage() {
   const bulkDelete = async (confirmed: boolean) => {
     setBulkConfirmOpen(false);
     if (!confirmed) return;
-    await fetch('/api/documents/bulk', {
+    const res = await fetch('/api/documents/bulk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'delete', ids: Array.from(selectedIds) }),
     });
+    if (!res.ok) { setError('Could not move the selected documents to trash. Please try again.'); return; }
+    setError('');
     setSelectedIds(new Set());
     fetchDocuments();
   };
@@ -125,7 +130,9 @@ export default function DocumentsPage() {
 
   const handleDelete = async () => {
     if (!deleteId) return;
-    await fetch(`/api/documents/${deleteId}`, { method: 'DELETE' });
+    const res = await fetch(`/api/documents/${deleteId}`, { method: 'DELETE' });
+    if (!res.ok) { setError('Could not move this document to trash. Please try again.'); setDeleteId(null); return; }
+    setError('');
     setDocuments(documents.filter((d) => d.id !== deleteId));
     setDeleteId(null);
   };
@@ -222,6 +229,7 @@ export default function DocumentsPage() {
 
       {/* Main Content */}
       <div className="flex-1 min-w-0 space-y-6">
+        {error && <p role="alert" className="text-red-600">{error}</p>}
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 text-sm text-slate-500 mb-1">
@@ -301,6 +309,7 @@ export default function DocumentsPage() {
           </button>
         </div>
 
+        <Link href="/dashboard/documents/trash" className="btn-secondary inline-flex items-center gap-2"><Trash2 className="w-4 h-4" />Trash</Link>
         {filtered.length === 0 ? (
           <EmptyState
             icon={<FileText className="w-8 h-8 text-slate-400" />}
@@ -414,16 +423,16 @@ export default function DocumentsPage() {
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
-        title="Delete Document"
-        message="Are you sure you want to delete this document? This action cannot be undone."
+        title="Move to Trash"
+        message="This document will be hidden from normal views. You can restore it, including its history and attachments, from Trash."
       />
 
       <ConfirmDialog
         isOpen={bulkConfirmOpen}
         onClose={() => setBulkConfirmOpen(false)}
         onConfirm={() => bulkDelete(true)}
-        title="Delete Documents"
-        message={`Are you sure you want to delete ${selectedIds.size} documents? This action cannot be undone.`}
+        title="Move to Trash"
+        message={`Move ${selectedIds.size} documents to Trash? Their history and attachments will be kept so you can restore them.`}
       />
 
       {/* Move Document Modal */}

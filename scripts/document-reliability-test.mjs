@@ -85,9 +85,43 @@ try {
   const copy = await call(`/documents/${id}/duplicate`, sessions.admin, 'POST');
   check(copy.status === 201 && await db.documentRevision.count({ where: { documentId: copy.body.id } }) === 1, 'duplicate has atomic initial history');
   check((await call('/documents/bulk', sessions.admin, 'POST', { action: 'delete', ids: [copy.body.id] })).status === 200, 'bulk delete handles relations without invalid SQL');
+  check(!!(await db.document.findUnique({ where: { id: copy.body.id } }))?.deletedAt, 'bulk deletion preserves document in Trash');
+  check(await db.documentRevision.count({ where: { documentId: copy.body.id } }) === 1, 'bulk deletion retains revision history');
+  const trashDoc = await call('/documents', sessions.admin, 'POST', { title: `${suffix}-trash`, content: 'Keep this content', organizationId: org.id, visibility: 'org', tags: ['recover-me'] });
+  const trashId = trashDoc.body.id;
+  const attachment = await db.attachment.create({ data: { documentId: trashId, userId: users[0].id, filename: 'retained.txt', mimeType: 'text/plain', size: 8, data: Buffer.from('retained').toString('base64') } });
+  for (const role of ['viewer', null]) {
+    check((await call(`/documents/${trashId}`, role ? sessions[role] : null, 'DELETE')).status === (role ? 403 : 401), `${role || 'anonymous'} cannot trash document`);
+    check((await call(`/documents/${trashId}/restore`, role ? sessions[role] : null, 'POST')).status === (role ? 403 : 401), `${role || 'anonymous'} cannot restore document`);
+  }
+  check((await call(`/documents/${trashId}`, sessions.editor, 'DELETE')).status === 404, 'non-owner cannot trash shared document');
+  check((await call(`/documents/${trashId}`, sessions.admin, 'DELETE')).status === 200, 'owner moves document to Trash');
+  check((await call(`/documents/${trashId}`, sessions.admin)).status === 404, 'trashed document hidden from normal detail');
+  check((await call(`/documents/${trashId}`, sessions.admin, 'PUT', { content: 'overwrite trash' })).status === 404, 'trashed document cannot be edited');
+  check((await call(`/documents/${trashId}/duplicate`, sessions.admin, 'POST')).status === 404, 'trashed document cannot be duplicated');
+  check(!(await call('/documents', sessions.admin)).body.items.some(d => d.id === trashId), 'trashed document absent from active list');
+  check((await call('/documents?trash=true', sessions.admin)).body.items.some(d => d.id === trashId), 'owner can list Trash');
+  check(!(await call('/documents?trash=true', sessions.editor)).body.items.some(d => d.id === trashId), 'Trash hidden from other users');
+  check(!(await call(`/search?q=${suffix}-trash`, sessions.admin)).body.groups.some(g => g.type === 'documents' && g.items.some(d => d.id === trashId)), 'Trash excluded from search');
+  check(!(await call(`/organizations/${org.id}`, sessions.admin)).body.documents.some(d => d.id === trashId), 'Trash excluded from nested organization documents');
+  check((await call(`/portal/kb/${trashId}`, sessions.viewer)).status === 404, 'Trash excluded from knowledge base');
+  check((await call(`/attachments/${attachment.id}`, sessions.admin)).status === 404, 'trashed attachment cannot be downloaded');
+  check((await call(`/attachments/${attachment.id}`, sessions.admin, 'DELETE')).status === 404, 'trashed attachment protected from deletion');
+  check((await call(`/documents/${trashId}/restore`, sessions.editor, 'POST')).status === 404, 'non-owner cannot restore');
+  const restoreRaces = await Promise.all([1, 2].map(() => call(`/documents/${trashId}/restore`, sessions.admin, 'POST')));
+  check(restoreRaces.filter(r => r.status === 200).length === 1 && restoreRaces.filter(r => r.status === 404).length === 1, 'concurrent restore has exactly one winner');
+  const recovered = await call(`/documents/${trashId}`, sessions.admin);
+  check(recovered.body.content === 'Keep this content' && recovered.body.tags.some(t => t.name === 'recover-me'), 'restore retains content and tags');
+  check(recovered.body.visibility === 'private', 'restore does not republish shared article');
+  check((await call(`/documents/${trashId}/revisions`, sessions.admin)).body.length === 1, 'restore retains history');
+  check((await fetch(`${base}/api/attachments/${attachment.id}`, { headers: { Cookie: sessions.admin } })).status === 200, 'restore makes attachment downloadable again');
+  const editorDoc = await call('/documents', sessions.editor, 'POST', { title: 'Editor trash fixture' });
+  check((await call(`/documents/${editorDoc.body.id}`, sessions.editor, 'DELETE')).status === 200, 'editor can trash own document');
+  check((await call(`/documents/${editorDoc.body.id}/restore`, sessions.editor, 'POST')).status === 200, 'editor can restore own document');
   console.log(`${checks} reliability checks passed`);
 } finally {
   const ids = users.map(u => u.id);
+  await db.attachment.deleteMany({ where: { userId: { in: ids } } });
   await db.document.deleteMany({ where: { userId: { in: ids } } });
   await db.tag.deleteMany({ where: { userId: { in: ids } } });
   await db.session.deleteMany({ where: { userId: { in: ids } } });

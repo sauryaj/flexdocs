@@ -17,7 +17,7 @@ export async function GET(
   const { id } = await params;
 
   const document = await prisma.document.findFirst({
-    where: { id, userId: user.id },
+    where: { deletedAt: null, id, userId: user.id },
   });
 
   if (!document) {

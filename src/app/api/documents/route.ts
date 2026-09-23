@@ -20,7 +20,8 @@ export async function GET(req: Request) {
   const limit = Math.min(100, Math.max(1, (parseInt(url.searchParams.get('limit') || '50') || 50)));
 
   const scope = await getOrgScope(user.id, user.role);
-  const where = { ...documentReadWhere(user.id, scope), ...(organizationId ? { organizationId } : {}) };
+  const trash = url.searchParams.get('trash') === 'true';
+  const where = { ...(trash ? { userId: user.id, deletedAt: { not: null } } : documentReadWhere(user.id, scope)), ...(organizationId ? { organizationId } : {}) };
 
   const [documents, total] = await Promise.all([
     prisma.document.findMany({

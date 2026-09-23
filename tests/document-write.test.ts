@@ -39,7 +39,7 @@ describe('document validation and recovery', () => {
   it('rejects documents not owned by the writer', async () => {
     tx.document.findFirst.mockResolvedValue(null);
     await expect(withDocumentWrite('doc', 'other', undefined, vi.fn())).rejects.toBeInstanceOf(DocumentWriteError);
-    expect(tx.document.findFirst).toHaveBeenCalledWith({ where: { id: 'doc', userId: 'other' } });
+    expect(tx.document.findFirst).toHaveBeenCalledWith({ where: { id: 'doc', userId: 'other', deletedAt: null } });
   });
   it('keeps the parent locked in the transaction used for the write', async () => {
     const write = vi.fn().mockResolvedValue('saved');
@@ -84,10 +84,10 @@ describe('revision endpoint authorization', () => {
 describe('document read access', () => {
   it('keeps private owner documents visible while constraining shared access', async () => {
     const { documentReadWhere } = await import('@/lib/document-access');
-    expect(documentReadWhere('owner', { mode: 'limited', orgIds: ['allowed'] })).toEqual({ OR: [
+    expect(documentReadWhere('owner', { mode: 'limited', orgIds: ['allowed'] })).toEqual({ deletedAt: null, OR: [
       { userId: 'owner' }, { organizationId: { in: ['allowed'] }, visibility: 'org', isArchived: false },
     ] });
-    expect(documentReadWhere('viewer', { mode: 'limited', orgIds: [] })).toEqual({ OR: [
+    expect(documentReadWhere('viewer', { mode: 'limited', orgIds: [] })).toEqual({ deletedAt: null, OR: [
       { userId: 'viewer' }, { organizationId: { in: ['__none__'] }, visibility: 'org', isArchived: false },
     ] });
   });

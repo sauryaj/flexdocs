@@ -20,7 +20,7 @@ export async function GET(
   const { id } = await params;
   const scope = await getOrgScope(user.id, user.role);
   const document = await prisma.document.findFirst({
-    where: { id, ...documentReadWhere(user.id, scope) },
+    where: { deletedAt: null, id, ...documentReadWhere(user.id, scope) },
     include: { tags: true, folder: true },
   });
 
@@ -98,15 +98,15 @@ export async function DELETE(
   const { id } = await params;
 
   const document = await prisma.document.findFirst({
-    where: { id, userId: user.id },
+    where: { deletedAt: null, id, userId: user.id },
   });
 
   if (!document) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
-  await prisma.document.delete({ where: { id } });
+  await prisma.document.updateMany({ where: { id, userId: user.id, deletedAt: null }, data: { deletedAt: new Date() } });
   auditLog({ userId: user.id, action: 'document.delete', resourceType: 'document', resourceId: id, resourceName: document.title }).catch(() => {});
 
-  return NextResponse.json({ message: 'Deleted' });
+  return NextResponse.json({ message: 'Moved to trash' });
 }

@@ -17,7 +17,7 @@ export async function GET(req: Request) {
   if (documentId) where.documentId = documentId;
 
   const attachments = await prisma.attachment.findMany({
-    where,
+    where: { ...where, OR: [{ documentId: null }, { document: { deletedAt: null } }] },
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'Invalid attachment (maximum encoded size: 14 MB)' }, { status: 400 });
   const { filename, mimeType, size, data, documentId } = parsed.data;
 
-  if (documentId && (typeof documentId !== 'string' || !await prisma.document.findFirst({ where: { id: documentId, userId: user.id } }))) {
+  if (documentId && (typeof documentId !== 'string' || !await prisma.document.findFirst({ where: { deletedAt: null, id: documentId, userId: user.id } }))) {
     return NextResponse.json({ error: 'Document not found' }, { status: 404 });
   }
 

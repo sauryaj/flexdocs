@@ -68,8 +68,11 @@ try {
   for (const role of ['editor', 'viewer', null]) {
     check((await call(`/organizations/${orgs[0]}/export`, role ? sessions[role] : null)).status === (role ? 403 : 401), `${role || 'anonymous'} cannot export decrypted organization snapshot`);
   }
+  await call(`/documents/${shared.id}`, sessions.admin, 'DELETE');
   const exported = await call(`/organizations/${orgs[0]}/export`, sessions.admin);
   check(exported.status === 200, 'admin scoped export');
+  check(!!exported.body.documents[0].deletedAt, 'portable export retains Trash state');
+  await call(`/documents/${shared.id}/restore`, sessions.admin, 'POST');
   check(exported.body.documents.length === 1 && exported.body.documents[0].id === shared.id, 'export excludes unassigned and other-org documents');
   check(!exported.body.relationships.some(r => r.targetId === outside.id), 'export excludes cross-boundary relationships');
   check(exported.body.documents[0].revisions.some(r => r.content === 'original'), 'export contains revision history');
@@ -91,6 +94,9 @@ try {
   const restored = await call('/import', sessions.admin, 'POST', { type: 'flexdocs-backup', data: cloned });
   check(restored.status === 200 && restored.body.success && restored.body.imported.revisions > 0, 'portable import restores revisions successfully');
   const restoredDoc = cloned.documents[0];
+  check((await call(`/documents/${restoredDoc.id}`, sessions.admin)).status === 404, 'portable import does not reactivate trashed document');
+  check((await call('/documents?trash=true', sessions.admin)).body.items.some(d => d.id === restoredDoc.id), 'imported trashed document is recoverable');
+  check((await call(`/documents/${restoredDoc.id}/restore`, sessions.admin, 'POST')).status === 200, 'imported Trash can be restored');
   check((await call(`/documents/${restoredDoc.id}`, sessions.admin)).body.content === 'updated portable body', 'roundtrip preserves document body');
   const restoredFiles = await db.attachment.findMany({ where: { documentId: restoredDoc.id } });
   uploads.push(...restoredFiles.map(a => a.id));

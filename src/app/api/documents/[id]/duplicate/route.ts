@@ -14,7 +14,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   const { id } = await params;
   const source = await prisma.document.findFirst({
-    where: { id, userId: user.id },
+    where: { deletedAt: null, id, userId: user.id },
     include: { tags: true },
   });
   if (!source) return NextResponse.json({ error: 'Not found' }, { status: 404 });

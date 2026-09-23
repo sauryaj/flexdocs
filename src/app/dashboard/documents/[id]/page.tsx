@@ -736,8 +736,8 @@ export default function DocumentDetailPage() {
         isOpen={showDelete}
         onClose={() => setShowDelete(false)}
         onConfirm={handleDelete}
-        title="Delete Document"
-        message="Are you sure you want to delete this document? This action cannot be undone."
+        title="Move to Trash"
+        message="This document will be hidden from normal views. You can restore it, including its history and attachments, from Trash."
       />
     </div>
   );

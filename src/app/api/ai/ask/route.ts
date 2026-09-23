@@ -43,7 +43,7 @@ export async function POST(req: Request) {
 
   const [documents, servers, assets] = await Promise.all([
     prisma.document.findMany({
-      where: {
+      where: { deletedAt: null,
         ...docWhere,
         OR: terms.length
           ? terms.flatMap((t: string) => [{ title: { contains: t, mode: 'insensitive' as const } }, { content: { contains: t, mode: 'insensitive' as const } }])

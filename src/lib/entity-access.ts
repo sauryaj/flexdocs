@@ -8,7 +8,7 @@ export type EntityType = typeof entityTypes[number];
 export async function accessibleEntity(type: string, id: string, userId: string, scope: OrgScope, write = false): Promise<string | null> {
   const org = scopeOrgWhere(scope);
   switch (type) {
-    case 'document': return (await prisma.document.findFirst({ where: { id, ...(write ? { userId } : documentReadWhere(userId, scope)) }, select: { title: true } }))?.title ?? null;
+    case 'document': return (await prisma.document.findFirst({ where: { deletedAt: null, id, ...(write ? { userId } : documentReadWhere(userId, scope)) }, select: { title: true } }))?.title ?? null;
     case 'password': return (await prisma.password.findFirst({ where: { id, ...(write || scope.mode === 'all' ? { userId } : { OR: [{ userId }, { ...org, clientVisible: true }] }) }, select: { name: true } }))?.name ?? null;
     case 'checklist': return (await prisma.checklist.findFirst({ where: { id, ...(write ? { userId } : { OR: [{ userId }, { ...org, organizationId: scope.mode === 'all' ? { not: null } : org.organizationId }] }) }, select: { name: true } }))?.name ?? null;
     case 'domain': return (await prisma.domain.findFirst({ where: { id, ...org }, select: { name: true } }))?.name ?? null;
