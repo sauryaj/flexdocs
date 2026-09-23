@@ -50,7 +50,15 @@ try {
     const own = await call('/documents', sessions[role], 'POST', { title: `${role} own doc`, content: 'owned' });
     check(own.status === 201, `${role} can create`);
     check((await call('/documents', sessions[role])).body.items.some(d => d.id === own.body.id), `${role} can find own private document`);
-    check((await call(`/documents/${own.body.id}`, sessions[role], 'PUT', { content: 'changed' })).status === 200, `${role} can update owned document`);
+    const edited = await call(`/documents/${own.body.id}`, sessions[role], 'PUT', { content: 'changed' });
+    check(edited.status === 200, `${role} can update owned document`);
+    const folder = await db.folder.create({ data: { name: 'Move test', userId: users.find(u => u.role === role).id } });
+    const staleMove = await call(`/documents/${own.body.id}`, sessions[role], 'PUT', { folderId: folder.id, expectedUpdatedAt: own.body.updatedAt });
+    check(staleMove.status === 409, `${role} stale folder move rejected`);
+    const moved = await call(`/documents/${own.body.id}`, sessions[role], 'PUT', { folderId: folder.id, expectedUpdatedAt: edited.body.updatedAt });
+    check(moved.status === 200 && moved.body.folderId === folder.id && moved.body.content === 'changed', `${role} folder move preserves latest content`);
+    const root = await call(`/documents/${own.body.id}`, sessions[role], 'PUT', { folderId: null, expectedUpdatedAt: moved.body.updatedAt });
+    check(root.status === 200 && root.body.folderId === null && root.body.content === 'changed', `${role} move to root preserves content`);
   }
   let current = create.body;
   for (const content of ['B', 'C', 'D']) {
@@ -123,6 +131,7 @@ try {
   const ids = users.map(u => u.id);
   await db.attachment.deleteMany({ where: { userId: { in: ids } } });
   await db.document.deleteMany({ where: { userId: { in: ids } } });
+  await db.folder.deleteMany({ where: { userId: { in: ids } } });
   await db.tag.deleteMany({ where: { userId: { in: ids } } });
   await db.session.deleteMany({ where: { userId: { in: ids } } });
   await db.activityLog.deleteMany({ where: { userId: { in: ids } } });

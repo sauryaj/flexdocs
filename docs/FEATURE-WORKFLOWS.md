@@ -20,6 +20,8 @@ These JSON files are portable data snapshots, not complete system backups. They 
 
 ## Search and linking
 
+Folder moves from the document list send only `folderId` and the last observed `updatedAt` as `expectedUpdatedAt`. They never resend cached content, titles, or tags. A concurrent edit rejects the move with a reload instruction, and failed or interrupted requests leave the displayed folder unchanged. Successful moves use the complete server response, including its new version timestamp.
+
 Document search follows the same owner-or-visible-organization access policy as document reads. Limited users only find client-visible credential metadata. Mentions and related items consume the current grouped search response. One related-items component serves document and password pages; the obsolete password component and duplicate inline document form were removed.
 
 Relationship reads filter both endpoints; creation requires a writable source and readable target. Deletion requires readable endpoints and write access to at least one endpoint. Missing names use `related_to`, duplicates return 409, and inaccessible records return 404. Search supports certificate and network linking as well as the existing document, password, asset, domain, server, and checklist types.

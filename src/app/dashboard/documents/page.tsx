@@ -15,6 +15,7 @@ import { formatDate, cn } from '@/lib/utils';
 import { EmptyState, ConfirmDialog, Modal } from '@/components/UIComponents';
 import { FolderSidebar } from '@/components/FolderSidebar';
 import { useOrganization } from '@/lib/OrganizationContext';
+import { moveDocument } from '@/lib/document-client';
 
 interface Document {
   id: string;
@@ -138,35 +139,18 @@ export default function DocumentsPage() {
   };
 
   const handleMoveToFolder = async (docId: string, folderId: string | null) => {
-    await fetch(`/api/documents/${docId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: documents.find((d) => d.id === docId)?.title,
-        content: documents.find((d) => d.id === docId)?.content,
-        category: documents.find((d) => d.id === docId)?.category,
-        folderId: folderId,
-        isPinned: documents.find((d) => d.id === docId)?.isPinned,
-        isArchived: documents.find((d) => d.id === docId)?.isArchived,
-        tags: documents.find((d) => d.id === docId)?.tags.map((t) => t.name),
-      }),
-    });
-
-    setDocuments(
-      documents.map((d) =>
-        d.id === docId
-          ? {
-              ...d,
-              folderId,
-              folder: folderId
-                ? allFolders.find((f) => f.id === folderId) || null
-                : null,
-            }
-          : d
-      )
-    );
-    setMoveDocId(null);
-    setFolderRefresh((r) => r + 1);
+    const document = documents.find(d => d.id === docId);
+    if (!document) return;
+    try {
+      const updated = await moveDocument(docId, folderId, document.updatedAt) as Document;
+      setDocuments(current => current.map(d => d.id === docId ? updated : d));
+      setError('');
+      setFolderRefresh(r => r + 1);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not move the document. Please try again.');
+    } finally {
+      setMoveDocId(null);
+    }
   };
 
   // Build breadcrumb from folder tree
