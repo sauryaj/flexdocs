@@ -60,6 +60,30 @@ try {
     const root = await call(`/documents/${own.body.id}`, sessions[role], 'PUT', { folderId: null, expectedUpdatedAt: moved.body.updatedAt });
     check(root.status === 200 && root.body.folderId === null && root.body.content === 'changed', `${role} move to root preserves content`);
   }
+  const parentFolder = await call('/folders', sessions.admin, 'POST', { name: 'Parent', organizationId: org.id });
+  check(parentFolder.status === 201, 'admin creates organization folder');
+  const childFolder = await call('/folders', sessions.admin, 'POST', { name: 'Child', parentId: parentFolder.body.id });
+  check(childFolder.status === 201 && childFolder.body.organizationId === org.id, 'subfolder inherits parent organization');
+  check((await call('/folders', sessions.editor, 'POST', { name: 'Foreign child', parentId: parentFolder.body.id })).status === 404, 'foreign parent folder rejected');
+  check((await call('/folders', sessions.editor, 'POST', { name: 'Wrong org', organizationId: otherOrg.id })).status === 403, 'folder creation enforces organization access');
+  check((await call('/folders', sessions.admin, 'POST', { name: 'Mismatch', parentId: parentFolder.body.id, organizationId: otherOrg.id })).status === 400, 'subfolder cannot cross organization boundary');
+  check((await call('/folders', sessions.admin, 'POST', { name: '   ' })).status === 400, 'blank folder rejected');
+  check((await call(`/folders/${parentFolder.body.id}`, sessions.admin, 'PUT', { name: '' })).status === 400, 'blank rename rejected');
+  check((await call(`/folders?organizationId=${otherOrg.id}`, sessions.admin)).body.length === 0, 'folder list honors organization filter');
+  check((await call('/folders', sessions.editor)).body.every(f => f.id !== parentFolder.body.id), 'folder list hides other owners');
+  for (const role of ['viewer', null]) {
+    const session = role ? sessions[role] : null;
+    check((await call('/folders', session, 'POST', { name: 'Denied' })).status === (role ? 403 : 401), `${role || 'anonymous'} cannot create folders`);
+    check((await call(`/folders/${parentFolder.body.id}`, session, 'PUT', { name: 'Denied' })).status === (role ? 403 : 401), `${role || 'anonymous'} cannot rename folders`);
+    check((await call(`/folders/${parentFolder.body.id}`, session, 'DELETE')).status === (role ? 403 : 401), `${role || 'anonymous'} cannot delete folders`);
+  }
+  check((await call(`/folders/${parentFolder.body.id}`, sessions.editor, 'DELETE')).status === 404, 'non-owner cannot delete folder');
+  const filed = await call('/documents', sessions.admin, 'POST', { title: 'Keep on folder deletion', folderId: parentFolder.body.id, organizationId: org.id });
+  check((await call(`/folders/${parentFolder.body.id}`, sessions.admin, 'PUT', { name: 'Renamed' })).body.name === 'Renamed', 'owner can rename folder');
+  check((await call(`/folders/${parentFolder.body.id}`, sessions.admin, 'DELETE')).status === 200, 'owner can delete folder');
+  check((await call(`/documents/${filed.body.id}`, sessions.admin)).body.folderId === null, 'folder deletion preserves document at root');
+  const survivingChild = await db.folder.findUnique({ where: { id: childFolder.body.id } });
+  check(survivingChild?.parentId === null && survivingChild.organizationId === org.id, 'folder deletion preserves subfolder and organization');
   let current = create.body;
   for (const content of ['B', 'C', 'D']) {
     const result = await call(`/documents/${id}`, sessions.admin, 'PUT', { content, expectedUpdatedAt: current.updatedAt });

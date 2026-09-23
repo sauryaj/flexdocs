@@ -225,6 +225,8 @@ function DocumentList() {
           onSelectFolder={selectFolder}
           refreshTrigger={folderRefresh}
           totalCount={totalAvailable}
+          organizationId={selectedOrg?.id}
+          onFoldersChanged={() => { setFolderRefresh(value => value + 1); fetchDocuments(); }}
         />
       </div>
 
@@ -473,7 +475,7 @@ const categoryColors: Record<string, { bg: string; text: string; dot: string }> 
 function DocumentCard({
   doc,
   onDelete,
-  onMove: _onMove,
+  onMove,
   folders,
   onMoveConfirm,
   selected,
@@ -549,6 +551,7 @@ function DocumentCard({
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <div className="relative">
             <button
+              aria-label={`Move ${doc.title}`}
               onClick={(e) => {
                 e.preventDefault();
                 setShowMenu(!showMenu);
@@ -612,6 +615,7 @@ function DocumentCard({
                         <span className="truncate">{folder.name}</span>
                       </button>
                     ))}
+                  <button onClick={e => { e.preventDefault(); setShowMenu(false); onMove(doc.id); }} className="w-full px-3 py-1.5 text-xs text-left">Choose any folder…</button>
                 </div>
               </>
             )}
