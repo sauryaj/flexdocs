@@ -76,7 +76,7 @@ Keep PostgreSQL (`5432`) and Redis (`6379`) private; they bind to loopback by
 default. Expose only the reverse proxy over HTTPS.
 
 The script checks Docker, generates secrets, starts everything, and waits for health.
-(Manual alternative: `cp .env.example .env`, fill in secrets, `docker compose up -d --build`.)
+(To edit configuration before starting: run `bash scripts/setup.sh --env-only`, edit `.env`, then run `bash scripts/setup.sh`.)
 
 Open http://localhost:3001 and log in with the bootstrap admin:
 
@@ -86,7 +86,7 @@ Open http://localhost:3001 and log in with the bootstrap admin:
 
 > Setup generates a unique bootstrap password. Manual installation must set `BOOTSTRAP_ADMIN_PASSWORD` to at least 16 characters. Existing accounts are never reset by seeding. Older installations must rotate both legacy admin accounts if they still use the old public password.
 
-Schema migrations apply automatically on container start (`prisma migrate deploy`). See [DEPLOY.md](DEPLOY.md) for the full guide.
+The setup and update scripts run schema migrations (`prisma migrate deploy`) through the initializer before starting the app. Restarting only the app does not apply migrations. See [DEPLOY.md](DEPLOY.md) for the full guide.
 
 ### Updating a homelab install
 
@@ -100,6 +100,8 @@ The update command creates a database backup, rebuilds the app and migration
 images, applies migrations and seeds, restarts the app, and checks health. Keep
 the database backup, the `uploads` volume, and the `ENCRYPTION_KEY` from `.env`;
 all three are needed for a complete recovery.
+
+Without Make, use `bash scripts/update.sh`. Updates stop on failed configuration validation, backup, build, migration, startup, or readiness. Setup and upgrades rebuild both images and explicitly run the initializer before starting the app. `make rebuild` uses the same backed-up upgrade path. `make clean` and `make reset` delete data and require `CONFIRM_DELETE_DATA=yes`; they are not upgrade commands.
 
 ### Local Development
 

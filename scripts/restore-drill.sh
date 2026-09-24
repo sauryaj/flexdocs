@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-if docker compose version >/dev/null 2>&1; then DC=(docker compose); else DC=(docker-compose); fi
+DC=(bash scripts/compose.sh)
 BACKUP=$(bash scripts/database-backup.sh)
 SCRATCH="flexdocs_drill_$(date +%s)_$$"
 CREATED=0

@@ -66,7 +66,7 @@ Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) with W
 If you have `make`, these wrap the common operations:
 
 ```bash
-make deploy         # setup/update: secrets + migrations + build + start
+make deploy         # initial setup: secrets + migrations + build + start
 make stop           # stop everything (data kept)
 make restart        # restart app only (fast)
 make logs           # follow app logs
@@ -87,18 +87,15 @@ make clean          # remove containers, volumes, images
 git clone https://github.com/sauryaj/flexdocs.git
 cd flexdocs
 
-# 1. Generate secrets
-cp .env.example .env
-sed -i.bak "s|ENCRYPTION_KEY=.*|ENCRYPTION_KEY=\"$(openssl rand -hex 32)\"|" .env
-sed -i.bak "s|NEXTAUTH_SECRET=.*|NEXTAUTH_SECRET=\"$(openssl rand -hex 32)\"|" .env
-rm .env.bak
-# Edit .env: set DB_PASSWORD, NEXTAUTH_URL, SMTP_* as needed
+# 1. Generate private configuration with unique secrets
+bash scripts/setup.sh --env-only
+# Edit .env: set NEXTAUTH_URL, PORT, SMTP_* as needed
 
 # 2. Start (builds images, applies migrations, seeds)
-docker compose up -d --build
+bash scripts/setup.sh
 
 # 3. Wait for health
-curl http://localhost:3001/api/health
+bash scripts/wait-for-health.sh
 ```
 
 `docker-compose` (v1, hyphenated) works anywhere `docker compose` appears above.
@@ -117,15 +114,15 @@ the migration/seed container, starts the new app, and checks health. It is safe 
 run repeatedly. If you do not have `make`, use the equivalent commands below:
 
 ```bash
-bash scripts/database-backup.sh
-docker compose build init app
-docker compose run --rm init
-docker compose up -d app
-curl http://localhost:3001/api/health
+bash scripts/update.sh
 ```
 
 Always run the init container after pulling. It applies `prisma migrate deploy`;
 skipping it after a schema change causes missing-column errors.
+
+The setup and update scripts rebuild both images and run the new initializer explicitly. Application startup uses `--no-deps` only after successful initialization; it cannot reuse a stale initializer as evidence that migrations ran. Commands stop on the first failure. An update error identifies the failed phase, and no later phase executes. `make rebuild` is an alias for this backed-up update flow.
+
+Do not use `make clean` or `make reset` for upgrades: they remove database, uploads, and backup volumes and require the explicit `CONFIRM_DELETE_DATA=yes` flag. An application rollback is not automatically safe after migrations. Check the release's schema compatibility first; if incompatible, restore a matching database/uploads backup and its required keys into an isolated environment before switching traffic. This workflow does not automatically reverse migrations or roll back failed upgrades.
 
 **Back up first (recommended):**
 

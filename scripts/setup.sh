@@ -89,14 +89,18 @@ EOF
 fi
 
 if [ "$ENV_ONLY" = "1" ]; then
-  say "Done (.env only — start later with: $DC up -d --build)"
+  say "Done (.env only — start later with: bash scripts/setup.sh)"
   exit 0
 fi
 
 # --- 3. Build & start --------------------------------------------------------
 say "Building and starting (first build takes a few minutes)"
 
-$DC up -d --build
+bash scripts/compose.sh config --quiet
+bash scripts/compose.sh build init app
+bash scripts/compose.sh up -d db redis
+bash scripts/compose.sh run --rm init
+bash scripts/compose.sh up -d --no-deps app
 
 # --- 4. Wait for health ------------------------------------------------------
 say "Waiting for the app to become healthy"
