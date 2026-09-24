@@ -127,3 +127,18 @@ jobs:
           docker build -f init.Dockerfile -t flexdocs-init:latest .
       - name: Restore database, uploads, and encrypted vault fixture
         run: node scripts/full-recovery-test.mjs
+
+  deployment:
+    name: Fresh install and populated upgrade
+    runs-on: ubuntu-latest
+    needs: test
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Exercise setup and upgrade against disposable containers
+        run: npm run test:deployment

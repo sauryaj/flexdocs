@@ -104,6 +104,8 @@ bash scripts/wait-for-health.sh
 
 ## 5. Updating to a new version
 
+Developers can verify deployment with `npm run test:deployment` (Docker, Compose with JSON configuration output, Git history, and Node required). It runs the real setup/update scripts in a unique temporary project, publishes only the app on a random loopback port, and keeps database/cache ports private. It installs the pinned earlier reliability baseline, creates synthetic records, upgrades to the working source, verifies preservation and a pre-upgrade SQL backup, then tests a fresh current installation. All disposable containers/volumes are removed; failed-run diagnostics remain in the printed temporary directory. This is not a production upgrade or a proof that every historical version is compatible. `DEPLOYMENT_BASE_REF` selects another compatible Git baseline explicitly.
+
 ```bash
 git pull
 make update

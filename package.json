@@ -16,6 +16,7 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "prisma migrate deploy",
     "test:recovery": "node scripts/full-recovery-test.mjs",
+    "test:deployment": "node scripts/deployment-drill.mjs",
     "test:features": "node scripts/feature-workflows-test.mjs"
   },
   "prisma": {
