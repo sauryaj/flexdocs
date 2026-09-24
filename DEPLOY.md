@@ -36,6 +36,8 @@ Then open **http://localhost:3001** and log in:
 
 Custom port: `PORT=8080 bash scripts/setup.sh`
 
+Readiness checks discover the running app's published port through Compose, including a port configured only in `.env`. Both setup and `make health` require HTTP 200 and return a nonzero exit status on failure. The default is 60 attempts, with a five-second request limit and three seconds between attempts. Adjust `HEALTH_ATTEMPTS` and `HEALTH_INTERVAL_SECONDS` for slower hosts. Run these commands on the Docker host; remote Docker contexts are not supported by this host-side probe. The reported address is the direct local app address; configure `NEXTAUTH_URL` separately for your HTTPS reverse proxy.
+
 ---
 
 ## 2. Install Docker
@@ -69,7 +71,7 @@ make stop           # stop everything (data kept)
 make restart        # restart app only (fast)
 make logs           # follow app logs
 make status         # container status + health
-make health         # health JSON
+make health         # wait for readiness; nonzero exit on failure
 make backup         # dump database to backups/*.sql
 make restore FILE=backups/flexdocs-XXX.sql
 make restore-drill  # prove a backup restores into a scratch DB (safe)

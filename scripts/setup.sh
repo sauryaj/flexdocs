@@ -101,21 +101,14 @@ $DC up -d --build
 # --- 4. Wait for health ------------------------------------------------------
 say "Waiting for the app to become healthy"
 
-for i in $(seq 1 60); do
-  if curl -fsS "http://localhost:${PORT}/api/health" >/dev/null 2>&1; then
-    echo "App is healthy."
-    break
-  fi
-  [ "$i" = "60" ] && fail "App did not become healthy in time. Check: $DC logs app"
-  sleep 3
-done
+bash scripts/wait-for-health.sh
 
 # --- 5. Done ------------------------------------------------------------------
 say "FlexDocs is running"
 
 cat <<EOF
 
-  URL:      http://localhost:${PORT}
+  URL:      Use the app address reported by the readiness check above.
   Login:    admin@flexdocs.local
   First-install password: BOOTSTRAP_ADMIN_PASSWORD in your private .env file.
   Existing account passwords are never reset by setup.

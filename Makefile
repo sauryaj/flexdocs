@@ -42,7 +42,7 @@ status: ## Show container status
 	@curl -sf http://localhost:$(PORT)/api/health 2>/dev/null && echo "" || echo "❌ App not responding"
 
 health: ## Check app health
-	@curl -sf http://localhost:$(PORT)/api/health | python3 -m json.tool 2>/dev/null || echo "❌ App not responding"
+	@bash scripts/wait-for-health.sh
 
 clean: ## Remove containers, volumes, and images
 	docker-compose down -v --rmi local
