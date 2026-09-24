@@ -1,6 +1,6 @@
 # Documentation reliability review
 
-Review date: 2026-09-22. Scope: the Next.js application at the repository root, with emphasis on document editing, recovery, access control, and deployment checks. The separate `flexdocs-go/` implementation was not changed or certified by this review.
+Review updated: 2026-09-24. Scope: the Next.js application at the repository root, with emphasis on document editing, recovery, access control, and deployment checks. The separate `flexdocs-go/` implementation was not changed or certified by this review.
 
 ## Findings and changes
 
@@ -23,7 +23,12 @@ Review date: 2026-09-22. Scope: the Next.js application at the repository root, 
 | Medium | Shared documents appeared in lists but could not be opened; limited editors could lose their own private docs from the list. | List and detail routes share the same owner-or-visible-organization policy; non-owners/viewers get a read-only document view. |
 | Medium | Invalid dates, titles, tag payloads, pagination, and folder references produced unreliable requests. | Validation rejects invalid writes, deduplicates tags, checks folder ownership and organization access, and bounds pagination. |
 | Medium | Attachments could be associated with another user's document, trusted caller-supplied size, and left files behind after database failure. | Owner validation, bounded payloads, actual byte counts, safe suffixes, and cleanup on failed metadata insertion. |
-| Medium | Bulk deletion used an invalid raw SQL array binding. | Use Prisma deletion and the existing foreign-key cascades. |
+| High | Document deletion permanently removed content and history; bulk deletion also used an invalid raw SQL array binding. | Single and bulk deletion now use owner-scoped Trash and retain history, tags, and attachments. Restore returns the document privately. |
+| High | Moving a document could resend stale content from the list and overwrite a newer edit. | Moves send only the folder and expected version, reject conflicts, and use the server response. |
+| Medium | The library exposed only the first page and searched only loaded documents. | Server-side search and filters precede stable pagination; page controls expose the complete collection. |
+| Medium | Folder mutations accepted invalid parents and the move picker stayed stale. | Validate ownership and organization access, refresh folder choices, and preserve documents/subfolders transactionally on folder deletion. |
+| Medium | Failed document creation silently failed or left Save stuck. | Display errors, retain drafts, release controls after failure, and guard repeated submissions. |
+| Medium | Editor reads and attachment operations could fail silently or remain stuck. | Cancel obsolete document loads, isolate state by document, expose read retries, and handle file-read/upload failures. |
 | Medium | Restore scripts continued after failures; the drill dropped a fixed database name. | Fail-fast scripts, transactional SQL restore, unique scratch database, and cleanup trap. |
 | Medium | A fixed-width sidebar squeezed the editor on narrow screens. | Stack the sidebar below the editor and adapt metadata fields to available width. |
 | Medium | Compose ignored the configured public application URL. | `NEXTAUTH_URL` now uses the configured value. |
@@ -40,7 +45,7 @@ Review date: 2026-09-22. Scope: the Next.js application at the repository root, 
 
 ## Verification
 
-Final results: 117 unit tests, 44 live documentation checks, and all 27 existing smoke checks passed. Production build and typecheck passed; ESLint reports 0 errors and 179 pre-existing warnings.
+Verified application commit: `bf42a808e6596a5bc8b5eae89c634a6dbdaa64ff`. [GitHub CI run 35845312394](https://github.com/sauryaj/flexdocs/actions/runs/35845312394) passed all three jobs: lint/types/unit tests, build/API smoke and feature checks, and the isolated full recovery drill. It reports 148 unit tests, 113 live documentation checks, and 27 smoke checks passing. Production build and typecheck passed; local ESLint reports 0 errors and 172 warnings.
 
 The checks used a disposable PostgreSQL 16 / Redis instance on loopback ports 55432 / 56379, not the shared development database.
 
@@ -48,7 +53,7 @@ The checks used a disposable PostgreSQL 16 / Redis instance on loopback ports 55
 - The production build, TypeScript checking, and ESLint error checks pass. Existing lint warnings remain. Compatible dependency updates removed all five advisories reported by `npm audit` during this review (zero remaining at verification time).
 - `scripts/document-reliability-test.mjs` exercises real authenticated HTTP requests, admin/editor/viewer boundaries, shared/private reads, rapid saves, simultaneous writers, recovery history, and restoration. It removes its fixtures and requires `DOCUMENT_TEST_ISOLATED=1`.
 - The existing 27-check API smoke suite is also run against the isolated instance.
-- Browser checks verified save status, restore behavior, and a stale second-tab draft remaining visible after a conflict.
+- Browser checks verified save status, restore behavior, a stale second-tab draft remaining visible after a conflict, pagination/search beyond the first page, recovery after emptying the last page, organization-scoped folder choices, and failed creation preserving the draft and releasing Save. The later editor error paths have focused client tests; browser testing loaded the editor but did not complete fault injection for every retry path.
 - A SQL dump restored successfully into a separate scratch database, including documents and revisions. The automated full-recovery drill also restores uploaded bytes and verifies a synthetic vault secret using the original encryption key. This does not certify production backup storage or keys.
 
 Run the live documentation suite only with a disposable seeded database and matching application:
