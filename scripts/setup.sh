@@ -53,6 +53,8 @@ say "Environment"
 if [ -f .env ]; then
   echo ".env already exists — keeping your configuration."
 else
+  umask 077
+  BOOTSTRAP_ADMIN_PASSWORD=$(openssl rand -hex 24)
   ENCRYPTION_KEY=$(openssl rand -hex 32)
   NEXTAUTH_SECRET=$(openssl rand -hex 32)
   DB_PASSWORD=$(openssl rand -hex 12)
@@ -65,7 +67,9 @@ DATABASE_URL="postgresql://flexdocs:${DB_PASSWORD}@db:5432/flexdocs"
 NEXTAUTH_SECRET="${NEXTAUTH_SECRET}"
 NEXTAUTH_URL="http://localhost:${PORT}"
 ENCRYPTION_KEY="${ENCRYPTION_KEY}"
+PORT=${PORT}
 DB_PASSWORD="${DB_PASSWORD}"
+BOOTSTRAP_ADMIN_PASSWORD="${BOOTSTRAP_ADMIN_PASSWORD}"
 
 REDIS_URL="redis://redis:6379"
 
@@ -78,49 +82,44 @@ SMTP_FROM="FlexDocs <noreply@flexdocs.local>"
 SMTP_SECURE=false
 
 LOG_LEVEL="info"
-BACKUP_DIR="./backups"
+BACKUP_DIR="/backups"
 BACKUP_RETENTION_DAYS=30
 EOF
-  echo "Created .env with fresh secrets (ENCRYPTION_KEY, NEXTAUTH_SECRET, DB_PASSWORD)."
+  echo "Created private .env with fresh secrets and a unique bootstrap admin password."
 fi
 
 if [ "$ENV_ONLY" = "1" ]; then
-  say "Done (.env only — start later with: $DC up -d --build)"
+  say "Done (.env only — start later with: bash scripts/setup.sh)"
   exit 0
 fi
 
 # --- 3. Build & start --------------------------------------------------------
 say "Building and starting (first build takes a few minutes)"
 
-$DC up -d --build
+bash scripts/compose.sh config --quiet
+bash scripts/compose.sh build init app
+bash scripts/compose.sh up -d db redis
+bash scripts/compose.sh run --rm init
+bash scripts/compose.sh up -d --no-deps app
 
 # --- 4. Wait for health ------------------------------------------------------
 say "Waiting for the app to become healthy"
 
-for i in $(seq 1 60); do
-  if curl -fsS "http://localhost:${PORT}/api/health" >/dev/null 2>&1; then
-    echo "App is healthy."
-    break
-  fi
-  [ "$i" = "60" ] && fail "App did not become healthy in time. Check: $DC logs app"
-  sleep 3
-done
+bash scripts/wait-for-health.sh
 
 # --- 5. Done ------------------------------------------------------------------
 say "FlexDocs is running"
 
-cat <<'EOF'
+cat <<EOF
 
-  URL:      http://localhost:${PORT}
+  URL:      Use the app address reported by the readiness check above.
   Login:    admin@flexdocs.local
-  Password: admin12345
-
-  !! Change this password right away (Profile → Change Password) —
-  !! it is public in the source code.
+  First-install password: BOOTSTRAP_ADMIN_PASSWORD in your private .env file.
+  Existing account passwords are never reset by setup.
 
   Useful commands:
     docker compose logs -f app     # app logs
     docker compose down            # stop (data is kept in volumes)
-    bash scripts/backup.sh         # database backup
+    bash scripts/database-backup.sh         # database backup
 
 EOF

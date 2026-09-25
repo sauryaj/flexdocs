@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { importFromItGlue, parseItGlueCsv } from '@/lib/itglue-import';
 import { hasAnyPermission } from '@/lib/rbac';
+import { canAccessOrganization } from '@/lib/org-scope';
 import { type UserRole } from '@prisma/client';
 
 export async function POST(req: Request) {
@@ -12,6 +13,8 @@ export async function POST(req: Request) {
   }
 
   const { data, type, organizationId } = await req.json();
+
+  if (organizationId && (typeof organizationId !== 'string' || !await canAccessOrganization(user.id, user.role, organizationId))) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   let parsed: Record<string, unknown[]>;
 

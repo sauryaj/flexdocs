@@ -13,7 +13,6 @@ import {
   Trash2,
   FileText,
   Upload,
-  Link2,
   History,
   Paperclip,
   Plus,
@@ -28,6 +27,9 @@ import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { Eye, Edit3, Columns } from 'lucide-react';
 import { RelatedItems } from '@/components/RelatedItems';
+import { uploadDocumentAttachment } from '@/lib/document-client';
+import { useDocumentDraft } from '@/lib/use-document-draft';
+import type { DocumentDraft } from '@/lib/document-drafts';
 
 const categories = [
   'general',
@@ -40,24 +42,16 @@ const categories = [
   'onboarding',
 ];
 
-function getRelUrl(type: string, id: string): string {
-  switch (type) {
-    case 'document': return `/dashboard/documents/${id}`;
-    case 'password': return `/dashboard/passwords/${id}`;
-    case 'domain': return `/dashboard/domains/${id}`;
-    case 'asset': return `/dashboard/assets/${id}`;
-    default: return '#';
-  }
-}
-
 interface Document {
   id: string;
+  canEdit?: boolean;
   title: string;
   content: string;
   category: string;
   isPinned: boolean;
   isArchived: boolean;
   visibility?: string;
+  reviewDate?: string | null;
   organizationId?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -82,23 +76,6 @@ interface Attachment {
   uploadedBy: { id: string; name: string; email: string } | null;
 }
 
-interface Relationship {
-  id: string;
-  name: string;
-  sourceType: string;
-  sourceId: string;
-  sourceName: string;
-  targetType: string;
-  targetId: string;
-  targetName: string;
-  createdAt: string;
-}
-
-interface ResourceOption {
-  id: string;
-  title: string;
-}
-
 function formatBytes(bytes: number): string {
   if (bytes === 0) return '0 Bytes';
   const k = 1024;
@@ -108,8 +85,13 @@ function formatBytes(bytes: number): string {
 }
 
 export default function DocumentDetailPage() {
+  const params = useParams<{ id: string }>();
+  return <DocumentEditor key={params.id} documentId={params.id} />;
+}
+
+function DocumentEditor({ documentId }: { documentId: string }) {
   const router = useRouter();
-  const params = useParams();
+  const params = { id: documentId };
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [doc, setDoc] = useState<Document | null>(null);
@@ -121,6 +103,8 @@ export default function DocumentDetailPage() {
   const [reviewDue, setReviewDue] = useState(false);
   const [visibility, setVisibility] = useState('private');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [viewMode, setViewMode] = useState<'write' | 'preview' | 'split'>('write');
@@ -130,21 +114,47 @@ export default function DocumentDetailPage() {
   const lastSavedRef = useRef<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
+  const [saveError, setSaveError] = useState('');
+  const [conflict, setConflict] = useState<Document | null>(null);
+  const [autosavePaused, setAutosavePaused] = useState(false);
+  const savingRef = useRef(false);
+  const versionRef = useRef<string | undefined>(undefined);
+  const liveSnapshotRef = useRef('');
 
   const currentSnapshot = () =>
     JSON.stringify({ t: title, c: content, cat: category, tg: tags, rd: reviewDate, v: visibility });
 
+  liveSnapshotRef.current = currentSnapshot();
+  const hasUnsavedChanges = !loading && !!doc && doc.canEdit !== false && lastSavedRef.current !== null && currentSnapshot() !== lastSavedRef.current;
+  const draft = useDocumentDraft({ title, content, category, tags, reviewDate, visibility,
+    folderId: doc?.folder?.id || '', organizationId: doc?.organizationId || '', baseUpdatedAt: versionRef.current,
+  }, hasUnsavedChanges, documentId, !loading && !!doc && doc.canEdit !== false);
+  const [recoveryPreview, setRecoveryPreview] = useState<DocumentDraft | null>(null);
+
+  const restoreDraft = (candidate: DocumentDraft) => {
+    if (hasUnsavedChanges && !confirm('Replace your current unsaved edits and their browser copy with this recovered text?')) return;
+    setTitle(candidate.fields.title);
+    setContent(candidate.fields.content);
+    setCategory(candidate.fields.category);
+    setTags(candidate.fields.tags);
+    setReviewDate(candidate.fields.reviewDate || '');
+    setVisibility(candidate.fields.visibility || 'private');
+    setDirty(true);
+    setAutosavePaused(true);
+    setSaveError('Recovered edits are in the editor. Compare them with the saved version below, then use Save Now to apply them. Autosave is paused.');
+  };
+
   useEffect(() => {
-    if (loading || !doc) return;
+    if (loading || !doc || doc.canEdit === false || saving || saveError || draft.revoked || autosavePaused) return;
     if (lastSavedRef.current === null) return;
-    if (currentSnapshot() === lastSavedRef.current) return;
+    if (currentSnapshot() === lastSavedRef.current) { setDirty(false); return; }
     setDirty(true);
     const timer = setTimeout(() => {
       void doSave();
     }, 2000);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, content, category, tags, reviewDate, visibility, loading, doc]);
+  }, [title, content, category, tags, reviewDate, visibility, loading, doc, saving, saveError, draft.revoked, autosavePaused]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -175,6 +185,7 @@ export default function DocumentDetailPage() {
   // Version History
   const [revisions, setRevisions] = useState<Revision[]>([]);
   const [revisionsLoading, setRevisionsLoading] = useState(false);
+  const [revisionsError, setRevisionsError] = useState('');
   const [showRevisionForm, setShowRevisionForm] = useState(false);
   const [revisionMessage, setRevisionMessage] = useState('');
   const [savingRevision, setSavingRevision] = useState(false);
@@ -184,28 +195,21 @@ export default function DocumentDetailPage() {
   // Attachments
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [attachmentsLoading, setAttachmentsLoading] = useState(false);
+  const [attachmentsError, setAttachmentsError] = useState('');
+  const [attachmentActionError, setAttachmentActionError] = useState('');
   const [uploading, setUploading] = useState(false);
   const [deletingAttachment, setDeletingAttachment] = useState<string | null>(null);
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
 
-  // Relationships
-  const [outgoingRelationships, setOutgoingRelationships] = useState<Relationship[]>([]);
-  const [incomingRelationships, setIncomingRelationships] = useState<Relationship[]>([]);
-  const [relationshipsLoading, setRelationshipsLoading] = useState(false);
-  const [showRelationshipForm, setShowRelationshipForm] = useState(false);
-  const [relName, setRelName] = useState('');
-  const [relTargetType, setRelTargetType] = useState('document');
-  const [relTargetId, setRelTargetId] = useState('');
-  const [relTargetOptions, setRelTargetOptions] = useState<ResourceOption[]>([]);
-  const [relLoadingTargets, setRelLoadingTargets] = useState(false);
-  const [creatingRelationship, setCreatingRelationship] = useState(false);
-  const [deletingRelationship, setDeletingRelationship] = useState<string | null>(null);
-  const [relationshipsExpanded, setRelationshipsExpanded] = useState(false);
-
   useEffect(() => {
-    fetch(`/api/documents/${params.id}`)
-      .then((r) => r.json())
+    const controller = new AbortController();
+    setLoading(true);
+    setLoadError('');
+    fetch(`/api/documents/${params.id}`, { signal: controller.signal })
+      .then((r) => { if (!r.ok) throw new Error(r.status === 404 ? 'Document not found or unavailable.' : 'Unable to load document. Please try again.'); return r.json(); })
       .then((data) => {
+        if (controller.signal.aborted) return;
+        versionRef.current = data.updatedAt;
         setDoc(data);
         setTitle(data.title);
         setContent(data.content);
@@ -228,17 +232,24 @@ export default function DocumentDetailPage() {
         });
         setDirty(false);
         setLoading(false);
+      }).catch((error) => {
+        if (controller.signal.aborted) return;
+        setLoadError(error instanceof Error ? error.message : 'Unable to load document. Please try again.');
+        setDoc(null);
+        setLoading(false);
       });
-  }, [params.id]);
+    return () => controller.abort();
+  }, [params.id, loadAttempt]);
 
   const fetchRevisions = async () => {
     setRevisionsLoading(true);
+    setRevisionsError('');
     try {
       const res = await fetch(`/api/documents/${params.id}/revisions`);
-      if (res.ok) {
-        const data = await res.json();
-        setRevisions(data);
-      }
+      if (!res.ok) throw new Error('Unable to load revision history.');
+      setRevisions(await res.json());
+    } catch {
+      setRevisionsError('Unable to load revision history. Please try again.');
     } finally {
       setRevisionsLoading(false);
     }
@@ -246,28 +257,15 @@ export default function DocumentDetailPage() {
 
   const fetchAttachments = async () => {
     setAttachmentsLoading(true);
+    setAttachmentsError('');
     try {
       const res = await fetch(`/api/attachments?documentId=${params.id}`);
-      if (res.ok) {
-        const data = await res.json();
-        setAttachments(data);
-      }
+      if (!res.ok) throw new Error('Unable to load attachments.');
+      setAttachments(await res.json());
+    } catch {
+      setAttachmentsError('Unable to load attachments. Please try again.');
     } finally {
       setAttachmentsLoading(false);
-    }
-  };
-
-  const fetchRelationships = async () => {
-    setRelationshipsLoading(true);
-    try {
-      const [outRes, inRes] = await Promise.all([
-        fetch(`/api/relationships?sourceType=document&sourceId=${params.id}`),
-        fetch(`/api/relationships?targetType=document&targetId=${params.id}`),
-      ]);
-      if (outRes.ok) setOutgoingRelationships(await outRes.json());
-      if (inRes.ok) setIncomingRelationships(await inRes.json());
-    } finally {
-      setRelationshipsLoading(false);
     }
   };
 
@@ -279,229 +277,161 @@ export default function DocumentDetailPage() {
     if (attachmentsExpanded) fetchAttachments();
   }, [attachmentsExpanded]);
 
-  useEffect(() => {
-    if (relationshipsExpanded) fetchRelationships();
-  }, [relationshipsExpanded]);
-
-  useEffect(() => {
-    if (showRelationshipForm && relTargetType) {
-      setRelLoadingTargets(true);
-      setRelTargetId('');
-      let url = '';
-      if (relTargetType === 'document') url = '/api/documents';
-      else if (relTargetType === 'password') url = '/api/passwords';
-      else if (relTargetType === 'domain') url = '/api/domains';
-      else if (relTargetType === 'asset') url = '/api/assets';
-
-      fetch(url)
-        .then((r) => r.json())
-        .then((data) => {
-          const options = data.map((item: any) => ({
-            id: item.id,
-            title: item.title || item.name || item.hostname || item.id,
-          }));
-          setRelTargetOptions(options);
-          setRelLoadingTargets(false);
-        })
-        .catch(() => setRelLoadingTargets(false));
-    }
-  }, [showRelationshipForm, relTargetType]);
-
   const doSave = async (): Promise<boolean> => {
+    if (savingRef.current || !doc || doc.canEdit === false || draft.revoked) return false;
+    savingRef.current = true;
     setSaving(true);
-    const tagList = tags
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean);
-
-    let ok = false;
+    setSaveError('');
+    const snapshot = currentSnapshot();
     try {
       const res = await fetch(`/api/documents/${params.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title,
-          content,
-          category,
-          tags: tagList,
-          isPinned: doc?.isPinned,
-          isArchived: doc?.isArchived,
-          reviewDate: reviewDate || null,
-          visibility,
-        }),
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, content, category,
+          tags: tags.split(',').map(t => t.trim()).filter(Boolean),
+          reviewDate: reviewDate || null, visibility, expectedUpdatedAt: versionRef.current }),
       });
-      ok = res.ok;
+      const data = await res.json();
+      if (res.status === 409) {
+        setAutosavePaused(true);
+        const latest = await fetch(`/api/documents/${params.id}`);
+        if (latest.ok) setConflict(await latest.json());
+        throw new Error('The server document changed. Your edits are preserved. Compare both versions below before trying again.');
+      }
+      if (!res.ok) throw new Error(data.error || 'Save failed. Your edits are still here; try Save Now.');
+      versionRef.current = data.updatedAt;
+      lastSavedRef.current = snapshot;
+      if (liveSnapshotRef.current === snapshot) draft.clear();
+      setDoc({ ...data, canEdit: doc.canEdit });
+      setRecoveryPreview(null);
+      setConflict(null);
+      setAutosavePaused(false);
+      setDirty(liveSnapshotRef.current !== snapshot);
+      setSavedAt(new Date());
+      return true;
+    } catch (error) {
+      setSaveError(error instanceof Error && !(error instanceof TypeError) ? error.message : 'Save failed. Your edits are still here; try Save Now.');
+      setDirty(true);
+      return false;
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
-    if (ok) {
-      lastSavedRef.current = currentSnapshot();
-      setDirty(false);
-      setSavedAt(new Date());
-    }
-    return ok;
   };
 
-  const handleSave = () => {
-    void doSave();
+  const handleSave = () => { void doSave(); };
+
+  const updateMetadata = async (fields: Record<string, unknown>) => {
+    if (savingRef.current || !doc) return false;
+    savingRef.current = true;
+    setSaving(true);
+    setSaveError('');
+    try {
+      const res = await fetch(`/api/documents/${params.id}`, {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...fields, expectedUpdatedAt: versionRef.current }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Update failed');
+      versionRef.current = data.updatedAt;
+      setDoc({ ...data, canEdit: doc.canEdit });
+      return true;
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Update failed');
+      return false;
+    } finally { savingRef.current = false; setSaving(false); }
   };
 
-  const togglePin = async () => {
-    if (!doc) return;
-    const updated = { ...doc, isPinned: !doc.isPinned };
-    await fetch(`/api/documents/${params.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title,
-        content,
-        category,
-        tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
-        isPinned: updated.isPinned,
-        isArchived: updated.isArchived,
-      }),
-    });
-    setDoc(updated);
-  };
-
-  const toggleArchive = async () => {
-    if (!doc) return;
-    const updated = { ...doc, isArchived: !doc.isArchived };
-    await fetch(`/api/documents/${params.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title,
-        content,
-        category,
-        tags: tags.split(',').map((t) => t.trim()).filter(Boolean),
-        isPinned: updated.isPinned,
-        isArchived: updated.isArchived,
-      }),
-    });
-    setDoc(updated);
-  };
+  const togglePin = () => { if (doc) void updateMetadata({ isPinned: !doc.isPinned }); };
+  const toggleArchive = () => { if (doc) void updateMetadata({ isArchived: !doc.isArchived }); };
 
   const handleDelete = async () => {
-    await fetch(`/api/documents/${params.id}`, { method: 'DELETE' });
-    router.push('/dashboard/documents');
+    if (savingRef.current) return;
+    try {
+      const res = await fetch(`/api/documents/${params.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Delete failed. The document has not been removed.');
+      router.push('/dashboard/documents');
+    } catch (error) { setSaveError(error instanceof Error ? error.message : 'Delete failed'); }
   };
 
   const handleSaveRevision = async () => {
+    if (!await doSave()) return;
+    savingRef.current = true;
+    setSaving(true);
     setSavingRevision(true);
     try {
       const res = await fetch(`/api/documents/${params.id}/revisions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          content,
-          title,
-          message: revisionMessage || null,
-        }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: revisionMessage || null, expectedUpdatedAt: versionRef.current }),
       });
-      if (res.ok) {
-        setShowRevisionForm(false);
-        setRevisionMessage('');
-        fetchRevisions();
-      }
-    } finally {
-      setSavingRevision(false);
-    }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Revision could not be saved');
+      versionRef.current = data.updatedAt;
+      setShowRevisionForm(false);
+      setRevisionMessage('');
+      void fetchRevisions();
+    } catch (error) { setSaveError(error instanceof Error ? error.message : 'Revision could not be saved'); }
+    finally { savingRef.current = false; setSaving(false); setSavingRevision(false); }
   };
 
   const handleRestoreRevision = async (revisionId: string) => {
+    if (!await doSave()) return;
+    savingRef.current = true;
+    setSaving(true);
     setRestoringRevision(revisionId);
+    const beforeRestore = liveSnapshotRef.current;
     try {
       const res = await fetch(`/api/documents/${params.id}/revisions/${revisionId}/restore`, {
-        method: 'POST',
+        method: 'POST', headers: { 'If-Unmodified-Since-Version': versionRef.current! },
       });
-      if (res.ok) {
-        const data = await res.json();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Restore failed');
+      versionRef.current = data.updatedAt;
+      if (liveSnapshotRef.current === beforeRestore) {
         setContent(data.content);
-        setTitle(data.title || title);
-        fetchRevisions();
+        setTitle(data.title);
+        setCategory(data.category);
+        lastSavedRef.current = JSON.stringify({ t: data.title, c: data.content, cat: data.category, tg: tags, rd: reviewDate, v: visibility });
+        setDirty(false);
+        setSavedAt(new Date());
+      } else {
+        setSaveError('Revision restored on the server. Your newer edits remain here unsaved. Copy them before reloading, or use Save Now to keep them.');
       }
-    } finally {
-      setRestoringRevision(null);
-    }
+      void fetchRevisions();
+    } catch (error) { setSaveError(error instanceof Error ? error.message : 'Restore failed'); }
+    finally { savingRef.current = false; setSaving(false); setRestoringRevision(null); }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
+    setAttachmentActionError('');
     try {
-      const reader = new FileReader();
-      reader.onload = async () => {
-        const base64 = (reader.result as string).split(',')[1];
-        const res = await fetch('/api/attachments', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            documentId: params.id,
-            filename: file.name,
-            mimeType: file.type,
-            size: file.size,
-            data: base64,
-          }),
-        });
-        if (res.ok) {
-          fetchAttachments();
-        }
-        setUploading(false);
-      };
-      reader.readAsDataURL(file);
-    } catch {
+      await uploadDocumentAttachment(params.id, file);
+      await fetchAttachments();
+    } catch (error) {
+      setAttachmentActionError(error instanceof Error ? error.message : 'Unable to confirm the upload. Refresh the attachment list before trying again.');
+    } finally {
       setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
-    if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
   const handleDeleteAttachment = async (attachmentId: string) => {
     setDeletingAttachment(attachmentId);
+    setAttachmentActionError('');
     try {
-      await fetch(`/api/attachments/${attachmentId}`, { method: 'DELETE' });
-      fetchAttachments();
+      const response = await fetch(`/api/attachments/${attachmentId}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('The attachment could not be deleted.');
+      await fetchAttachments();
+    } catch {
+      setAttachmentActionError('Unable to confirm deletion. Refresh the attachment list before trying again.');
     } finally {
       setDeletingAttachment(null);
     }
   };
 
-  const handleCreateRelationship = async () => {
-    if (!relName.trim() || !relTargetId) return;
-    setCreatingRelationship(true);
-    try {
-      const res = await fetch('/api/relationships', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: relName,
-          sourceType: 'document',
-          sourceId: params.id,
-          targetType: relTargetType,
-          targetId: relTargetId,
-        }),
-      });
-      if (res.ok) {
-        setRelName('');
-        setRelTargetId('');
-        setShowRelationshipForm(false);
-        fetchRelationships();
-      }
-    } finally {
-      setCreatingRelationship(false);
-    }
-  };
-
-  const handleDeleteRelationship = async (relationshipId: string) => {
-    setDeletingRelationship(relationshipId);
-    try {
-      await fetch(`/api/relationships/${relationshipId}`, { method: 'DELETE' });
-      fetchRelationships();
-    } finally {
-      setDeletingRelationship(null);
-    }
-  };
+  if (draft.revoked) return <p role="alert" className="p-6">This editor was closed after sign-out. Reload and sign in before continuing.</p>;
 
   if (loading) {
     return (
@@ -515,7 +445,8 @@ export default function DocumentDetailPage() {
     return (
       <div className="text-center py-20">
         <FileText className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-        <h2 className="text-xl font-semibold text-slate-900">Document not found</h2>
+        <h2 role="alert" className="text-xl font-semibold text-slate-900">{loadError || 'Document not found'}</h2>
+        <button onClick={() => setLoadAttempt(value => value + 1)} className="btn-secondary mt-3">Retry loading document</button>
         <Link href="/dashboard/documents" className="text-blue-600 hover:underline mt-2 inline-block">
           Back to documents
         </Link>
@@ -523,15 +454,19 @@ export default function DocumentDetailPage() {
     );
   }
 
-  const allRelationships = [
-    ...outgoingRelationships.map((r) => ({ ...r, direction: 'outgoing' as const })),
-    ...incomingRelationships.map((r) => ({ ...r, direction: 'incoming' as const })),
-  ];
+  if (doc.canEdit === false) return (
+    <div className="max-w-4xl mx-auto space-y-6">
+      <Link href="/dashboard/documents" className="btn-secondary">Back to documents</Link>
+      <h1 className="text-2xl font-bold">{doc.title}</h1>
+      <p className="text-sm text-slate-500">Read only · Last updated {formatDate(doc.updatedAt)}</p>
+      <MarkdownPreview content={doc.content} />
+    </div>
+  );
 
   return (
     <div className="max-w-7xl mx-auto space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
           <Link href="/dashboard/documents" className="p-2 hover:bg-slate-100 rounded-lg">
             <ArrowLeft className="w-5 h-5" />
@@ -576,14 +511,58 @@ export default function DocumentDetailPage() {
       </div>
 
       {/* Two-column layout */}
-      <div className="flex gap-6 items-start">
+      {conflict && <section className="card p-4 space-y-3" aria-label="Save conflict comparison">
+        <h2 className="font-semibold">Resolve conflicting edits</h2>
+        <p className="text-sm">The server has a newer version. Edit your local text to combine the changes you want to keep. Accepting the baseline below does not save; Save Now checks for further server changes.</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div><h3 className="font-medium">Latest server version: {conflict.title}</h3>
+            <p className="text-sm">Category: {conflict.category} · Tags: {conflict.tags.map(tag => tag.name).join(', ')} · Visibility: {conflict.visibility || 'private'} · Review: {conflict.reviewDate || 'None'}</p>
+            <pre className="whitespace-pre-wrap break-words max-h-80 overflow-auto text-sm">{conflict.content}</pre>
+          </div>
+          <div><h3 className="font-medium">Your local edits: {title}</h3>
+            <p className="text-sm">Category: {category} · Tags: {tags} · Visibility: {visibility} · Review: {reviewDate || 'None'}</p>
+            <pre className="whitespace-pre-wrap break-words max-h-80 overflow-auto text-sm">{content}</pre>
+          </div>
+        </div>
+        <button className="btn-primary" onClick={() => {
+          versionRef.current = conflict.updatedAt;
+          lastSavedRef.current = JSON.stringify({ t: conflict.title, c: conflict.content, cat: conflict.category,
+            tg: conflict.tags.map(tag => tag.name).join(', '), rd: conflict.reviewDate ? new Date(conflict.reviewDate).toISOString().slice(0, 10) : '', v: conflict.visibility || 'private' });
+          setDirty(liveSnapshotRef.current !== lastSavedRef.current);
+          setDoc(conflict);
+          setConflict(null);
+          setSaveError('Server baseline accepted. Review your local edits, then use Save Now. Autosave remains paused.');
+        }}>Keep local edits against this server version</button>
+      </section>}
+      {draft.error && <p role="alert" className="text-amber-700">{draft.error}</p>}
+      {hasUnsavedChanges && draft.savedAt && !draft.error && <p role="status" className="text-sm text-slate-500">Unsaved edits protected in this browser at {new Date(draft.savedAt).toLocaleTimeString()}.</p>}
+      {draft.candidates.length > 0 && <section className="card p-4 space-y-3" aria-label="Recover unsaved edits">
+        <h2 className="font-semibold">Recover unsaved edits</h2>
+        <p className="text-sm">Browser copies expire after seven days. Compare a copy before restoring it; the server document stays unchanged until you save.</p>
+        {draft.candidates.map(candidate => <div key={candidate.instanceId} className="flex flex-wrap items-center gap-3">
+          <span>{candidate.fields.title || 'Untitled'} · {new Date(candidate.savedAt).toLocaleString()}</span>
+          <button className="btn-secondary" onClick={() => setRecoveryPreview(candidate)}>Compare draft</button>
+          <button className="btn-secondary" onClick={() => { if (confirm('Discard this browser copy?')) { draft.discard(candidate); if (recoveryPreview?.instanceId === candidate.instanceId) setRecoveryPreview(null); } }}>Discard draft</button>
+        </div>)}
+      </section>}
+      {recoveryPreview && <section className="card p-4 space-y-3" aria-label="Draft comparison">
+        <h2 className="font-semibold">Saved version and recovered copy</h2>
+        <p className="text-sm">{recoveryPreview.fields.baseUpdatedAt === doc.updatedAt ? 'The copy started from this saved version.' : 'The server version differs from the copy’s original version. Review both before saving.'} Concurrent server changes are checked again when you save.</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div><h3 className="font-medium">Saved version: {doc.title}</h3><p className="text-sm">Category: {doc.category} · Tags: {doc.tags.map(tag => tag.name).join(', ')} · Visibility: {doc.visibility || 'private'} · Review: {doc.reviewDate || 'None'}</p><pre className="whitespace-pre-wrap break-words max-h-80 overflow-auto text-sm">{doc.content}</pre></div>
+          <div><h3 className="font-medium">Browser copy: {recoveryPreview.fields.title}</h3><p className="text-sm">Category: {recoveryPreview.fields.category} · Tags: {recoveryPreview.fields.tags} · Visibility: {recoveryPreview.fields.visibility || 'private'} · Review: {recoveryPreview.fields.reviewDate || 'None'}</p><pre className="whitespace-pre-wrap break-words max-h-80 overflow-auto text-sm">{recoveryPreview.fields.content}</pre></div>
+        </div>
+        <button className="btn-primary" onClick={() => restoreDraft(recoveryPreview)}>Restore a copy into editor</button>
+        <button className="btn-secondary ml-2" onClick={() => setRecoveryPreview(null)}>Close comparison</button>
+      </section>}
+      <div className="flex flex-col xl:flex-row gap-6 items-start">
         {/* Left: Editor */}
-        <div className="flex-1 min-w-0 card p-6 space-y-6">
+        <div className="w-full flex-1 min-w-0 card p-4 sm:p-6 space-y-6">
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
             <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="input-field text-lg" />
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Category</label>
               <select value={category} onChange={(e) => setCategory(e.target.value)} className="input-field">
@@ -609,12 +588,7 @@ export default function DocumentDetailPage() {
                   <button
                     type="button"
                     onClick={async () => {
-                      await fetch(`/api/documents/${params.id}`, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ reviewAcknowledged: true, reviewDate }),
-                      });
-                      setReviewDue(false);
+                      if (await updateMetadata({ reviewAcknowledged: true, reviewDate })) setReviewDue(false);
                     }}
                     className="text-xs px-2.5 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors whitespace-nowrap"
                   >
@@ -702,10 +676,12 @@ export default function DocumentDetailPage() {
               </div>
             )}
           </div>
-          <div className="flex justify-end items-center gap-3">
-            <span aria-live="polite" className="text-xs mr-auto" style={{ color: 'var(--muted)' }}>
-              {saving
+          <div className="flex flex-wrap justify-end items-center gap-3">
+            <span role={saveError ? 'alert' : 'status'} aria-live="polite" className={saveError ? 'w-full rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800' : 'text-xs mr-auto text-slate-500'}>
+              {saveError ? saveError : saving
                 ? 'Saving…'
+                : autosavePaused
+                  ? 'Autosave paused — review your edits and use Save Now.'
                 : dirty
                   ? 'Unsaved changes — autosaving…'
                   : savedAt
@@ -728,7 +704,7 @@ export default function DocumentDetailPage() {
         </div>
 
         {/* Right: Sidebar panels */}
-        <div className="w-80 shrink-0 space-y-4 sticky top-24">
+        <div className="w-full xl:w-80 shrink-0 space-y-4 xl:sticky xl:top-24">
           {/* Related Items */}
           {doc?.id && <RelatedItems entityType="document" entityId={doc.id} />}
 
@@ -751,7 +727,7 @@ export default function DocumentDetailPage() {
               <div className="border-t border-slate-100 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-slate-500">
-                    {revisionsLoading ? 'Loading...' : `${revisions.length} revision${revisions.length !== 1 ? 's' : ''}`}
+                    {revisionsLoading ? 'Loading...' : revisionsError ? 'History unavailable' : `${revisions.length} revision${revisions.length !== 1 ? 's' : ''}`}
                   </p>
                   <button onClick={() => setShowRevisionForm(!showRevisionForm)} className="btn-primary text-xs flex items-center gap-1">
                     <Save className="w-3 h-3" /> Save Revision
@@ -770,6 +746,11 @@ export default function DocumentDetailPage() {
                 )}
                 {revisionsLoading ? (
                   <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+                ) : revisionsError ? (
+                  <div role="alert" className="text-sm text-red-600">
+                    <p>{revisionsError}</p>
+                    <button onClick={() => void fetchRevisions()} className="btn-secondary mt-2">Retry loading history</button>
+                  </div>
                 ) : revisions.length === 0 ? (
                   <p className="text-center text-slate-400 py-6 text-sm">No revisions yet</p>
                 ) : (
@@ -810,7 +791,7 @@ export default function DocumentDetailPage() {
               <div className="border-t border-slate-100 p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-slate-500">
-                    {attachmentsLoading ? 'Loading...' : `${attachments.length} file${attachments.length !== 1 ? 's' : ''}`}
+                    {attachmentsLoading ? 'Loading...' : attachmentsError ? 'Attachments unavailable' : `${attachments.length} file${attachments.length !== 1 ? 's' : ''}`}
                   </p>
                   <div>
                     <input ref={fileInputRef} type="file" onChange={handleFileUpload} className="hidden" />
@@ -819,8 +800,12 @@ export default function DocumentDetailPage() {
                     </button>
                   </div>
                 </div>
+                {attachmentActionError && <p role="alert" className="text-sm text-red-600">{attachmentActionError}</p>}
+                <button onClick={() => void fetchAttachments()} disabled={attachmentsLoading} className="btn-secondary text-xs">Refresh attachments</button>
                 {attachmentsLoading ? (
                   <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
+                ) : attachmentsError ? (
+                  <p role="alert" className="text-sm text-red-600">{attachmentsError}</p>
                 ) : attachments.length === 0 ? (
                   <p className="text-center text-slate-400 py-6 text-sm">No attachments</p>
                 ) : (
@@ -848,90 +833,6 @@ export default function DocumentDetailPage() {
             )}
           </div>
 
-          {/* Relationships */}
-          <div className="card overflow-hidden">
-            <button
-              onClick={() => setRelationshipsExpanded(!relationshipsExpanded)}
-              className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Link2 className="w-5 h-5 text-slate-500" />
-                <span className="font-semibold text-slate-900">Relationships</span>
-                {allRelationships.length > 0 && !relationshipsExpanded && (
-                  <span className="text-xs bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">{allRelationships.length}</span>
-                )}
-              </div>
-              {relationshipsExpanded ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
-            </button>
-            {relationshipsExpanded && (
-              <div className="border-t border-slate-100 p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-slate-500">
-                    {relationshipsLoading ? 'Loading...' : `${allRelationships.length} link${allRelationships.length !== 1 ? 's' : ''}`}
-                  </p>
-                  <button onClick={() => setShowRelationshipForm(!showRelationshipForm)} className="btn-primary text-xs flex items-center gap-1">
-                    <Plus className="w-3 h-3" /> Add
-                  </button>
-                </div>
-                {showRelationshipForm && (
-                  <div className="bg-slate-50 rounded-lg p-3 space-y-2">
-                    <input type="text" value={relName} onChange={(e) => setRelName(e.target.value)} className="input-field text-sm" placeholder="e.g. hosted_on, managed_by" />
-                    <select value={relTargetType} onChange={(e) => setRelTargetType(e.target.value)} className="input-field text-sm">
-                      <option value="document">Document</option>
-                      <option value="password">Password</option>
-                      <option value="domain">Domain</option>
-                      <option value="asset">Asset</option>
-                    </select>
-                    <select value={relTargetId} onChange={(e) => setRelTargetId(e.target.value)} className="input-field text-sm" disabled={relLoadingTargets}>
-                      <option value="">{relLoadingTargets ? 'Loading...' : 'Select target'}</option>
-                      {relTargetOptions.map((opt) => (
-                        <option key={opt.id} value={opt.id}>{opt.title}</option>
-                      ))}
-                    </select>
-                    <div className="flex justify-end gap-2">
-                      <button onClick={() => { setShowRelationshipForm(false); setRelName(''); setRelTargetId(''); }} className="btn-secondary text-xs">Cancel</button>
-                      <button onClick={handleCreateRelationship} disabled={creatingRelationship || !relName.trim() || !relTargetId} className="btn-primary text-xs flex items-center gap-1">
-                        {creatingRelationship ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />} Create
-                      </button>
-                    </div>
-                  </div>
-                )}
-                {relationshipsLoading ? (
-                  <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-slate-400" /></div>
-                ) : allRelationships.length === 0 ? (
-                  <p className="text-center text-slate-400 py-6 text-sm">No relationships</p>
-                ) : (
-                  <div className="space-y-1.5 max-h-64 overflow-y-auto">
-                    {allRelationships.map((rel) => {
-                      const isOut = rel.direction === 'outgoing';
-                      const srcType = isOut ? rel.sourceType : rel.targetType;
-                      const srcId = isOut ? rel.sourceId : rel.targetId;
-                      const srcName = isOut ? rel.sourceName : rel.targetName;
-                      const tgtType = isOut ? rel.targetType : rel.sourceType;
-                      const tgtId = isOut ? rel.targetId : rel.sourceId;
-                      const tgtName = isOut ? rel.targetName : rel.sourceName;
-                      return (
-                        <div key={rel.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-lg hover:bg-slate-100">
-                          <div className="min-w-0 flex-1">
-                            <div className="flex items-center gap-1 text-xs">
-                              <span className="font-medium text-slate-900">{rel.name}</span>
-                              <span className="text-slate-400">·</span>
-                              <Link href={getRelUrl(srcType, srcId)} className="text-blue-600 hover:underline truncate">{srcName}</Link>
-                              <span className="text-slate-400">→</span>
-                              <Link href={getRelUrl(tgtType, tgtId)} className="text-emerald-600 hover:underline truncate">{tgtName}</Link>
-                            </div>
-                          </div>
-                          <button onClick={() => handleDeleteRelationship(rel.id)} disabled={deletingRelationship === rel.id} className="p-1 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded ml-2">
-                            {deletingRelationship === rel.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                          </button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
         </div>
       </div>
 
@@ -939,8 +840,8 @@ export default function DocumentDetailPage() {
         isOpen={showDelete}
         onClose={() => setShowDelete(false)}
         onConfirm={handleDelete}
-        title="Delete Document"
-        message="Are you sure you want to delete this document? This action cannot be undone."
+        title="Move to Trash"
+        message="This document will be hidden from normal views. You can restore it, including its history and attachments, from Trash."
       />
     </div>
   );

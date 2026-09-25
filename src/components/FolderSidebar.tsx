@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   Folder,
   FolderOpen,
@@ -35,9 +35,11 @@ interface FolderSidebarProps {
   onSelectFolder: (id: string | null) => void;
   refreshTrigger?: number;
   totalCount?: number;
+  organizationId?: string;
+  onFoldersChanged?: () => void;
 }
 
-export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger, totalCount }: FolderSidebarProps) {
+export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger, totalCount, organizationId, onFoldersChanged }: FolderSidebarProps) {
   const [folders, setFolders] = useState<FolderItem[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
@@ -49,54 +51,72 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger
   const [editName, setEditName] = useState('');
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const fetchFolders = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const query = organizationId ? `?${new URLSearchParams({ organizationId })}` : '';
+      const res = await fetch(`/api/folders${query}`, { signal });
+      if (!res.ok) throw new Error('Could not load folders. Please retry.');
+      const data = await res.json();
+      if (!signal?.aborted) { setFolders(data); setError(''); }
+    } catch (cause) {
+      if (!signal?.aborted) setError(cause instanceof Error ? cause.message : 'Could not load folders.');
+    } finally { if (!signal?.aborted) setLoading(false); }
+  }, [organizationId]);
 
   useEffect(() => {
-    fetchFolders();
-  }, [refreshTrigger]);
+    const controller = new AbortController();
+    void fetchFolders(controller.signal);
+    return () => controller.abort();
+  }, [refreshTrigger, fetchFolders]);
 
-  const fetchFolders = async () => {
-    const res = await fetch('/api/folders');
-    const data = await res.json();
-    setFolders(data);
-    setLoading(false);
+  const mutate = async (url: string, method: string, body?: object) => {
+    const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || 'Could not update the folder. Please try again.');
+    }
+    onFoldersChanged?.();
+    await fetchFolders();
   };
 
   const handleCreateFolder = async () => {
-    if (!newFolderName.trim()) return;
-    const res = await fetch('/api/folders', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    if (!newFolderName.trim() || busy) return;
+    setBusy(true); setError('');
+    try {
+      await mutate('/api/folders', 'POST', {
         name: newFolderName.trim(),
         color: newFolderColor,
         parentId: newFolderParent,
-      }),
-    });
-    if (res.ok) {
-      await fetchFolders();
+        ...(organizationId ? { organizationId } : {}),
+      });
       setNewFolderName('');
       setShowNewFolder(false);
       setNewFolderParent(null);
-    }
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not create folder.'); }
+    finally { setBusy(false); }
   };
 
   const handleRename = async (id: string) => {
-    if (!editName.trim()) return;
-    await fetch(`/api/folders/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: editName.trim() }),
-    });
-    await fetchFolders();
-    setEditingId(null);
+    if (!editName.trim() || busy) return;
+    setBusy(true); setError('');
+    try {
+      await mutate(`/api/folders/${id}`, 'PUT', { name: editName.trim() });
+      setEditingId(null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not rename folder.'); }
+    finally { setBusy(false); }
   };
 
   const handleDelete = async () => {
-    if (!deleteId) return;
-    await fetch(`/api/folders/${deleteId}`, { method: 'DELETE' });
-    if (selectedFolderId === deleteId) onSelectFolder(null);
-    await fetchFolders();
-    setDeleteId(null);
+    if (!deleteId || busy) return;
+    setBusy(true); setError('');
+    try {
+      await mutate(`/api/folders/${deleteId}`, 'DELETE');
+      if (selectedFolderId === deleteId) onSelectFolder(null);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Could not delete folder.'); }
+    finally { setDeleteId(null); setBusy(false); }
   };
 
   const toggleExpand = (id: string) => {
@@ -110,7 +130,7 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger
   };
 
   // Build tree
-  const rootFolders = folders.filter((f) => !f.parentId);
+  const rootFolders = folders.filter((f) => !f.parentId || !folders.some(parent => parent.id === f.parentId));
   const getChildren = (parentId: string) => folders.filter((f) => f.parentId === parentId);
 
   const renderFolder = (folder: FolderItem, depth: number = 0) => {
@@ -131,6 +151,7 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger
         >
           {hasChildren ? (
             <button
+              aria-label={`Toggle ${folder.name} subfolders`}
               onClick={(e) => {
                 e.stopPropagation();
                 toggleExpand(folder.id);
@@ -147,8 +168,7 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger
             <span className="w-5" />
           )}
 
-          <button
-            onClick={() => onSelectFolder(folder.id)}
+          <div
             className="flex items-center gap-2 flex-1 min-w-0"
           >
             {isExpanded && hasChildren ? (
@@ -160,6 +180,8 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger
             {isEditing ? (
               <div className="flex items-center gap-1 flex-1">
                 <input
+                  aria-label="Rename folder"
+                  maxLength={200}
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
@@ -172,6 +194,7 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger
                   onClick={(e) => e.stopPropagation()}
                 />
                 <button
+                  aria-label="Save folder name"
                   onClick={(e) => {
                     e.stopPropagation();
                     handleRename(folder.id);
@@ -181,6 +204,7 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger
                   <Check className="w-3.5 h-3.5" />
                 </button>
                 <button
+                  aria-label="Cancel rename"
                   onClick={(e) => {
                     e.stopPropagation();
                     setEditingId(null);
@@ -191,15 +215,16 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger
                 </button>
               </div>
             ) : (
-              <span className="text-sm truncate flex-1 text-left">{folder.name}</span>
+              <button onClick={() => onSelectFolder(folder.id)} className="text-sm truncate flex-1 text-left">{folder.name}</button>
             )}
-          </button>
+          </div>
 
           {!isEditing && (
             <div className="flex items-center gap-0.5">
               <span className="text-xs text-slate-400 mr-1">{folder._count.documents}</span>
               <div className="relative">
                 <button
+                  aria-label={`Actions for ${folder.name}`}
                   onClick={(e) => {
                     e.stopPropagation();
                     setContextMenu(contextMenu === folder.id ? null : folder.id);
@@ -282,6 +307,7 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger
   return (
     <>
       <div className="space-y-1">
+        {error && !showNewFolder && <div role="alert" className="text-sm text-red-600"><p>{error}</p><button onClick={() => fetchFolders()} className="btn-secondary">Retry</button></div>}
         <div className="flex items-center justify-between px-2 mb-2">
           <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Folders</h3>
           <button
@@ -336,6 +362,8 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger
           <div>
             <label className="block text-sm font-medium text-slate-700 mb-1">Folder Name</label>
             <input
+              aria-label="Folder Name"
+              maxLength={200}
               type="text"
               value={newFolderName}
               onChange={(e) => setNewFolderName(e.target.value)}
@@ -380,10 +408,11 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger
             >
               Cancel
             </button>
-            <button onClick={handleCreateFolder} className="btn-primary">
+            <button onClick={handleCreateFolder} disabled={busy || !newFolderName.trim()} className="btn-primary">
               Create Folder
             </button>
           </div>
+          {error && <p role="alert" className="text-red-600">{error}</p>}
         </div>
       </Modal>
 
@@ -392,7 +421,7 @@ export function FolderSidebar({ selectedFolderId, onSelectFolder, refreshTrigger
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
         title="Delete Folder"
-        message="Documents in this folder will be moved to the root. Subfolders will also be deleted. Continue?"
+        message="Documents will be moved to the root. Subfolders and their contents will be preserved under this folder's parent, or at the root if there is no parent. Delete this folder?"
       />
     </>
   );

@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { formatDate } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/UIComponents';
-import { RelatedItemsPanel } from '@/components/RelatedItemsPanel';
+import { RelatedItems } from '@/components/RelatedItems';
 
 interface PasswordEntry {
   id: string;
@@ -679,7 +679,7 @@ export default function PasswordDetailPage() {
       </div>
 
       <div className="lg:col-span-1">
-        <RelatedItemsPanel entityType="password" entityId={pass.id} entityName={pass.name} />
+        <RelatedItems entityType="password" entityId={pass.id} />
       </div>
     </div>
 

@@ -25,7 +25,8 @@ CI (`.github/workflows/ci.yml`) runs: lint → tsc → unit tests → fresh Post
   docker-compose build init app && docker-compose run --rm init && docker-compose up -d app
   ```
   A stale init image causes silent schema drift — this caused two production incidents.
-- Seed (`prisma/seed.ts`) is idempotent and creates both admins with password `admin12345`.
+- Seed (`prisma/seed.ts`) is idempotent and creates only `admin@flexdocs.local`, requiring
+  `BOOTSTRAP_ADMIN_PASSWORD` (16+ characters) for first creation. It never resets existing accounts.
   Keep it idempotent: any new fixture needs a skip-if-exists guard, and uniqueness checks
   must match DB-level constraints exactly (e.g., `Domain.name` is globally unique).
 
@@ -40,7 +41,7 @@ CI (`.github/workflows/ci.yml`) runs: lint → tsc → unit tests → fresh Post
   never empty-string matches. Single-item routes verify ownership or membership.
 - **Partial updates**: PUT handlers must only write fields the client actually sent
   (`...(x !== undefined ? { x } : {})`). Never pass user-supplied *names* where Prisma expects
-  relation *ids* (tags are synced via raw join-table SQL for this reason).
+  relation *ids* (resolve tag names through the compound unique key with `connectOrCreate`).
 - **Audit trail**: significant mutations call `auditLog()` from `src/lib/audit.ts` (fire-and-forget).
 - **Rate limits** live in `src/middleware.ts`: GET/HEAD 400/min-ish, writes 60 per path per IP per
   15min via Redis. Don't add chatty polling endpoints without checking limits.

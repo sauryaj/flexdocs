@@ -1,125 +1,62 @@
 import { NextResponse } from 'next/server';
+import { z } from 'zod';
 import { prisma } from '@/lib/prisma';
 import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/rbac';
-import { type UserRole } from '@prisma/client';
-
-async function resolveName(type: string, id: string): Promise<string> {
-  try {
-    switch (type) {
-      case 'document': {
-        const d = await prisma.document.findUnique({ where: { id }, select: { title: true } });
-        return d?.title || id;
-      }
-      case 'password': {
-        const p = await prisma.password.findUnique({ where: { id }, select: { name: true } });
-        return p?.name || id;
-      }
-      case 'domain': {
-        const dom = await prisma.domain.findUnique({ where: { id }, select: { name: true } });
-        return dom?.name || id;
-      }
-      case 'asset': {
-        const a = await prisma.flexibleAsset.findUnique({ where: { id }, select: { name: true } });
-        return a?.name || id;
-      }
-      case 'server': {
-        const s = await prisma.server.findUnique({ where: { id }, select: { name: true } });
-        return s?.name || id;
-      }
-      case 'checklist': {
-        const c = await prisma.checklist.findUnique({ where: { id }, select: { name: true } });
-        return c?.name || id;
-      }
-      case 'ssl': {
-        const cert = await prisma.sslCertificate.findUnique({ where: { id }, select: { hostname: true } });
-        return cert?.hostname || id;
-      }
-      case 'network': {
-        const n = await prisma.networkDocument.findUnique({ where: { id }, select: { name: true } });
-        return n?.name || id;
-      }
-      default:
-        return id;
-    }
-  } catch {
-    return id;
-  }
-}
+import { getOrgScope } from '@/lib/org-scope';
+import { accessibleEntity, entityTypes } from '@/lib/entity-access';
+import { auditLog } from '@/lib/audit';
 
 export async function GET(req: Request) {
   const user = await auth();
-  if (!user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const scope = await getOrgScope(user.id, user.role);
+  const q = new URL(req.url).searchParams;
+  const type = q.get('entityType'), id = q.get('entityId');
+  const sourceType = q.get('sourceType'), sourceId = q.get('sourceId');
+  const targetType = q.get('targetType'), targetId = q.get('targetId');
+  for (const [kind, key] of [[type, id], [sourceType, sourceId], [targetType, targetId]]) {
+    if (Boolean(kind) !== Boolean(key)) return NextResponse.json({ error: 'Entity type and id must be supplied together' }, { status: 400 });
+    if (kind && key && await accessibleEntity(kind, key, user.id, scope) === null) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
-
-  const { searchParams } = new URL(req.url);
-  const entityType = searchParams.get('entityType');
-  const entityId = searchParams.get('entityId');
-  const sourceType = searchParams.get('sourceType');
-  const sourceId = searchParams.get('sourceId');
-
-  let relationships = [];
-
-  if (entityType && entityId) {
-    relationships = await prisma.relationship.findMany({
-      where: {
-        OR: [
-          { sourceType: entityType, sourceId: entityId },
-          { targetType: entityType, targetId: entityId },
-        ],
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-  } else {
-    const where: Record<string, string> = {};
-    if (sourceType) where.sourceType = sourceType;
-    if (sourceId) where.sourceId = sourceId;
-    relationships = await prisma.relationship.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  const enriched = await Promise.all(
-    relationships.map(async (rel) => ({
-      ...rel,
-      sourceName: await resolveName(rel.sourceType, rel.sourceId),
-      targetName: await resolveName(rel.targetType, rel.targetId),
-    }))
-  );
-
-  return NextResponse.json(enriched);
+  const rows = await prisma.relationship.findMany({ where: {
+    ...(type && id ? { OR: [{ sourceType: type, sourceId: id }, { targetType: type, targetId: id }] } : {}),
+    ...(sourceType && sourceId ? { sourceType, sourceId } : {}),
+    ...(targetType && targetId ? { targetType, targetId } : {}),
+  }, orderBy: { createdAt: 'desc' } });
+  const cache = new Map<string, Promise<string | null>>();
+  const name = (kind: string, key: string) => {
+    const cacheKey = `${kind}:${key}`;
+    if (!cache.has(cacheKey)) cache.set(cacheKey, accessibleEntity(kind, key, user.id, scope));
+    return cache.get(cacheKey)!;
+  };
+  const rowsWithNames = await Promise.all(rows.map(async row => ({ ...row,
+    sourceName: await name(row.sourceType, row.sourceId), targetName: await name(row.targetType, row.targetId),
+  })));
+  return NextResponse.json(rowsWithNames.filter(row => row.sourceName !== null && row.targetName !== null));
 }
 
+const schema = z.object({
+  sourceType: z.enum(entityTypes), sourceId: z.string().min(1), targetType: z.enum(entityTypes), targetId: z.string().min(1),
+  name: z.string().trim().max(100).optional(), notes: z.string().max(2000).nullable().optional(),
+});
 export async function POST(req: Request) {
   const user = await auth();
-  if (!user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!hasPermission(user.role, 'document.create')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  const parsed = schema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid relationship' }, { status: 400 });
+  const data = parsed.data;
+  const scope = await getOrgScope(user.id, user.role);
+  if (await accessibleEntity(data.sourceType, data.sourceId, user.id, scope, true) === null ||
+      await accessibleEntity(data.targetType, data.targetId, user.id, scope) === null) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (data.sourceType === data.targetType && data.sourceId === data.targetId) return NextResponse.json({ error: 'Cannot link a record to itself' }, { status: 400 });
+  try {
+    const relationship = await prisma.relationship.create({ data: { ...data, name: data.name || 'related_to' } });
+    void auditLog({ userId: user.id, action: 'relationship.create', resourceType: 'relationship', resourceId: relationship.id });
+    return NextResponse.json(relationship, { status: 201 });
+  } catch (error) {
+    if ((error as { code?: string }).code === 'P2002') return NextResponse.json({ error: 'These records are already linked with that relationship' }, { status: 409 });
+    throw error;
   }
-  if (!hasPermission(user.role as UserRole, 'document.create')) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  }
-
-  const { name, sourceType, sourceId, targetType, targetId, notes } = await req.json();
-
-  if (!sourceType || !sourceId || !targetType || !targetId) {
-    return NextResponse.json(
-      { error: 'sourceType, sourceId, targetType, and targetId are required' },
-      { status: 400 }
-    );
-  }
-
-  const relationship = await prisma.relationship.create({
-    data: {
-      name: name || null,
-      sourceType,
-      sourceId,
-      targetType,
-      targetId,
-      notes: notes || null,
-    },
-  });
-
-  return NextResponse.json(relationship, { status: 201 });
 }

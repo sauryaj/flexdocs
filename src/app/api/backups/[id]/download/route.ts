@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import { hasPermission } from '@/lib/rbac';
 import { auth } from '@/lib/auth';
 
 const BACKUP_DIR = process.env.BACKUP_DIR || '/backups';
@@ -8,6 +9,8 @@ const BACKUP_DIR = process.env.BACKUP_DIR || '/backups';
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await auth();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  if (!hasPermission(user.role, 'backup.read')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
 
   const { id } = await params;
   const name = /^flexdocs-backup-[\w-]+\.sql$/.test(id) ? id : null;

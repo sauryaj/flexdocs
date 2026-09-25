@@ -29,7 +29,7 @@ export async function GET() {
       select: { id: true, name: true },
     }),
     prisma.document.findMany({
-      where: { ...orgWhere, visibility: 'org', isArchived: false },
+      where: { deletedAt: null, ...orgWhere, visibility: 'org', isArchived: false },
       select: { id: true, title: true, updatedAt: true },
       orderBy: { updatedAt: 'desc' },
       take: 50,

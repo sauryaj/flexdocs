@@ -1,5 +1,6 @@
 'use client';
 
+import { searchEntities } from '@/lib/search-results';
 import { useCallback, useEffect, useState } from 'react';
 import {
   FileText, Key, Globe, Box, Server, CheckSquare, ShieldCheck, Network,
@@ -34,11 +35,13 @@ export function RelatedItems({ entityType, entityId }: { entityType: string; ent
   const [search, setSearch] = useState('');
   const [candidates, setCandidates] = useState<{ id: string; title: string }[]>([]);
   const [relationName, setRelationName] = useState('');
+  const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     try {
       const res = await fetch(`/api/relationships?entityType=${entityType}&entityId=${entityId}`);
+      if (!res.ok) throw new Error('Unable to load related items');
       if (res.ok) {
         const rels = await res.json();
         setItems(
@@ -49,7 +52,7 @@ export function RelatedItems({ entityType, entityId }: { entityType: string; ent
           ),
         );
       }
-    } finally {
+    } catch { setError('Unable to load related items. Try again.'); } finally {
       setLoading(false);
     }
   }, [entityType, entityId]);
@@ -58,34 +61,26 @@ export function RelatedItems({ entityType, entityId }: { entityType: string; ent
     load();
   }, [load]);
 
-  // Debounced candidate search against global search API
   useEffect(() => {
-    if (!pickerOpen) return;
-    if (!search.trim()) {
-      setCandidates([]);
-      return;
-    }
-    const t = setTimeout(async () => {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(search)}`);
-      if (res.ok) {
-        const data = await res.json();
-        // Flatten all groups but keep only rows of the chosen target type
-        const wanted: Record<string, string> = {
-          document: 'documents', password: 'passwords', domain: 'domains', asset: 'assets',
-          server: 'servers', checklist: 'checklists', network: '', ssl: '',
-        };
-        const groupKey = wanted[targetType];
-        const group = (data.groups ?? []).find((g: { type: string }) => g.type === groupKey);
-        setCandidates(group ? group.items.map((i: { id: string; title: string }) => ({ id: i.id, title: i.title })) : []);
-      }
+    setCandidates([]);
+    if (!pickerOpen || !search.trim()) return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(search)}`, { signal: controller.signal });
+        if (!res.ok) throw new Error('Unable to search records');
+        const entities = searchEntities(await res.json());
+        if (!controller.signal.aborted) setCandidates(entities.filter(e => e.type === targetType && !(e.id === entityId && e.type === entityType)).map(e => ({ id: e.id, title: e.name })));
+      } catch { if (!controller.signal.aborted) setError('Unable to search records. Try again.'); }
     }, 250);
-    return () => clearTimeout(t);
-  }, [search, pickerOpen, targetType]);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [search, pickerOpen, targetType, entityId, entityType]);
 
   const link = async (targetId: string) => {
     setBusy(true);
+    setError('');
     try {
-      await fetch('/api/relationships', {
+      const response = await fetch('/api/relationships', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -96,18 +91,23 @@ export function RelatedItems({ entityType, entityId }: { entityType: string; ent
           ...(relationName.trim() ? { name: relationName.trim() } : {}),
         }),
       });
+      if (!response.ok) { const result = await response.json(); throw new Error(result.error || 'Could not link records'); }
       setSearch('');
       setRelationName('');
       setCandidates([]);
       await load();
-    } finally {
+    } catch (error) { setError(error instanceof Error ? error.message : 'Could not link records'); } finally {
       setBusy(false);
     }
   };
 
   const unlink = async (relId: string) => {
-    await fetch(`/api/relationships/${relId}`, { method: 'DELETE' });
-    await load();
+    setError('');
+    try {
+      const response = await fetch(`/api/relationships/${relId}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('Could not unlink this record');
+      await load();
+    } catch { setError('Could not unlink this record. Check your access and retry.'); }
   };
 
   return (
@@ -131,6 +131,7 @@ export function RelatedItems({ entityType, entityId }: { entityType: string; ent
         </button>
       </div>
 
+      {error && <p role="alert" className="text-sm text-red-600 mb-3">{error}</p>}
       {pickerOpen && (
         <div className="mb-3 p-3 rounded-lg space-y-2" style={{ backgroundColor: 'var(--surface-2)' }}>
           <div className="flex gap-2">
@@ -167,7 +168,7 @@ export function RelatedItems({ entityType, entityId }: { entityType: string; ent
               {candidates.map((c) => (
                 <button
                   key={c.id}
-                  disabled={busy || c.id === entityId}
+                  disabled={busy || (c.id === entityId && targetType === entityType)}
                   onClick={() => link(c.id)}
                   className="w-full text-left px-3 py-1.5 text-xs hover:bg-[var(--surface-2)] transition-colors disabled:opacity-50"
                   style={{ color: 'var(--foreground)', borderBottom: '1px solid var(--card-border)' }}
@@ -194,7 +195,7 @@ export function RelatedItems({ entityType, entityId }: { entityType: string; ent
           {items.map((item) => {
             const meta = TYPE_META[item.otherType];
             const Icon = meta?.icon ?? Box;
-            const href = item.otherId && meta ? `${meta.routePrefix}/${item.otherId}` : undefined;
+            const href = item.otherId && meta ? item.otherType === 'ssl' ? meta.routePrefix : `${meta.routePrefix}/${item.otherId}` : undefined;
             return (
               <li key={item.id} className="group flex items-center gap-2 rounded-lg px-2 py-1.5 transition-colors hover:bg-[var(--surface-2)]">
                 <Icon className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--accent)' }} />

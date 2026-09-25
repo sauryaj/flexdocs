@@ -30,11 +30,13 @@ Then open **http://localhost:3001** and log in:
 
 | Email | Password |
 |---|---|
-| `admin@flexdocs.local` | `admin12345` |
+| `admin@flexdocs.local` | `BOOTSTRAP_ADMIN_PASSWORD` from the private `.env` |
 
-> **Change this password immediately** (Profile → Change Password) — it's public in the source code.
+> Setup generates a unique first-install password. Existing account passwords are preserved; review legacy admin accounts during upgrades.
 
 Custom port: `PORT=8080 bash scripts/setup.sh`
+
+Readiness checks discover the running app's published port through Compose, including a port configured only in `.env`. Both setup and `make health` require HTTP 200 and return a nonzero exit status on failure. The default is 60 attempts, with a five-second request limit and three seconds between attempts. Adjust `HEALTH_ATTEMPTS` and `HEALTH_INTERVAL_SECONDS` for slower hosts. Run these commands on the Docker host; remote Docker contexts are not supported by this host-side probe. The reported address is the direct local app address; configure `NEXTAUTH_URL` separately for your HTTPS reverse proxy.
 
 ---
 
@@ -64,12 +66,12 @@ Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) with W
 If you have `make`, these wrap the common operations:
 
 ```bash
-make deploy         # setup/update: secrets + migrations + build + start
+make deploy         # initial setup: secrets + migrations + build + start
 make stop           # stop everything (data kept)
 make restart        # restart app only (fast)
 make logs           # follow app logs
 make status         # container status + health
-make health         # health JSON
+make health         # wait for readiness; nonzero exit on failure
 make backup         # dump database to backups/*.sql
 make restore FILE=backups/flexdocs-XXX.sql
 make restore-drill  # prove a backup restores into a scratch DB (safe)
@@ -85,18 +87,15 @@ make clean          # remove containers, volumes, images
 git clone https://github.com/sauryaj/flexdocs.git
 cd flexdocs
 
-# 1. Generate secrets
-cp .env.example .env
-sed -i.bak "s|ENCRYPTION_KEY=.*|ENCRYPTION_KEY=\"$(openssl rand -hex 32)\"|" .env
-sed -i.bak "s|NEXTAUTH_SECRET=.*|NEXTAUTH_SECRET=\"$(openssl rand -hex 32)\"|" .env
-rm .env.bak
-# Edit .env: set DB_PASSWORD, NEXTAUTH_URL, SMTP_* as needed
+# 1. Generate private configuration with unique secrets
+bash scripts/setup.sh --env-only
+# Edit .env: set NEXTAUTH_URL, PORT, SMTP_* as needed
 
 # 2. Start (builds images, applies migrations, seeds)
-docker compose up -d --build
+bash scripts/setup.sh
 
 # 3. Wait for health
-curl http://localhost:3001/api/health
+bash scripts/wait-for-health.sh
 ```
 
 `docker-compose` (v1, hyphenated) works anywhere `docker compose` appears above.
@@ -105,15 +104,27 @@ curl http://localhost:3001/api/health
 
 ## 5. Updating to a new version
 
+Developers can verify deployment with `npm run test:deployment` (Docker, Compose with JSON configuration output, Git history, and Node required). It runs the real setup/update scripts in a unique temporary project, publishes only the app on a random loopback port, and keeps database/cache ports private. It installs the pinned earlier reliability baseline, creates synthetic records, upgrades to the working source, verifies preservation and a pre-upgrade SQL backup, then tests a fresh current installation. All disposable containers/volumes are removed; failed-run diagnostics remain in the printed temporary directory. This is not a production upgrade or a proof that every historical version is compatible. `DEPLOYMENT_BASE_REF` selects another compatible Git baseline explicitly.
+
 ```bash
 git pull
-docker compose build init app
-docker compose run --rm init     # applies DB migrations + seeds (idempotent)
-docker compose up -d
+make update
 ```
 
-> **Always re-run the init container after pulling.** It applies database migrations
-> (`prisma migrate deploy`). Skipping it after a schema change causes missing-column errors.
+`make update` creates a database backup, rebuilds the app and migration images, runs
+the migration/seed container, starts the new app, and checks health. It is safe to
+run repeatedly. If you do not have `make`, use the equivalent commands below:
+
+```bash
+bash scripts/update.sh
+```
+
+Always run the init container after pulling. It applies `prisma migrate deploy`;
+skipping it after a schema change causes missing-column errors.
+
+The setup and update scripts rebuild both images and run the new initializer explicitly. Application startup uses `--no-deps` only after successful initialization; it cannot reuse a stale initializer as evidence that migrations ran. Commands stop on the first failure. An update error identifies the failed phase, and no later phase executes. `make rebuild` is an alias for this backed-up update flow.
+
+Do not use `make clean` or `make reset` for upgrades: they remove database, uploads, and backup volumes and require the explicit `CONFIRM_DELETE_DATA=yes` flag. An application rollback is not automatically safe after migrations. Check the release's schema compatibility first; if incompatible, restore a matching database/uploads backup and its required keys into an isolated environment before switching traffic. This workflow does not automatically reverse migrations or roll back failed upgrades.
 
 **Back up first (recommended):**
 
@@ -139,7 +150,7 @@ Restore: `make restore FILE=backup-2026-01-15.sql`
 
 Schedule a nightly backup with cron:
 ```
-0 3 * * * cd /path/to/flexdocs && docker compose exec db pg_dump -U flexdocs flexdocs > backups/flexdocs-$(date +\%F).sql
+0 3 * * * cd /path/to/flexdocs && bash scripts/database-backup.sh
 ```
 
 ---
@@ -170,3 +181,7 @@ Schedule a nightly backup with cron:
 | Forgot admin password entirely | `docker compose run --rm init` re-seeds only missing users; to force-reset, restore a backup or use `make reset` |
 
 Still stuck? Open an issue with the output of `docker compose logs app init` and `make status`.
+
+See [RECOVERY.md](docs/RECOVERY.md) for backup scope and isolated restore verification. Protect uploads and the encryption key separately from SQL dumps.
+
+Fresh installations require a unique `BOOTSTRAP_ADMIN_PASSWORD` of at least 16 characters. `scripts/setup.sh` generates it into a mode-restricted `.env`. Existing accounts are not reset. Remove old public passwords from both legacy admins before exposing an upgraded installation. `docker-compose.discovery.yml` explicitly enables privileged local Docker discovery; base Compose does not mount the Docker socket.

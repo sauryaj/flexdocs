@@ -5,6 +5,7 @@ import { hasAnyPermission } from '@/lib/rbac';
 import { auditLog } from '@/lib/audit';
 import { encrypt } from '@/lib/encryption';
 import { restoreBackup } from '@/lib/import';
+import { canAccessOrganization } from '@/lib/org-scope';
 import { type UserRole } from '@prisma/client';
 
 function parseCsv(text: string): { headers: string[]; rows: string[][] } {
@@ -53,6 +54,13 @@ export async function POST(req: Request) {
     const report = await restoreBackup(data, user.id);
     void auditLog({ userId: user.id, action: 'data.import', resourceType: 'backup', resourceName: 'full', details: report.imported });
     return NextResponse.json({ success: report.success, imported: report.imported, skipped: report.skipped, errors: report.errors });
+  }
+
+  if (!hasAnyPermission(user.role as UserRole, ['document.create', 'password.create'])) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+  if (organizationId && (typeof organizationId !== 'string' || !await canAccessOrganization(user.id, user.role, organizationId))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   if (target === 'itglue') {
@@ -104,10 +112,6 @@ export async function POST(req: Request) {
       }
     }
     return NextResponse.json({ success: true, imported: created, skipped: rows.length - created, errors });
-  }
-
-  if (!hasAnyPermission(user.role as UserRole, ['document.create', 'password.create'])) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
   let records: Record<string, any>[] = [];

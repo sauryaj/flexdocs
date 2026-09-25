@@ -14,38 +14,41 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
 
   const { id } = await params;
   const source = await prisma.document.findFirst({
-    where: { id, userId: user.id },
+    where: { deletedAt: null, id, userId: user.id },
     include: { tags: true },
   });
   if (!source) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  const copy = await prisma.document.create({
-    data: {
-      title: `${source.title} (copy)`,
-      content: source.content,
-      category: source.category,
-      folderId: source.folderId,
-      organizationId: source.organizationId,
-      // Copies start private so sensitive clones never leak org-wide by accident
-      visibility: 'private',
-      userId: user.id,
-      tags: source.tags.length
-        ? { connect: source.tags.map((t) => ({ id: t.id })) }
-        : undefined,
-    },
+  const result = await prisma.$transaction(async tx => {
+    const copy = await tx.document.create({
+      data: {
+        title: `${source.title} (copy)`,
+        content: source.content,
+        category: source.category,
+        folderId: source.folderId,
+        organizationId: source.organizationId,
+        // Copies start private so sensitive clones never leak org-wide by accident
+        visibility: 'private',
+        userId: user.id,
+        tags: source.tags.length
+          ? { connect: source.tags.map((t) => ({ id: t.id })) }
+          : undefined,
+      },
+    });
+
+    await tx.documentRevision.create({
+      data: {
+        documentId: copy.id,
+        title: copy.title,
+        content: copy.content,
+        category: copy.category,
+        version: 1,
+        message: `Duplicated from "${source.title}"`,
+        userId: user.id,
+      },
+    });
+    return copy;
   });
 
-  await prisma.documentRevision.create({
-    data: {
-      documentId: copy.id,
-      title: copy.title,
-      content: copy.content,
-      category: copy.category,
-      version: 1,
-      message: `Duplicated from "${source.title}"`,
-      userId: user.id,
-    },
-  }).catch(() => {});
-
-  return NextResponse.json(copy, { status: 201 });
+  return NextResponse.json(result, { status: 201 });
 }

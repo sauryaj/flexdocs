@@ -13,7 +13,7 @@ export default async function PortalKbArticle({ params }: { params: Promise<{ id
   const { id } = await params;
 
   const doc = await prisma.document.findUnique({
-    where: { id },
+    where: { deletedAt: null, id },
     select: {
       title: true,
       content: true,

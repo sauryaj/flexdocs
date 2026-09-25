@@ -7,6 +7,7 @@ import { useTheme } from '@/lib/ThemeContext';
 import { useOrganization } from '@/lib/OrganizationContext';
 import { NotificationBell } from '@/components/NotificationBell';
 import { CommandPalette } from '@/components/CommandPalette';
+import { clearBrowserDocumentDrafts } from '@/lib/document-drafts';
 
 export function Header() {
   const { selectedOrg } = useOrganization();
@@ -162,6 +163,8 @@ export function Header() {
         </button>
         <button
           onClick={async () => {
+            try { clearBrowserDocumentDrafts(); }
+            catch { window.alert('Browser drafts could not be cleared. Clear this site’s browser data before sharing this browser with another person.'); }
             await fetch('/api/logout', { method: 'POST' });
             router.push('/login');
             router.refresh();

@@ -64,18 +64,44 @@ cd flexdocs
 bash scripts/setup.sh
 ```
 
-The script checks Docker, generates secrets, starts everything, and waits for health.
-(Manual alternative: `cp .env.example .env`, fill in secrets, `docker compose up -d --build`.)
+For a homelab, run this on the Docker host. The app is available at
+`http://SERVER_IP:3001`. Put Caddy, Traefik, Nginx Proxy Manager, Pangolin, or
+another reverse proxy in front of port `3001`, then set the public URL in `.env`:
 
-Open http://localhost:3001 and log in with the seeded admin:
+```env
+NEXTAUTH_URL=https://docs.example.com
+```
+
+Keep PostgreSQL (`5432`) and Redis (`6379`) private; they bind to loopback by
+default. Expose only the reverse proxy over HTTPS.
+
+The script checks Docker, generates secrets, starts everything, and waits for health.
+(To edit configuration before starting: run `bash scripts/setup.sh --env-only`, edit `.env`, then run `bash scripts/setup.sh`.)
+
+Open http://localhost:3001 and log in with the bootstrap admin:
 
 | Email | Password |
 |---|---|
-| `admin@flexdocs.local` | `admin12345` |
+| `admin@flexdocs.local` | Value of `BOOTSTRAP_ADMIN_PASSWORD` in your private `.env` |
 
-> Change the seeded password immediately in Settings → Profile.
+> Setup generates a unique bootstrap password. Manual installation must set `BOOTSTRAP_ADMIN_PASSWORD` to at least 16 characters. Existing accounts are never reset by seeding. Older installations must rotate both legacy admin accounts if they still use the old public password.
 
-Schema migrations apply automatically on container start (`prisma migrate deploy`). See [DEPLOY.md](DEPLOY.md) for the full guide.
+The setup and update scripts run schema migrations (`prisma migrate deploy`) through the initializer before starting the app. Restarting only the app does not apply migrations. See [DEPLOY.md](DEPLOY.md) for the full guide.
+
+### Updating a homelab install
+
+```bash
+cd /path/to/flexdocs
+git pull
+make update
+```
+
+The update command creates a database backup, rebuilds the app and migration
+images, applies migrations and seeds, restarts the app, and checks health. Keep
+the database backup, the `uploads` volume, and the `ENCRYPTION_KEY` from `.env`;
+all three are needed for a complete recovery.
+
+Without Make, use `bash scripts/update.sh`. Updates stop on failed configuration validation, backup, build, migration, startup, or readiness. Setup and upgrades rebuild both images and explicitly run the initializer before starting the app. `make rebuild` uses the same backed-up upgrade path. `make clean` and `make reset` delete data and require `CONFIRM_DELETE_DATA=yes`; they are not upgrade commands.
 
 ### Local Development
 
@@ -88,6 +114,7 @@ docker run -d --name flexdocs-redis -p 6379:6379 redis:7-alpine
 
 npm install
 cp .env.example .env
+# Set BOOTSTRAP_ADMIN_PASSWORD to a unique 16+ character value in .env
 npx prisma migrate deploy     # or: npx prisma migrate dev (fresh DB applies baseline)
 npx tsx prisma/seed.ts
 npx tsx prisma/seed-orgs.ts
@@ -107,7 +134,7 @@ Never use `db push` against shared databases — it skips the migration history.
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | `postgresql://flexdocs:flexdocs@localhost:5432/flexdocs` |
+| `DATABASE_URL` | PostgreSQL connection string | Docker: `postgresql://flexdocs:<DB_PASSWORD>@db:5432/flexdocs`; host development uses `localhost` |
 | `ENCRYPTION_KEY` | AES-256 key for password encryption (`openssl rand -hex 32`) | Required |
 | `NEXTAUTH_SECRET` | Session signing secret | Required |
 | `NEXTAUTH_URL` | Base URL of the instance | `http://localhost:3001` |
@@ -150,3 +177,13 @@ Popular endpoints:
 ## License
 
 MIT
+
+## Documentation reliability and recovery
+
+See [the reliability review](docs/DOCUMENTATION-RELIABILITY.md) for verified fixes, save-conflict behavior, access boundaries, and remaining deployment work. Follow [the recovery guide](docs/RECOVERY.md) to protect document history, uploaded files, and encryption keys. SQL backups alone are not full disaster recovery.
+
+Local Docker discovery is disabled by default. Opt in with `docker-compose -f docker-compose.yml -f docker-compose.discovery.yml up -d --build` only when needed; the Docker socket grants control of the host. Database and Redis host ports bind only to loopback.
+
+The root Docker deployment is the supported application path. The experimental
+`flexdocs-go` service should not share this database until it has equivalent
+migrations, access controls, and recoverable deletion.

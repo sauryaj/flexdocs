@@ -19,20 +19,21 @@ export async function GET() {
       latency: Date.now() - dbStart,
       message: 'Connected to primary database',
     });
-  } catch (err: unknown) {
+  } catch {
     isHealthy = false;
     checks.push({
       name: 'Database',
       status: 'down',
-      message: err instanceof Error ? err.message : 'Database query failed',
+      message: 'Database query failed',
     });
   }
 
   // Redis check
+  let redis: import('ioredis').default | undefined;
   try {
     const redisStart = Date.now();
     const { default: Redis } = await import('ioredis');
-    const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: 1, lazyConnect: true, connectTimeout: 1000 });
+    redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379', { maxRetriesPerRequest: 1, lazyConnect: true, connectTimeout: 1000 });
     await redis.connect();
     await redis.ping();
     await redis.quit();
@@ -43,12 +44,13 @@ export async function GET() {
       message: 'Connected to cache service',
     });
   } catch {
+    if (process.env.REDIS_URL) isHealthy = false;
     checks.push({
       name: 'Redis Cache',
       status: 'degraded',
-      message: 'Offline (optional caching degraded)',
+      message: 'Redis unavailable',
     });
-  }
+  } finally { redis?.disconnect(); }
 
   // API Server check
   checks.push({
@@ -61,6 +63,6 @@ export async function GET() {
   return NextResponse.json({
     status: isHealthy ? 'healthy' : 'degraded',
     checks,
-  });
+  }, { status: isHealthy ? 200 : 503 });
 }
 
