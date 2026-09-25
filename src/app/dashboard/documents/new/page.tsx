@@ -23,6 +23,8 @@ import { MentionPicker } from '@/components/MentionPicker';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { useOrganization } from '@/lib/OrganizationContext';
+import { useDocumentDraft } from '@/lib/use-document-draft';
+import { type DocumentDraft } from '@/lib/document-drafts';
 
 const categories = [
   'general',
@@ -187,12 +189,12 @@ Welcome to the team! Follow this setup guide to get your workspace and access co
   },
 ];
 
-const DRAFT_KEY = 'flexdocs_new_doc_draft';
-
 export default function NewDocumentPage() {
+  const { selectedOrg, isLoading } = useOrganization();
+  if (isLoading) return <div className="p-8 text-center text-slate-500">Loading editor...</div>;
   return (
     <Suspense fallback={<div className="p-8 text-center text-slate-500">Loading editor...</div>}>
-      <NewDocumentForm />
+      <NewDocumentForm key={selectedOrg?.id || 'personal'} />
     </Suspense>
   );
 }
@@ -221,8 +223,7 @@ function NewDocumentForm() {
 
   const [viewMode, setViewMode] = useState<'write' | 'preview' | 'split'>('write');
   const [isMentionOpen, setIsMentionOpen] = useState(false);
-  const [hasDraft, setHasDraft] = useState(false);
-  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const draft = useDocumentDraft({ title, content, category, folderId, organizationId, tags }, !loading && !createdRef.current);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -237,67 +238,24 @@ function NewDocumentForm() {
     });
   }, []);
 
-  // Check for auto-saved draft on mount
-  useEffect(() => {
-    try {
-      const savedDraft = localStorage.getItem(DRAFT_KEY);
-      if (savedDraft) {
-        const parsed = JSON.parse(savedDraft);
-        if (parsed.title || parsed.content) {
-          setTitle(parsed.title || '');
-          setContent(parsed.content || '');
-          if (parsed.category) setCategory(parsed.category);
-          if (parsed.folderId) setFolderId(parsed.folderId);
-          if (parsed.organizationId) setOrganizationId(parsed.organizationId);
-          if (parsed.tags) setTags(parsed.tags);
-          setHasDraft(true);
-          if (parsed.savedAt) {
-            setDraftSavedAt(new Date(parsed.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-          }
-        }
-      }
-    } catch {
-      // Ignore localStorage read errors
-    }
-  }, []);
-
-  // Auto-save draft on changes
-  useEffect(() => {
-    if (loading || createdRef.current || (!title && !content)) return;
-    const timeout = setTimeout(() => {
-      try {
-        localStorage.setItem(
-          DRAFT_KEY,
-          JSON.stringify({
-            title,
-            content,
-            category,
-            folderId,
-            organizationId,
-            tags,
-            savedAt: new Date().toISOString(),
-          })
-        );
-        setHasDraft(true);
-        setDraftSavedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-      } catch {
-        // Ignore localStorage write errors
-      }
-    }, 1000);
-
-    return () => clearTimeout(timeout);
-  }, [title, content, category, folderId, organizationId, tags, loading]);
+  const restoreDraft = (saved: DocumentDraft) => {
+    if ((title || content) && !confirm('Replace the text in this editor with a copy of the saved draft?')) return;
+    setTitle(saved.fields.title);
+    setContent(saved.fields.content);
+    setCategory(saved.fields.category);
+    setFolderId(saved.fields.folderId);
+    setOrganizationId(saved.fields.organizationId);
+    setTags(saved.fields.tags);
+  };
 
   const clearDraft = () => {
-    localStorage.removeItem(DRAFT_KEY);
+    if (!draft.clear()) return;
     setTitle('');
     setContent('');
     setCategory('general');
     setFolderId(presetFolderId);
-    setOrganizationId('');
+    setOrganizationId(selectedOrg?.id || '');
     setTags('');
-    setHasDraft(false);
-    setDraftSavedAt(null);
   };
 
   const applyTemplate = (tmpl: (typeof TEMPLATES)[0]) => {
@@ -382,7 +340,7 @@ function NewDocumentForm() {
       }
       const doc = await res.json();
       createdRef.current = true;
-      try { localStorage.removeItem(DRAFT_KEY); } catch { /* Storage may be disabled by the browser. */ }
+      draft.clear();
       router.push(`/dashboard/documents/${doc.id}`);
     } catch {
       setSaveError('Could not confirm whether the document was saved. Your draft is still here. Check the document list before trying again to avoid creating a duplicate.');
@@ -391,6 +349,8 @@ function NewDocumentForm() {
       if (!createdRef.current) setLoading(false);
     }
   };
+
+  if (draft.revoked) return <p role="alert">Draft editing stopped after sign-out. Reload and sign in before continuing.</p>;
 
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
   const charCount = content.length;
@@ -427,10 +387,10 @@ function NewDocumentForm() {
         </div>
 
         {/* Draft Restore & Clear Notification */}
-        {hasDraft && (
+        {draft.savedAt && (
           <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-3 py-1.5 rounded-xl text-xs text-amber-800 dark:text-amber-300">
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Draft auto-saved {draftSavedAt ? `at ${draftSavedAt}` : ''}</span>
+            <span>Draft saved in this browser at {new Date(draft.savedAt).toLocaleTimeString()}</span>
             <button
               type="button"
               onClick={clearDraft}
@@ -442,6 +402,17 @@ function NewDocumentForm() {
           </div>
         )}
       </div>
+
+      {draft.error && <p role="alert" className="text-sm text-red-600">{draft.error}</p>}
+      {draft.candidates.length > 0 && <section aria-label="Recover saved drafts" className="card p-4 space-y-3">
+        <h2 className="font-semibold">Recover a saved draft</h2>
+        <p className="text-sm text-slate-500">Drafts for this account and organization expire after seven days and are cleared on sign-out. Restore opens a copy so another tab is not overwritten.</p>
+        {draft.candidates.map(saved => <div key={saved.instanceId} className="flex flex-wrap items-center gap-3">
+          <span className="text-sm">{saved.fields.title || 'Untitled draft'} · {new Date(saved.savedAt).toLocaleString()}</span>
+          <button type="button" disabled={loading} className="btn-secondary" onClick={() => restoreDraft(saved)}>Restore a copy</button>
+          <button type="button" disabled={loading} className="btn-secondary" onClick={() => { if (confirm('Discard this saved browser draft?')) draft.discard(saved); }}>Discard draft</button>
+        </div>)}
+      </section>}
 
       <form onSubmit={handleSubmit} className="space-y-6">
         {saveError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
