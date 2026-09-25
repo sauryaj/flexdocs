@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { DRAFT_CLEARED_EVENT, DRAFT_EPOCH_KEY, draftKey, listDrafts, saveDraft, type DocumentDraft, type DraftFields } from './document-drafts';
 
-export function useDocumentDraft(fields: DraftFields, enabled: boolean) {
+export function useDocumentDraft(fields: DraftFields, enabled: boolean, documentId = 'new', recoveryEnabled = true) {
   const [userId, setUserId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<DocumentDraft[]>([]);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -48,25 +48,25 @@ export function useDocumentDraft(fields: DraftFields, enabled: boolean) {
   }, []);
 
   useEffect(() => {
-    if (!userId || !active.current) return;
+    if (!userId || !active.current || !recoveryEnabled) return;
     try {
-      setCandidates(listDrafts(localStorage, { userId, organizationId, documentId: 'new' }).filter(draft => draft.instanceId !== instanceId.current));
+      setCandidates(listDrafts(localStorage, { userId, organizationId, documentId }).filter(draft => draft.instanceId !== instanceId.current));
     } catch {
       setError('Browser drafts could not be read. Keep this page open until your document is saved.');
     }
-  }, [userId, organizationId]);
+  }, [userId, organizationId, documentId, recoveryEnabled]);
 
   useEffect(() => {
     if (!userId || !enabled || !active.current) return;
     const data: DraftFields = JSON.parse(serialized);
     try {
-      if (!data.title && !data.content) {
+      if (documentId === 'new' && !data.title && !data.content) {
         if (currentKey.current) localStorage.removeItem(currentKey.current);
         currentKey.current = null;
         setSavedAt(null);
         return;
       }
-      const scope = { userId, organizationId, documentId: 'new' };
+      const scope = { userId, organizationId, documentId };
       const draft = saveDraft(localStorage, scope, instanceId.current, data, epoch.current);
       const key = draftKey(scope, instanceId.current);
       if (currentKey.current && currentKey.current !== key) localStorage.removeItem(currentKey.current);
@@ -77,10 +77,10 @@ export function useDocumentDraft(fields: DraftFields, enabled: boolean) {
       setSavedAt(null);
       setError('Your latest changes could not be saved in this browser. Keep this page open and save the document before leaving.');
     }
-  }, [userId, organizationId, serialized, enabled]);
+  }, [userId, organizationId, documentId, serialized, enabled]);
 
   useEffect(() => {
-    if (!enabled || (!fields.title && !fields.content)) return;
+    if (!enabled) return;
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); };
     const onClick = (event: MouseEvent) => {
       if (savedAt && !error) return;
@@ -112,7 +112,7 @@ export function useDocumentDraft(fields: DraftFields, enabled: boolean) {
   };
 
   const discard = (draft: DocumentDraft) => {
-    if (draft.userId !== userId || draft.organizationId !== organizationId) return;
+    if (draft.userId !== userId || draft.organizationId !== organizationId || draft.documentId !== documentId) return;
     try {
       localStorage.removeItem(draftKey(draft, draft.instanceId));
       setCandidates(value => value.filter(item => item.instanceId !== draft.instanceId));

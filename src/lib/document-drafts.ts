@@ -8,6 +8,7 @@ export const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const scopeSchema = z.object({ userId: z.string().min(1), organizationId: z.string().nullable(), documentId: z.string().min(1) });
 export const draftFieldsSchema = z.object({
   title: z.string(), content: z.string(), category: z.string(), folderId: z.string(), organizationId: z.string(), tags: z.string(),
+  reviewDate: z.string().optional(), visibility: z.string().optional(), baseUpdatedAt: z.string().optional(),
 });
 const draftSchema = scopeSchema.extend({
   instanceId: z.string().min(1), savedAt: z.number().finite(), expiresAt: z.number().finite(), fields: draftFieldsSchema,

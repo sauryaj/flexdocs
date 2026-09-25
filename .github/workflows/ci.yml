@@ -99,6 +99,14 @@ jobs:
       - name: Run smoke tests
         run: bash scripts/smoke-test.sh http://localhost:3000
 
+      - name: Install browser test runtime
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser draft failure and recovery checks
+        env:
+          TEST_BASE_URL: http://localhost:3000
+        run: npm run test:browser
+
       - name: Documentation reliability checks
         env:
           DOCUMENT_TEST_ISOLATED: '1'

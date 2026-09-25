@@ -69,3 +69,12 @@ it('reports quota/storage failures rather than claiming persistence', () => {
   store.setItem = () => { throw new Error('Quota exceeded'); };
   expect(() => saveDraft(store, scope, 'tab-a', fields, null)).toThrow('Quota exceeded');
 });
+
+it('recovers existing-document metadata and its original server version without altering either', () => {
+  const store = storage();
+  const existing = { ...scope, documentId: 'document-a' };
+  const edits = { ...fields, title: '', content: '', reviewDate: '2026-10-01', visibility: 'organization', baseUpdatedAt: '2026-09-25T00:00:00.000Z' };
+  saveDraft(store, existing, 'tab-a', edits, null, 100);
+  expect(listDrafts(store, existing, 101)[0].fields).toEqual(edits);
+  expect(listDrafts(store, scope, 101)).toEqual([]);
+});

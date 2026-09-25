@@ -28,6 +28,8 @@ import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { Eye, Edit3, Columns } from 'lucide-react';
 import { RelatedItems } from '@/components/RelatedItems';
 import { uploadDocumentAttachment } from '@/lib/document-client';
+import { useDocumentDraft } from '@/lib/use-document-draft';
+import type { DocumentDraft } from '@/lib/document-drafts';
 
 const categories = [
   'general',
@@ -49,6 +51,7 @@ interface Document {
   isPinned: boolean;
   isArchived: boolean;
   visibility?: string;
+  reviewDate?: string | null;
   organizationId?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -112,6 +115,8 @@ function DocumentEditor({ documentId }: { documentId: string }) {
   const [dirty, setDirty] = useState(false);
   const [savedAt, setSavedAt] = useState<Date | null>(null);
   const [saveError, setSaveError] = useState('');
+  const [conflict, setConflict] = useState<Document | null>(null);
+  const [autosavePaused, setAutosavePaused] = useState(false);
   const savingRef = useRef(false);
   const versionRef = useRef<string | undefined>(undefined);
   const liveSnapshotRef = useRef('');
@@ -120,18 +125,36 @@ function DocumentEditor({ documentId }: { documentId: string }) {
     JSON.stringify({ t: title, c: content, cat: category, tg: tags, rd: reviewDate, v: visibility });
 
   liveSnapshotRef.current = currentSnapshot();
+  const hasUnsavedChanges = !loading && !!doc && doc.canEdit !== false && lastSavedRef.current !== null && currentSnapshot() !== lastSavedRef.current;
+  const draft = useDocumentDraft({ title, content, category, tags, reviewDate, visibility,
+    folderId: doc?.folder?.id || '', organizationId: doc?.organizationId || '', baseUpdatedAt: versionRef.current,
+  }, hasUnsavedChanges, documentId, !loading && !!doc && doc.canEdit !== false);
+  const [recoveryPreview, setRecoveryPreview] = useState<DocumentDraft | null>(null);
+
+  const restoreDraft = (candidate: DocumentDraft) => {
+    if (hasUnsavedChanges && !confirm('Replace your current unsaved edits and their browser copy with this recovered text?')) return;
+    setTitle(candidate.fields.title);
+    setContent(candidate.fields.content);
+    setCategory(candidate.fields.category);
+    setTags(candidate.fields.tags);
+    setReviewDate(candidate.fields.reviewDate || '');
+    setVisibility(candidate.fields.visibility || 'private');
+    setDirty(true);
+    setAutosavePaused(true);
+    setSaveError('Recovered edits are in the editor. Compare them with the saved version below, then use Save Now to apply them. Autosave is paused.');
+  };
 
   useEffect(() => {
-    if (loading || !doc || doc.canEdit === false || saving || saveError) return;
+    if (loading || !doc || doc.canEdit === false || saving || saveError || draft.revoked || autosavePaused) return;
     if (lastSavedRef.current === null) return;
-    if (currentSnapshot() === lastSavedRef.current) return;
+    if (currentSnapshot() === lastSavedRef.current) { setDirty(false); return; }
     setDirty(true);
     const timer = setTimeout(() => {
       void doSave();
     }, 2000);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [title, content, category, tags, reviewDate, visibility, loading, doc, saving, saveError]);
+  }, [title, content, category, tags, reviewDate, visibility, loading, doc, saving, saveError, draft.revoked, autosavePaused]);
 
   useEffect(() => {
     const handler = (e: BeforeUnloadEvent) => {
@@ -255,7 +278,7 @@ function DocumentEditor({ documentId }: { documentId: string }) {
   }, [attachmentsExpanded]);
 
   const doSave = async (): Promise<boolean> => {
-    if (savingRef.current || doc?.canEdit === false) return false;
+    if (savingRef.current || !doc || doc.canEdit === false || draft.revoked) return false;
     savingRef.current = true;
     setSaving(true);
     setSaveError('');
@@ -268,14 +291,25 @@ function DocumentEditor({ documentId }: { documentId: string }) {
           reviewDate: reviewDate || null, visibility, expectedUpdatedAt: versionRef.current }),
       });
       const data = await res.json();
+      if (res.status === 409) {
+        setAutosavePaused(true);
+        const latest = await fetch(`/api/documents/${params.id}`);
+        if (latest.ok) setConflict(await latest.json());
+        throw new Error('The server document changed. Your edits are preserved. Compare both versions below before trying again.');
+      }
       if (!res.ok) throw new Error(data.error || 'Save failed. Your edits are still here; try Save Now.');
       versionRef.current = data.updatedAt;
       lastSavedRef.current = snapshot;
+      if (liveSnapshotRef.current === snapshot) draft.clear();
+      setDoc({ ...data, canEdit: doc.canEdit });
+      setRecoveryPreview(null);
+      setConflict(null);
+      setAutosavePaused(false);
       setDirty(liveSnapshotRef.current !== snapshot);
       setSavedAt(new Date());
       return true;
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : 'Save failed. Your edits are still here; try Save Now.');
+      setSaveError(error instanceof Error && !(error instanceof TypeError) ? error.message : 'Save failed. Your edits are still here; try Save Now.');
       setDirty(true);
       return false;
     } finally {
@@ -397,6 +431,8 @@ function DocumentEditor({ documentId }: { documentId: string }) {
     }
   };
 
+  if (draft.revoked) return <p role="alert" className="p-6">This editor was closed after sign-out. Reload and sign in before continuing.</p>;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -475,6 +511,50 @@ function DocumentEditor({ documentId }: { documentId: string }) {
       </div>
 
       {/* Two-column layout */}
+      {conflict && <section className="card p-4 space-y-3" aria-label="Save conflict comparison">
+        <h2 className="font-semibold">Resolve conflicting edits</h2>
+        <p className="text-sm">The server has a newer version. Edit your local text to combine the changes you want to keep. Accepting the baseline below does not save; Save Now checks for further server changes.</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div><h3 className="font-medium">Latest server version: {conflict.title}</h3>
+            <p className="text-sm">Category: {conflict.category} · Tags: {conflict.tags.map(tag => tag.name).join(', ')} · Visibility: {conflict.visibility || 'private'} · Review: {conflict.reviewDate || 'None'}</p>
+            <pre className="whitespace-pre-wrap break-words max-h-80 overflow-auto text-sm">{conflict.content}</pre>
+          </div>
+          <div><h3 className="font-medium">Your local edits: {title}</h3>
+            <p className="text-sm">Category: {category} · Tags: {tags} · Visibility: {visibility} · Review: {reviewDate || 'None'}</p>
+            <pre className="whitespace-pre-wrap break-words max-h-80 overflow-auto text-sm">{content}</pre>
+          </div>
+        </div>
+        <button className="btn-primary" onClick={() => {
+          versionRef.current = conflict.updatedAt;
+          lastSavedRef.current = JSON.stringify({ t: conflict.title, c: conflict.content, cat: conflict.category,
+            tg: conflict.tags.map(tag => tag.name).join(', '), rd: conflict.reviewDate ? new Date(conflict.reviewDate).toISOString().slice(0, 10) : '', v: conflict.visibility || 'private' });
+          setDirty(liveSnapshotRef.current !== lastSavedRef.current);
+          setDoc(conflict);
+          setConflict(null);
+          setSaveError('Server baseline accepted. Review your local edits, then use Save Now. Autosave remains paused.');
+        }}>Keep local edits against this server version</button>
+      </section>}
+      {draft.error && <p role="alert" className="text-amber-700">{draft.error}</p>}
+      {hasUnsavedChanges && draft.savedAt && !draft.error && <p role="status" className="text-sm text-slate-500">Unsaved edits protected in this browser at {new Date(draft.savedAt).toLocaleTimeString()}.</p>}
+      {draft.candidates.length > 0 && <section className="card p-4 space-y-3" aria-label="Recover unsaved edits">
+        <h2 className="font-semibold">Recover unsaved edits</h2>
+        <p className="text-sm">Browser copies expire after seven days. Compare a copy before restoring it; the server document stays unchanged until you save.</p>
+        {draft.candidates.map(candidate => <div key={candidate.instanceId} className="flex flex-wrap items-center gap-3">
+          <span>{candidate.fields.title || 'Untitled'} · {new Date(candidate.savedAt).toLocaleString()}</span>
+          <button className="btn-secondary" onClick={() => setRecoveryPreview(candidate)}>Compare draft</button>
+          <button className="btn-secondary" onClick={() => { if (confirm('Discard this browser copy?')) { draft.discard(candidate); if (recoveryPreview?.instanceId === candidate.instanceId) setRecoveryPreview(null); } }}>Discard draft</button>
+        </div>)}
+      </section>}
+      {recoveryPreview && <section className="card p-4 space-y-3" aria-label="Draft comparison">
+        <h2 className="font-semibold">Saved version and recovered copy</h2>
+        <p className="text-sm">{recoveryPreview.fields.baseUpdatedAt === doc.updatedAt ? 'The copy started from this saved version.' : 'The server version differs from the copy’s original version. Review both before saving.'} Concurrent server changes are checked again when you save.</p>
+        <div className="grid gap-4 md:grid-cols-2">
+          <div><h3 className="font-medium">Saved version: {doc.title}</h3><p className="text-sm">Category: {doc.category} · Tags: {doc.tags.map(tag => tag.name).join(', ')} · Visibility: {doc.visibility || 'private'} · Review: {doc.reviewDate || 'None'}</p><pre className="whitespace-pre-wrap break-words max-h-80 overflow-auto text-sm">{doc.content}</pre></div>
+          <div><h3 className="font-medium">Browser copy: {recoveryPreview.fields.title}</h3><p className="text-sm">Category: {recoveryPreview.fields.category} · Tags: {recoveryPreview.fields.tags} · Visibility: {recoveryPreview.fields.visibility || 'private'} · Review: {recoveryPreview.fields.reviewDate || 'None'}</p><pre className="whitespace-pre-wrap break-words max-h-80 overflow-auto text-sm">{recoveryPreview.fields.content}</pre></div>
+        </div>
+        <button className="btn-primary" onClick={() => restoreDraft(recoveryPreview)}>Restore a copy into editor</button>
+        <button className="btn-secondary ml-2" onClick={() => setRecoveryPreview(null)}>Close comparison</button>
+      </section>}
       <div className="flex flex-col xl:flex-row gap-6 items-start">
         {/* Left: Editor */}
         <div className="w-full flex-1 min-w-0 card p-4 sm:p-6 space-y-6">
@@ -600,6 +680,8 @@ function DocumentEditor({ documentId }: { documentId: string }) {
             <span role={saveError ? 'alert' : 'status'} aria-live="polite" className={saveError ? 'w-full rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-800' : 'text-xs mr-auto text-slate-500'}>
               {saveError ? saveError : saving
                 ? 'Saving…'
+                : autosavePaused
+                  ? 'Autosave paused — review your edits and use Save Now.'
                 : dirty
                   ? 'Unsaved changes — autosaving…'
                   : savedAt

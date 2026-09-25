@@ -9,6 +9,7 @@
     "lint": "npx eslint src/",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:browser": "playwright test",
     "test:smoke": "bash scripts/smoke-test.sh",
     "db:seed": "npx prisma db seed",
     "db:studio": "npx prisma studio",
@@ -55,6 +56,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.5",
     "@next/eslint-plugin-next": "^16.2.9",
+    "@playwright/test": "^1.63.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/dockerode": "^4.0.1",
     "@types/node": "^22.15.3",
