@@ -118,8 +118,8 @@ cat <<EOF
   Existing account passwords are never reset by setup.
 
   Useful commands:
-    docker compose logs -f app     # app logs
-    docker compose down            # stop (data is kept in volumes)
+    bash scripts/compose.sh logs -f app     # app logs
+    bash scripts/compose.sh down            # stop (data is kept in volumes)
     bash scripts/database-backup.sh         # database backup
 
 EOF
