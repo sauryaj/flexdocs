@@ -3,6 +3,7 @@ import { z } from 'zod';
 export const DRAFT_PREFIX = 'flexdocs:draft:v1:';
 export const DRAFT_EPOCH_KEY = 'flexdocs:draft:epoch';
 export const DRAFT_CLEARED_EVENT = 'flexdocs:drafts-cleared';
+export const DRAFT_SESSION_CHANNEL = 'flexdocs:draft-session';
 export const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const scopeSchema = z.object({ userId: z.string().min(1), organizationId: z.string().nullable(), documentId: z.string().min(1) });
@@ -56,7 +57,21 @@ export function clearDocumentDrafts(storage: Storage, epoch: string): void {
   for (const key of keys) if (key?.startsWith(DRAFT_PREFIX) || key === 'flexdocs_new_doc_draft') storage.removeItem(key);
 }
 
-export function clearBrowserDocumentDrafts(): void {
+function notifyDraftEditors(): void {
   window.dispatchEvent(new Event(DRAFT_CLEARED_EVENT));
+  try {
+    const channel = new BroadcastChannel(DRAFT_SESSION_CHANNEL);
+    channel.postMessage('changed');
+    channel.close();
+  } catch { /* Storage events and identity revalidation cover unsupported browsers. */ }
+}
+
+export function invalidateBrowserDraftEditors(): void {
+  notifyDraftEditors();
+  localStorage.setItem(DRAFT_EPOCH_KEY, crypto.randomUUID());
+}
+
+export function clearBrowserDocumentDrafts(): void {
+  notifyDraftEditors();
   clearDocumentDrafts(window.localStorage, crypto.randomUUID());
 }

@@ -431,7 +431,7 @@ function DocumentEditor({ documentId }: { documentId: string }) {
     }
   };
 
-  if (draft.revoked) return <p role="alert" className="p-6">This editor was closed after sign-out. Reload and sign in before continuing.</p>;
+  if (draft.revoked) return <p role="alert" className="p-6">This editor was closed because the account changed or signed out. Reload and sign in before continuing.</p>;
 
   if (loading) {
     return (

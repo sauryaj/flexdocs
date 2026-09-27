@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { invalidateBrowserDraftEditors } from '@/lib/document-drafts';
 
 export default function InvitePage() {
   const router = useRouter();
@@ -17,6 +18,7 @@ export default function InvitePage() {
       const res = await fetch('/api/invitations/accept', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, ...(!existing ? { name, password } : {}) }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Could not accept invitation');
+      try { invalidateBrowserDraftEditors(); } catch { /* Identity revalidation remains active if storage is blocked. */ }
       window.history.replaceState(null, '', '/invite');
       router.push('/dashboard'); router.refresh();
     } catch (error) { setError(error instanceof Error ? error.message : 'Unable to connect. Try again.'); }

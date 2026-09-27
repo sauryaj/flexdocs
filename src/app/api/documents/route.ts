@@ -50,6 +50,8 @@ export async function GET(req: Request) {
 export async function POST(req: Request) {
   const user = await auth();
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const expectedUser = req.headers.get('X-Expected-User-Id');
+  if (expectedUser !== null && expectedUser !== user.id) return NextResponse.json({ error: 'Your account changed. Reload before saving this document.' }, { status: 409 });
   if (!hasPermission(user.role as UserRole, 'document.create')) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }

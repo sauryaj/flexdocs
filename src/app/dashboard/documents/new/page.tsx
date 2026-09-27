@@ -329,12 +329,13 @@ function NewDocumentForm() {
 
     const attempt = pendingCreation || { key: crypto.randomUUID(), payload: JSON.stringify({ title, content, category,
       folderId: folderId || null, organizationId: organizationId || null, tags: tagList }) };
-    setPendingCreation(attempt);
-    draft.persist({ ...draftFields, creationKey: attempt.key, creationPayload: attempt.payload });
     try {
+      if (!await draft.verifyAccount()) return;
+      setPendingCreation(attempt);
+      draft.persist({ ...draftFields, creationKey: attempt.key, creationPayload: attempt.payload });
       const res = await fetch('/api/documents', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': attempt.key },
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': attempt.key, 'X-Expected-User-Id': draft.userId! },
         body: attempt.payload,
       });
       if (!res.ok) {
@@ -355,7 +356,7 @@ function NewDocumentForm() {
     }
   };
 
-  if (draft.revoked) return <p role="alert">Draft editing stopped after sign-out. Reload and sign in before continuing.</p>;
+  if (draft.revoked) return <p role="alert">This editor was closed because the account changed or signed out. Reload and sign in before continuing.</p>;
 
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
   const charCount = content.length;

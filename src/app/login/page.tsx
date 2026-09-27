@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Lock, Mail, Key, Loader2, ArrowRight } from 'lucide-react';
+import { invalidateBrowserDraftEditors } from '@/lib/document-drafts';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -45,6 +46,7 @@ export default function LoginPage() {
         return;
       }
 
+      try { invalidateBrowserDraftEditors(); } catch { /* Identity revalidation remains active if storage is blocked. */ }
       router.push('/dashboard');
       router.refresh();
     } catch (err: any) {

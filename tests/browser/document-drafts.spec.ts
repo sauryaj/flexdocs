@@ -110,7 +110,7 @@ test('logout epoch closes other editors and stops recreating browser copies', as
     localStorage.setItem('flexdocs:draft:epoch', 'browser-test-logout');
     Object.keys(localStorage).filter(key => key.startsWith('flexdocs:draft:v1:')).forEach(key => localStorage.removeItem(key));
   });
-  await expect(page.getByText('This editor was closed after sign-out.', { exact: false })).toBeVisible();
+  await expect(page.getByText('This editor was closed because the account changed or signed out.', { exact: false })).toBeVisible();
   await page.waitForTimeout(2300);
   expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('flexdocs:draft:v1:')))).toEqual([]);
 });

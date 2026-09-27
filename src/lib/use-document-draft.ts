@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { DRAFT_CLEARED_EVENT, DRAFT_EPOCH_KEY, draftKey, listDrafts, saveDraft, type DocumentDraft, type DraftFields } from './document-drafts';
+import { DRAFT_CLEARED_EVENT, DRAFT_EPOCH_KEY, DRAFT_SESSION_CHANNEL, draftKey, listDrafts, saveDraft, type DocumentDraft, type DraftFields } from './document-drafts';
 
 export function useDocumentDraft(fields: DraftFields, enabled: boolean, documentId = 'new', recoveryEnabled = true, protectNavigation = enabled) {
   const [userId, setUserId] = useState<string | null>(null);
@@ -13,23 +13,33 @@ export function useDocumentDraft(fields: DraftFields, enabled: boolean, document
   const epoch = useRef<string | null>(null);
   const active = useRef(true);
   const currentKey = useRef<string | null>(null);
+  const stopRef = useRef<() => void>(() => {});
+  const lifetime = useRef<AbortController | null>(null);
   const serialized = JSON.stringify(fields);
   const organizationId = fields.organizationId || null;
 
   useEffect(() => {
     const controller = new AbortController();
+    lifetime.current = controller;
+    active.current = true;
     instanceId.current = crypto.randomUUID();
     const stop = () => {
       active.current = false;
       setRevoked(true);
       setCandidates([]);
       setSavedAt(null);
-      setError('Draft saving stopped after sign-out. Reload and sign in before continuing.');
+      setError('Draft saving stopped because the account changed or signed out. Reload and sign in before continuing.');
     };
+    stopRef.current = stop;
+    let channel: BroadcastChannel | undefined;
+    try {
+      channel = new BroadcastChannel(DRAFT_SESSION_CHANNEL);
+      channel.onmessage = event => { if (event.data === 'changed') stop(); };
+    } catch { /* Identity checks remain available when cross-tab messaging is blocked. */ }
     const onStorage = (event: StorageEvent) => { if (event.key === DRAFT_EPOCH_KEY || event.key === null) stop(); };
     window.addEventListener(DRAFT_CLEARED_EVENT, stop);
     window.addEventListener('storage', onStorage);
-    fetch('/api/profile', { signal: controller.signal }).then(async response => {
+    fetch('/api/profile', { signal: controller.signal, cache: 'no-store' }).then(async response => {
       if (!response.ok) throw new Error('Unable to identify your account. Draft recovery is unavailable until you reload.');
       const profile = await response.json();
       if (typeof profile?.id !== 'string') throw new Error('Unable to identify your account. Draft recovery is unavailable until you reload.');
@@ -42,10 +52,42 @@ export function useDocumentDraft(fields: DraftFields, enabled: boolean, document
     });
     return () => {
       controller.abort();
+      active.current = false;
+      channel?.close();
       window.removeEventListener(DRAFT_CLEARED_EVENT, stop);
       window.removeEventListener('storage', onStorage);
     };
   }, []);
+
+  const verifyAccount = useCallback(async () => {
+    if (!active.current || !userId) {
+      setError('Your account has not been verified. Keep this page open and retry when connected.');
+      return false;
+    }
+    try {
+      const response = await fetch('/api/profile', { cache: 'no-store', signal: lifetime.current?.signal });
+      if (response.status === 401) { stopRef.current(); return false; }
+      if (!response.ok) throw new Error('Identity check failed');
+      const profile = await response.json();
+      if (!active.current) return false;
+      if (profile.id !== userId) { stopRef.current(); return false; }
+      return true;
+    } catch {
+      if (active.current) setError('Unable to verify the current account. Your edits are kept here; reconnect before saving.');
+      return false;
+    }
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    const check = () => { if (document.visibilityState === 'visible') void verifyAccount(); };
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', check);
+    return () => {
+      window.removeEventListener('focus', check);
+      document.removeEventListener('visibilitychange', check);
+    };
+  }, [userId, verifyAccount]);
 
   useEffect(() => {
     if (!userId || !active.current || !recoveryEnabled) return;
@@ -128,5 +170,5 @@ export function useDocumentDraft(fields: DraftFields, enabled: boolean, document
     } catch { setError('The saved draft could not be removed.'); }
   };
 
-  return { candidates, savedAt, error, clear, discard, revoked, persist };
+  return { candidates, savedAt, error, clear, discard, revoked, persist, verifyAccount, userId };
 }
