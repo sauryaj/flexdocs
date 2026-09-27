@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Moon, Sun, FileText, Key, Globe, Box, CheckSquare, LogOut } from 'lucide-react';
+import { ListTodo, Sparkles } from 'lucide-react';
+import Link from 'next/link';
 import { useTheme } from '@/lib/ThemeContext';
 import { useOrganization } from '@/lib/OrganizationContext';
 import { NotificationBell } from '@/components/NotificationBell';
@@ -76,6 +78,16 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-2">
+        <nav aria-label="Workspace shortcuts" className="hidden md:flex items-center gap-1 mr-2">
+          <Link href="/dashboard/my-day" className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors hover:bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-muted)]" style={{ color: 'var(--foreground)' }}>
+            <ListTodo className="w-4 h-4" aria-hidden="true" />
+            <span>My Day</span>
+          </Link>
+          <Link href="/dashboard/assistant" className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors hover:bg-[var(--surface-2)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-muted)]" style={{ color: 'var(--foreground)' }}>
+            <Sparkles className="w-4 h-4" aria-hidden="true" />
+            <span>Ask Docs</span>
+          </Link>
+        </nav>
         {/* Quick Add Dropdown */}
         <div className="relative" ref={quickAddRef}>
           <button
