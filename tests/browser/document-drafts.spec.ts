@@ -157,6 +157,45 @@ test('two-tab conflicts require comparison and explicit baseline acceptance', as
   await expect.poll(() => server.current().content).toBe(markdown + '\nChanges from the other tab');
 });
 
+test('focus revalidation closes an editor after the authenticated account changes', async ({ context, page }) => {
+  const server = await fixture(context);
+  let accountId = 'browser-account-a';
+  await context.route('**/api/profile', route => route.fulfill({ json: { id: accountId } }));
+  await openEditor(page);
+  await page.locator('textarea').fill(markdown);
+  await expect(page.getByRole('status').filter({ hasText: 'protected in this browser' })).toBeVisible();
+  const writes = server.writes();
+  accountId = 'browser-account-b';
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+  await expect(page.getByText('This editor was closed because the account changed or signed out.', { exact: false })).toBeVisible();
+  await expect(page.locator('textarea')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Compare draft' })).toHaveCount(0);
+  await page.waitForTimeout(2300);
+  expect(server.writes()).toBe(writes);
+});
+
+test('session broadcasts close other editors even when storage writes fail', async ({ context, page }) => {
+  const server = await fixture(context);
+  await context.addInitScript(() => {
+    Storage.prototype.setItem = () => { throw new DOMException('Storage blocked', 'QuotaExceededError'); };
+  });
+  await openEditor(page);
+  await page.locator('textarea').fill(markdown);
+  await expect(page.getByText('Your latest changes could not be saved in this browser.', { exact: false })).toBeVisible();
+  const writes = server.writes();
+  const other = await context.newPage();
+  await other.goto('/login');
+  await other.evaluate(() => {
+    const channel = new BroadcastChannel('flexdocs:draft-session');
+    channel.postMessage('changed');
+    channel.close();
+  });
+  await expect(page.getByText('This editor was closed because the account changed or signed out.', { exact: false })).toBeVisible();
+  await expect(page.locator('textarea')).toHaveCount(0);
+  await page.waitForTimeout(2300);
+  expect(server.writes()).toBe(writes);
+});
+
 test('creation retries preserve the same key and payload after a lost response and reload', async ({ context, page }) => {
   await fixture(context);
   const requests: { key: string | undefined; body: string | null }[] = [];

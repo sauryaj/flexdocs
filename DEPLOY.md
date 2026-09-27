@@ -172,13 +172,14 @@ Schedule a nightly backup with cron:
 | `docker: command not found` | Install Docker (section 2); start Docker Desktop |
 | `Cannot connect to the Docker daemon` | Daemon not running — start Docker Desktop / `sudo systemctl start docker` / `colima start` |
 | Port 3001 in use | `PORT=8080 bash scripts/setup.sh`, or stop the other service |
-| Port 5432 in use | Local Postgres running? `docker compose edit` to remap, or stop it — the app uses the internal network, not host 5432 |
+| Port 5432 in use | Inspect which service owns the port before changing it. Edit the database's host-port mapping in `docker-compose.yml` if needed; the application uses the internal database port. |
 | Init container fails | `docker compose logs init`. Usual cause: stale image after pulling — rebuild it (`docker compose build init`) |
 | App 500s right after start | DB still initializing — wait 30s, refresh. Then check `docker compose logs app` |
 | Migrations complaints | `docker compose run --rm init npx prisma migrate status` |
 | Everything returns 429 | Rate-limit counters in Redis are poisoned: `docker compose exec redis redis-cli --scan --pattern 'ratelimit:*' \| xargs -r docker compose exec redis redis-cli del` |
-| Login rejected with seeded creds | Password was changed — restore from backup or `make reset` (wipes data!) |
-| Forgot admin password entirely | `docker compose run --rm init` re-seeds only missing users; to force-reset, restore a backup or use `make reset` |
+| Login rejected with bootstrap credentials | Bootstrap credentials apply only when the account is first created. Seeding does not reset an existing password. Use another authorized administrator to recover access; do not reset the database to fix login. |
+| Forgot admin password entirely | Preserve the database and backups. Account recovery requires a targeted credential reset after verifying the account and database. Running the initializer will not change an existing password. |
+| PostgreSQL recovery loop or Redis persistence errors with `No space left on device` | Check database/Redis logs and `docker system df`. Docker's virtual disk may be full even when the host has free space. Remove only identified, unused build artifacts or expand Docker storage; preserve database/upload volumes and recovery images. Then verify database readiness, Redis persistence status, and application readiness. |
 
 Still stuck? Open an issue with the output of `docker compose logs app init` and `make status`.
 
