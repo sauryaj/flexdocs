@@ -23,7 +23,7 @@ The initial deployment remains one web application, PostgreSQL, Redis, local fil
 
 Creation stores a user-owned document with optional organization/folder, tags, and initial history. Editing uses expected timestamps and serialized transactions to preserve overwritten title/content/category. Library moves send partial updates. Delete places records in owner-only Trash; restore returns them privately. Shared reading uses organization visibility, while revisions and attachments currently remain owner-scoped. Review dates do not constitute a publication workflow.
 
-The new-document form currently persists one browser draft key; the existing editor holds unsaved edits in memory. The next data-safety milestone must introduce a draft protocol with identity, organization, document, tab identity, expiration, and explicit recovery choices. Do not attach a recovered draft to another authenticated user or silently apply it over a newer server version.
+New and existing editors now persist browser drafts scoped by account, organization, document and editor instance, with expiration and explicit recovery/conflict comparison. Creation has durable retry keys. See `DRAFT-RECOVERY.md` for verified behavior and remaining navigation/offline coverage; these improvements do not complete the editing milestone.
 
 Setup generates configuration when absent, builds app/init, starts services, explicitly runs init, and gates success on readiness. Update validates configuration, takes a SQL backup, rebuilds app/init, runs migrations, starts the app, and verifies readiness. SQL alone is not a full backup. Migration completion is not evidence that an older app image remains schema-compatible.
 
@@ -36,7 +36,7 @@ Setup generates configuration when absent, builds app/init, starts services, exp
 5. Preserve IDs, attachment references/bytes, history, tags, archive status, and Trash state. Do not prune during migration.
 6. Test old-data migration and new-code access matrices before rollout. Document which older app versions remain compatible. Rollback may require restoring a consistent backup rather than reversing a migration.
 
-These are required design invariants. New team ownership, publication state, durable jobs, and draft recovery are still pending implementation.
+These are required design invariants. The proposed capability matrix, migration stages and compatibility gates are in [DOCUMENT-OWNERSHIP-DESIGN.md](DOCUMENT-OWNERSHIP-DESIGN.md). Team ownership, publication state and durable jobs remain pending implementation.
 
 ## Go implementation disposition
 
