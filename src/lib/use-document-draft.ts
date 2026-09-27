@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DRAFT_CLEARED_EVENT, DRAFT_EPOCH_KEY, draftKey, listDrafts, saveDraft, type DocumentDraft, type DraftFields } from './document-drafts';
 
-export function useDocumentDraft(fields: DraftFields, enabled: boolean, documentId = 'new', recoveryEnabled = true) {
+export function useDocumentDraft(fields: DraftFields, enabled: boolean, documentId = 'new', recoveryEnabled = true, protectNavigation = enabled) {
   const [userId, setUserId] = useState<string | null>(null);
   const [candidates, setCandidates] = useState<DocumentDraft[]>([]);
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -56,15 +56,17 @@ export function useDocumentDraft(fields: DraftFields, enabled: boolean, document
     }
   }, [userId, organizationId, documentId, recoveryEnabled]);
 
-  useEffect(() => {
-    if (!userId || !enabled || !active.current) return;
-    const data: DraftFields = JSON.parse(serialized);
+  const persist = useCallback((data: DraftFields) => {
+    if (!userId || !active.current) {
+      setError('Browser recovery is not ready. Keep this page open until your document is saved.');
+      return false;
+    }
     try {
       if (documentId === 'new' && !data.title && !data.content) {
         if (currentKey.current) localStorage.removeItem(currentKey.current);
         currentKey.current = null;
         setSavedAt(null);
-        return;
+        return true;
       }
       const scope = { userId, organizationId, documentId };
       const draft = saveDraft(localStorage, scope, instanceId.current, data, epoch.current);
@@ -73,14 +75,21 @@ export function useDocumentDraft(fields: DraftFields, enabled: boolean, document
       currentKey.current = key;
       setSavedAt(draft.savedAt);
       setError('');
+      return true;
     } catch {
       setSavedAt(null);
       setError('Your latest changes could not be saved in this browser. Keep this page open and save the document before leaving.');
+      return false;
     }
-  }, [userId, organizationId, documentId, serialized, enabled]);
+  }, [userId, organizationId, documentId]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!userId || !enabled || !active.current) return;
+    persist(JSON.parse(serialized));
+  }, [userId, serialized, enabled, persist]);
+
+  useEffect(() => {
+    if (!protectNavigation) return;
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); };
     const onClick = (event: MouseEvent) => {
       if (savedAt && !error) return;
@@ -97,7 +106,7 @@ export function useDocumentDraft(fields: DraftFields, enabled: boolean, document
       window.removeEventListener('beforeunload', beforeUnload);
       document.removeEventListener('click', onClick, true);
     };
-  }, [enabled, fields.title, fields.content, savedAt, error]);
+  }, [protectNavigation, savedAt, error]);
 
   const clear = () => {
     try {
@@ -119,5 +128,5 @@ export function useDocumentDraft(fields: DraftFields, enabled: boolean, document
     } catch { setError('The saved draft could not be removed.'); }
   };
 
-  return { candidates, savedAt, error, clear, discard, revoked };
+  return { candidates, savedAt, error, clear, discard, revoked, persist };
 }

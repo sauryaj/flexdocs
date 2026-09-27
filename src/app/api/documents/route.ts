@@ -1,6 +1,5 @@
-import { z } from 'zod';
-import { documentUpdateSchema } from '@/lib/document-write';
-import { canAccessOrganization } from '@/lib/org-scope';
+import { DocumentWriteError } from '@/lib/document-write';
+import { createDocument, creationKeySchema, documentCreateSchema } from '@/lib/document-create';
 import { auditLog } from '@/lib/audit';
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
@@ -55,43 +54,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const parsed = documentUpdateSchema.extend({ title: z.string().trim().min(1).max(500), organizationId: z.string().nullable().optional() }).safeParse(await req.json().catch(() => null));
+  const key = req.headers.get('Idempotency-Key');
+  if (key !== null && !creationKeySchema.safeParse(key).success) return NextResponse.json({ error: 'Idempotency-Key must be a UUID' }, { status: 400 });
+  const parsed = documentCreateSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid document', details: parsed.error.flatten() }, { status: 400 });
-  const { title, content, category, folderId, organizationId, tags, reviewDate, visibility } = parsed.data;
-  if (organizationId && !await canAccessOrganization(user.id, user.role, organizationId)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-  if (organizationId && !await prisma.organization.findUnique({ where: { id: organizationId }, select: { id: true } })) return NextResponse.json({ error: 'Organization not found' }, { status: 404 });
-  if (folderId && !await prisma.folder.findFirst({ where: { id: folderId, userId: user.id } })) return NextResponse.json({ error: 'Folder not found' }, { status: 404 });
-  const result = await prisma.$transaction(async tx => {
-
-    const document = await tx.document.create({
-      data: {
-        title, content: content || '',
-        category: category || 'general',
-        folderId: folderId || null,
-        reviewDate: reviewDate ? new Date(reviewDate) : null,
-        organizationId: organizationId || null, userId: user.id,
-        visibility: visibility === 'org' && organizationId ? 'org' : 'private',
-        tags: tags?.length
-          ? {
-              connectOrCreate: tags.map((tag: string) => ({
-                where: { name_userId: { name: tag, userId: user.id } },
-                create: { name: tag, userId: user.id },
-              })),
-            }
-          : undefined,
-      },
-      include: { tags: true },
-    });
-
-    await tx.documentRevision.create({
-      data: {
-        documentId: document.id, title: document.title, content: document.content,
-        category: document.category, version: 1, message: 'Initial version', userId: user.id,
-      },
-    });
-
-    return document;
-  });
-  auditLog({ userId: user.id, action: 'document.create', resourceType: 'document', resourceId: result.id, resourceName: result.title }).catch(() => {});
-  return NextResponse.json(result, { status: 201 });
+  try {
+    const { document, replayed } = await createDocument(user.id, user.role as UserRole, parsed.data, key || undefined);
+    if (!replayed) auditLog({ userId: user.id, action: 'document.create', resourceType: 'document', resourceId: document.id, resourceName: document.title }).catch(() => {});
+    return NextResponse.json(document, { status: replayed ? 200 : 201, headers: { 'Idempotency-Replayed': String(replayed) } });
+  } catch (error) {
+    if (error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
+    throw error;
+  }
 }

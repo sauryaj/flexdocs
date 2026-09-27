@@ -220,10 +220,13 @@ function NewDocumentForm() {
   const [saveError, setSaveError] = useState('');
   const submittingRef = useRef(false);
   const createdRef = useRef(false);
+  const [pendingCreation, setPendingCreation] = useState<{ key: string; payload: string } | null>(null);
 
   const [viewMode, setViewMode] = useState<'write' | 'preview' | 'split'>('write');
   const [isMentionOpen, setIsMentionOpen] = useState(false);
-  const draft = useDocumentDraft({ title, content, category, folderId, organizationId, tags }, !loading && !createdRef.current);
+  const draftFields = { title, content, category, folderId, organizationId, tags,
+    creationKey: pendingCreation?.key, creationPayload: pendingCreation?.payload };
+  const draft = useDocumentDraft(draftFields, !loading && !createdRef.current, 'new', true, !createdRef.current && !!(title || content));
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -246,10 +249,13 @@ function NewDocumentForm() {
     setFolderId(saved.fields.folderId);
     setOrganizationId(saved.fields.organizationId);
     setTags(saved.fields.tags);
+    setPendingCreation(saved.fields.creationKey && saved.fields.creationPayload ? { key: saved.fields.creationKey, payload: saved.fields.creationPayload } : null);
   };
 
   const clearDraft = () => {
+    if (pendingCreation && !confirm('This request may already have created a document. Clearing abandons its retry link; check your document list before starting another. Clear anyway?')) return;
     if (!draft.clear()) return;
+    setPendingCreation(null);
     setTitle('');
     setContent('');
     setCategory('general');
@@ -259,6 +265,7 @@ function NewDocumentForm() {
   };
 
   const applyTemplate = (tmpl: (typeof TEMPLATES)[0]) => {
+    if (pendingCreation) return;
     if (content && !confirm('Applying a template will overwrite your current document content. Continue?')) {
       return;
     }
@@ -308,8 +315,8 @@ function NewDocumentForm() {
     setIsMentionOpen(false);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     if (submittingRef.current || createdRef.current) return;
     submittingRef.current = true;
     setLoading(true);
@@ -320,22 +327,20 @@ function NewDocumentForm() {
       .map((t) => t.trim())
       .filter(Boolean);
 
+    const attempt = pendingCreation || { key: crypto.randomUUID(), payload: JSON.stringify({ title, content, category,
+      folderId: folderId || null, organizationId: organizationId || null, tags: tagList }) };
+    setPendingCreation(attempt);
+    draft.persist({ ...draftFields, creationKey: attempt.key, creationPayload: attempt.payload });
     try {
       const res = await fetch('/api/documents', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title,
-          content,
-          category,
-          folderId: folderId || null,
-          organizationId: organizationId || null,
-          tags: tagList,
-        }),
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': attempt.key },
+        body: attempt.payload,
       });
       if (!res.ok) {
         const data = await res.json().catch(() => null);
         setSaveError(data?.error || 'The document could not be saved. Your draft is still here.');
+        if (!pendingCreation && [400, 401, 403, 404, 413, 422, 429].includes(res.status)) setPendingCreation(null);
         return;
       }
       const doc = await res.json();
@@ -343,7 +348,7 @@ function NewDocumentForm() {
       draft.clear();
       router.push(`/dashboard/documents/${doc.id}`);
     } catch {
-      setSaveError('Could not confirm whether the document was saved. Your draft is still here. Check the document list before trying again to avoid creating a duplicate.');
+      setSaveError('Could not confirm whether the document was saved. Use Retry original save to safely check or complete the same request.');
     } finally {
       submittingRef.current = false;
       if (!createdRef.current) setLoading(false);
@@ -414,9 +419,13 @@ function NewDocumentForm() {
         </div>)}
       </section>}
 
+      {pendingCreation && !loading && <section role="status" className="card p-4 space-y-3">
+        <p>The original save is awaiting confirmation. Editing is paused so retrying sends the same content and cannot create a second document for this request.</p>
+        <button type="button" className="btn-primary" onClick={() => void handleSubmit()}>Retry original save</button>
+      </section>}
       <form onSubmit={handleSubmit} className="space-y-6">
         {saveError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
-        <fieldset disabled={loading} className="space-y-6">
+        <fieldset disabled={loading || !!pendingCreation} className="space-y-6">
         {/* Templates Selector */}
         <div className="card p-4 space-y-3 bg-gradient-to-r from-blue-50/50 via-white to-indigo-50/50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900/80 border border-blue-100 dark:border-slate-800">
           <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">

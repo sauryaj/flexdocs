@@ -38,6 +38,38 @@ try {
   const create = await call('/documents', sessions.admin, 'POST', { title: 'Initial', content: 'A', tags: ['same', 'same'], organizationId: org.id, visibility: 'org' });
   check(create.status === 201 && create.body.tags.length === 1, 'atomic creation deduplicates tags');
   const id = create.body.id;
+  const creationKey = crypto.randomUUID();
+  const retryHeaders = { 'Idempotency-Key': creationKey };
+  const retryPayload = { title: `${suffix} retry-safe`, content: '# Preserve\n', tags: ['retry-safe'], organizationId: org.id };
+  const attempts = await Promise.all(Array.from({ length: 6 }, () => call('/documents', sessions.admin, 'POST', retryPayload, retryHeaders)));
+  check(attempts.every(result => [200, 201].includes(result.status)) && attempts.filter(result => result.status === 201).length === 1, 'concurrent keyed creation has exactly one creator');
+  check(new Set(attempts.map(result => result.body.id)).size === 1, 'concurrent retries return one document identity');
+  const retryId = attempts[0].body.id;
+  check(await db.documentRevision.count({ where: { documentId: retryId } }) === 1, 'creation retries do not duplicate initial revisions');
+  check(await db.documentCreationRequest.count({ where: { userId: users[0].id, key: creationKey } }) === 1, 'creation outcome is durably recorded once');
+  check((await call('/documents', sessions.admin, 'POST', { ...retryPayload, content: 'Different content' }, retryHeaders)).status === 409, 'reused key rejects a different payload');
+  check((await call('/documents', null, 'POST', retryPayload, retryHeaders)).status === 401, 'anonymous caller cannot replay a creation');
+  check((await call('/documents', sessions.viewer, 'POST', retryPayload, retryHeaders)).status === 403, 'viewer cannot replay a creation');
+  const otherCreator = await call('/documents', sessions.editor, 'POST', retryPayload, retryHeaders);
+  check(otherCreator.status === 201 && otherCreator.body.id !== retryId, 'creation keys are isolated by account');
+  await db.organizationMember.create({ data: { userId: users[1].id, organizationId: otherOrg.id } });
+  await db.organizationMember.deleteMany({ where: { userId: users[1].id, organizationId: org.id } });
+  check((await call('/documents', sessions.editor, 'POST', retryPayload, retryHeaders)).status === 403, 'replay respects revoked organization access');
+  await db.organizationMember.create({ data: { userId: users[1].id, organizationId: org.id } });
+  await db.organizationMember.deleteMany({ where: { userId: users[1].id, organizationId: otherOrg.id } });
+  check((await call('/documents', sessions.admin, 'POST', retryPayload, { 'Idempotency-Key': 'invalid' })).status === 400, 'invalid creation key rejected');
+  await call(`/documents/${retryId}`, sessions.admin, 'PUT', { content: 'Updated after creation' });
+  const replay = await call('/documents', sessions.admin, 'POST', retryPayload, retryHeaders);
+  check(replay.status === 200 && replay.body.content === 'Updated after creation', 'replay returns current document without resetting later edits');
+  await call(`/documents/${retryId}`, sessions.admin, 'DELETE');
+  check((await call('/documents', sessions.admin, 'POST', retryPayload, retryHeaders)).status === 410, 'retry cannot recreate a trashed document');
+  await db.document.delete({ where: { id: retryId } });
+  check((await call('/documents', sessions.admin, 'POST', retryPayload, retryHeaders)).status === 410, 'deleted document leaves a durable retry tombstone');
+  const retryFolder = await db.folder.create({ data: { name: 'Scoped creation test', userId: users[0].id, organizationId: org.id } });
+  const rejectedKey = crypto.randomUUID();
+  check((await call('/documents', sessions.admin, 'POST', { title: 'Wrong folder organization', folderId: retryFolder.id, organizationId: otherOrg.id }, { 'Idempotency-Key': rejectedKey })).status === 400, 'creation rejects folder and document organization mismatch');
+  check(await db.documentCreationRequest.count({ where: { userId: users[0].id, key: rejectedKey } }) === 0, 'failed transaction does not consume a creation key');
+  check((await call('/documents', sessions.admin, 'POST', { title: 'Corrected organization', folderId: retryFolder.id, organizationId: org.id }, { 'Idempotency-Key': rejectedKey })).status === 201, 'corrected request can reuse an uncommitted key');
   for (const role of ['admin', 'editor', 'viewer']) {
     check((await call(`/documents/${id}`, sessions[role])).status === 200, `${role} can read shared document`);
   }

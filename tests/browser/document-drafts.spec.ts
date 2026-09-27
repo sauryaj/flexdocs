@@ -137,3 +137,57 @@ test('two-tab conflicts require comparison and explicit baseline acceptance', as
   await page.getByRole('button', { name: 'Save Now' }).click();
   await expect.poll(() => server.current().content).toBe(markdown + '\nChanges from the other tab');
 });
+
+test('creation retries preserve the same key and payload after a lost response and reload', async ({ context, page }) => {
+  await fixture(context);
+  const requests: { key: string | undefined; body: string | null }[] = [];
+  await context.route('**/api/documents', async route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    requests.push({ key: route.request().headers()['idempotency-key'], body: route.request().postData() });
+    if (requests.length === 1) return route.abort('internetdisconnected');
+    return route.fulfill({ status: 200, json: { ...original, id: 'browser-draft-created' } });
+  });
+  await page.goto('/dashboard/documents/new');
+  await page.getByPlaceholder('e.g. Production Web Server Setup & Disaster Recovery SOP').fill('Retry-safe browser document');
+  await page.locator('textarea').fill(markdown);
+  await expect(page.getByText('Draft saved in this browser', { exact: false })).toBeVisible();
+  await page.locator('form').evaluate(form => { (form as HTMLFormElement).requestSubmit(); (form as HTMLFormElement).requestSubmit(); });
+  await expect(page.getByRole('button', { name: 'Retry original save' })).toBeVisible();
+  expect(requests).toHaveLength(1);
+  expect(requests[0].key).toMatch(/^[a-f0-9-]{36}$/);
+  await expect(page.locator('textarea')).toBeDisabled();
+  await page.reload();
+  await page.getByRole('button', { name: 'Restore a copy', exact: true }).click();
+  await expect(page.locator('textarea')).toHaveValue(markdown);
+  await expect(page.locator('textarea')).toBeDisabled();
+  await page.getByRole('button', { name: 'Retry original save' }).click();
+  await expect(page).toHaveURL(/browser-draft-created$/);
+  expect(requests).toHaveLength(2);
+  expect(requests[1]).toEqual(requests[0]);
+});
+
+test('storage failure still protects navigation while a creation request is in flight', async ({ context, page }) => {
+  let release = () => {};
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  let started = false;
+  await context.route('**/api/documents', async route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    started = true;
+    await hold;
+    return route.abort('internetdisconnected');
+  });
+  await page.addInitScript(() => { Storage.prototype.setItem = () => { throw new DOMException('Blocked', 'QuotaExceededError'); }; });
+  try {
+    await page.goto('/dashboard/documents/new');
+    await page.getByPlaceholder('e.g. Production Web Server Setup & Disaster Recovery SOP').fill('In-flight request');
+    await page.locator('textarea').fill(markdown);
+    await expect(page.getByText('Your latest changes could not be saved in this browser.', { exact: false })).toBeVisible();
+    await page.getByRole('button', { name: 'Save Document', exact: true }).click();
+    await expect.poll(() => started).toBe(true);
+    page.once('dialog', dialog => dialog.dismiss());
+    await page.locator('a[href="/dashboard/documents"]').first().click();
+    await expect(page).toHaveURL(/\/documents\/new$/);
+    await expect(page.locator('textarea')).toHaveValue(markdown);
+  } finally { release(); }
+  await expect(page.getByRole('button', { name: 'Retry original save' })).toBeVisible();
+});
