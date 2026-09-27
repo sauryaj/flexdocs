@@ -4,8 +4,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
-  ListTodo,
-  Sparkles,
   Building2,
   FileText,
   Key,

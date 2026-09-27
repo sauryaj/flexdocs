@@ -41,6 +41,25 @@ test.beforeAll(async ({ request, baseURL }) => {
 test.beforeEach(async ({ context }) => { await context.addCookies(cookies); });
 test.afterAll(async ({ request, baseURL }) => { await request.post(`${baseURL}/api/logout`); });
 
+test('workspace shortcuts remain reachable beside search on narrow screens', async ({ page }) => {
+  await page.goto('/dashboard');
+  const shortcuts = page.getByRole('navigation', { name: 'Workspace shortcuts' });
+  for (const width of [1440, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(shortcuts.getByRole('link', { name: 'My Day', exact: true })).toBeVisible();
+    await expect(shortcuts.getByRole('link', { name: 'Ask the Docs', exact: true })).toBeVisible();
+    await expect.poll(() => page.locator('header').evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    const search = await page.getByRole('button', { name: 'Open global search' }).boundingBox();
+    const nav = await shortcuts.boundingBox();
+    expect(search).not.toBeNull();
+    expect(nav).not.toBeNull();
+    expect(nav!.x).toBeGreaterThanOrEqual(search!.x + search!.width);
+  }
+  await shortcuts.getByRole('link', { name: 'My Day', exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\/my-day$/);
+  await expect(shortcuts.getByRole('link', { name: 'My Day', exact: true })).toHaveAttribute('aria-current', 'page');
+});
+
 test('failed save survives reload, compares exact Markdown and saves only after confirmation', async ({ page, context }) => {
   const server = await fixture(context);
   await openEditor(page);
