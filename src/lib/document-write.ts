@@ -24,6 +24,13 @@ export class DocumentWriteError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
+export async function validateDocumentFolder(tx: Prisma.TransactionClient, userId: string, organizationId: string | null, folderId?: string | null) {
+  if (!folderId) return;
+  const folder = await tx.folder.findFirst({ where: { id: folderId, userId }, select: { organizationId: true } });
+  if (!folder) throw new DocumentWriteError(404, 'Folder not found');
+  if (folder.organizationId !== organizationId) throw new DocumentWriteError(400, 'Document and folder must belong to the same organization.');
+}
+
 export async function withDocumentWrite<T>(
   id: string,
   userId: string,

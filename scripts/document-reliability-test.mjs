@@ -142,6 +142,15 @@ try {
   check((await call(`/documents/${id}`, sessions.admin, 'PUT', { title: ' ' })).status === 400, 'invalid title rejected');
   check((await call(`/documents/${id}`, sessions.admin, 'PUT', { reviewDate: 'bad' })).status === 400, 'invalid date rejected');
   check((await call(`/documents/${id}`, sessions.admin, 'PUT', { folderId: 'missing' })).status === 404, 'missing folder rejected');
+  const foreignOrgFolder = await db.folder.create({ data: { userId: users[0].id, name: 'Other organization folder', organizationId: otherOrg.id } });
+  const beforeMove = await db.document.findUnique({ where: { id } });
+  const beforeMoveHistory = await db.documentRevision.count({ where: { documentId: id } });
+  check((await call(`/documents/${id}`, sessions.admin, 'PUT', { folderId: foreignOrgFolder.id, content: 'Must not overwrite' })).status === 400, 'same-owner folder in another organization rejected');
+  const afterMove = await db.document.findUnique({ where: { id } });
+  check(afterMove.folderId === beforeMove.folderId && afterMove.content === beforeMove.content && afterMove.updatedAt.getTime() === beforeMove.updatedAt.getTime(), 'rejected folder move preserves document and conflict token');
+  check(await db.documentRevision.count({ where: { documentId: id } }) === beforeMoveHistory, 'rejected folder move creates no history');
+  check((await call(`/documents/${id}`, sessions.admin, 'PUT', { folderId: childFolder.body.id })).status === 200, 'same-organization folder move accepted');
+  check((await call(`/documents/${id}`, sessions.admin, 'PUT', { folderId: null })).status === 200, 'move back to organization root accepted');
   await call(`/documents/${id}`, sessions.admin, 'PUT', { isArchived: true });
   check((await call(`/documents/${id}`, sessions.viewer)).status === 404, 'archived shared document hidden');
   await call(`/documents/${id}`, sessions.admin, 'PUT', { visibility: 'private' });

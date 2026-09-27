@@ -12,6 +12,7 @@ const tx = {
   $queryRaw: vi.fn(),
   document: { findFirst: vi.fn(), update: vi.fn() },
   documentRevision: { findFirst: vi.fn(), create: vi.fn() },
+  folder: { findFirst: vi.fn() },
 };
 
 beforeEach(() => {
@@ -19,6 +20,26 @@ beforeEach(() => {
   tx.document.findFirst.mockResolvedValue(document);
   tx.documentRevision.findFirst.mockResolvedValue(null);
   Object.assign(prisma, { $transaction: vi.fn(async callback => callback(tx)) });
+});
+
+describe('folder assignment boundaries', () => {
+  it.each([['org-a', 'org-b'], [null, 'org-a'], ['org-a', null]])('rejects moving from %s to a folder in %s without changing content or history', async (documentOrg, folderOrg) => {
+    authMock.mockResolvedValue({ id: 'owner', role: 'editor' });
+    tx.document.findFirst.mockResolvedValue({ ...document, organizationId: documentOrg });
+    tx.folder.findFirst.mockResolvedValue({ organizationId: folderOrg });
+    const { PUT } = await import('@/app/api/documents/[id]/route');
+    const response = await PUT(new Request('http://localhost', { method: 'PUT', body: JSON.stringify({ folderId: 'folder', content: 'Must not overwrite' }) }), { params: Promise.resolve({ id: 'doc' }) });
+    expect(response.status).toBe(400);
+    expect(tx.document.update).not.toHaveBeenCalled();
+    expect(tx.documentRevision.create).not.toHaveBeenCalled();
+  });
+
+  it.each([null, 'org-a'])('allows a folder in the same organization: %s', async organizationId => {
+    const { validateDocumentFolder } = await import('@/lib/document-write');
+    tx.folder.findFirst.mockResolvedValue({ organizationId });
+    await expect(validateDocumentFolder(tx as unknown as Prisma.TransactionClient, 'owner', organizationId, 'folder')).resolves.toBeUndefined();
+    expect(tx.folder.findFirst).toHaveBeenCalledWith({ where: { id: 'folder', userId: 'owner' }, select: { organizationId: true } });
+  });
 });
 
 describe('document validation and recovery', () => {

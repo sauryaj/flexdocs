@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { type UserRole } from '@prisma/client';
 import { prisma } from './prisma';
 import { getOrgScope } from './org-scope';
-import { documentUpdateSchema, DocumentWriteError } from './document-write';
+import { documentUpdateSchema, DocumentWriteError, validateDocumentFolder } from './document-write';
 
 export const documentCreateSchema = documentUpdateSchema.pick({
   content: true, category: true, folderId: true, tags: true, reviewDate: true, visibility: true,
@@ -46,11 +46,7 @@ export async function createDocument(userId: string, role: UserRole, input: z.in
       if (!canUseOrganization(fields.organizationId)) throw new DocumentWriteError(403, 'Forbidden');
       if (!await tx.organization.findUnique({ where: { id: fields.organizationId }, select: { id: true } })) throw new DocumentWriteError(404, 'Organization not found');
     }
-    if (fields.folderId) {
-      const folder = await tx.folder.findFirst({ where: { id: fields.folderId, userId }, select: { organizationId: true } });
-      if (!folder) throw new DocumentWriteError(404, 'Folder not found');
-      if (folder.organizationId !== fields.organizationId) throw new DocumentWriteError(400, 'Document and folder must belong to the same organization.');
-    }
+    await validateDocumentFolder(tx, userId, fields.organizationId, fields.folderId);
     const { tags, ...data } = fields;
     const document = await tx.document.create({ data: {
       ...data, userId,

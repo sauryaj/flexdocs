@@ -3,7 +3,7 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/rbac';
 import { auditLog } from '@/lib/audit';
-import { documentUpdateSchema, withDocumentWrite, snapshotDocument, nextDocumentTimestamp, DocumentWriteError } from '@/lib/document-write';
+import { documentUpdateSchema, withDocumentWrite, snapshotDocument, nextDocumentTimestamp, DocumentWriteError, validateDocumentFolder } from '@/lib/document-write';
 import { documentReadWhere } from '@/lib/document-access';
 import { getOrgScope } from '@/lib/org-scope';
 import { type UserRole } from '@prisma/client';
@@ -49,9 +49,7 @@ export async function PUT(
   const { expectedUpdatedAt, tags, reviewDate, reviewAcknowledged, ...fields } = parsed.data;
   try {
     const updated = await withDocumentWrite(id, user.id, expectedUpdatedAt, async (tx, document) => {
-      if (fields.folderId && !await tx.folder.findFirst({ where: { id: fields.folderId, userId: user.id } })) {
-        throw new DocumentWriteError(404, 'Folder not found');
-      }
+      await validateDocumentFolder(tx, user.id, document.organizationId, fields.folderId);
       if ((fields.content !== undefined && fields.content !== document.content) ||
           (fields.title !== undefined && fields.title !== document.title) ||
           (fields.category !== undefined && fields.category !== document.category)) {
