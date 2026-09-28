@@ -62,11 +62,13 @@ export async function getAttachmentData(attachmentId: string, userId: string) {
   if (!attachment) return null;
 
   if (attachment.storageType === 'filesystem' && attachment.filePath) {
-    const buffer = readFileSync(attachment.filePath);
-    return {
-      ...attachment,
-      data: buffer.toString('base64'),
-    };
+    try {
+      const buffer = readFileSync(attachment.filePath);
+      return { ...attachment, data: buffer.toString('base64') };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
   }
 
   return attachment;

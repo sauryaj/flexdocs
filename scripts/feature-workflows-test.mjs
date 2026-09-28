@@ -125,7 +125,15 @@ try {
   const broken = await db.attachment.create({ data: { userId: users[0], documentId: shared.id, filename: 'missing.txt', mimeType: 'text/plain', size: 1, storageType: 'filesystem', filePath: '/missing-features-file' } });
   const incomplete = await call(`/organizations/${orgs[0]}/export`, sessions.admin);
   check(incomplete.status === 422 && incomplete.body.issues.some(i => i.includes(broken.id)), 'missing file produces explicit export error');
+  check((await call(`/attachments/${broken.id}`, sessions.admin)).status === 404, 'missing attachment file returns controlled not-found response');
   await db.attachment.delete({ where: { id: broken.id } });
+  const emptyFile = await db.attachment.create({ data: { userId: users[0], documentId: shared.id, filename: 'empty.txt', mimeType: 'text/plain', size: 0, storageType: 'base64', data: '' } });
+  const emptyDownload = await fetch(`${base}/api/attachments/${emptyFile.id}`, { headers: { Cookie: sessions.admin } });
+  check(emptyDownload.status === 200 && (await emptyDownload.arrayBuffer()).byteLength === 0, 'valid empty attachment downloads successfully');
+  check(emptyDownload.headers.get('cache-control') === 'private, no-store' && emptyDownload.headers.get('x-content-type-options') === 'nosniff', 'attachment responses disable caching and content sniffing');
+  check((await call(`/attachments/${emptyFile.id}`, sessions.viewer)).status === 404, 'legacy attachment stays private to uploader');
+  check((await call(`/attachments/${emptyFile.id}`, null)).status === 401, 'anonymous attachment download blocked');
+  await db.attachment.delete({ where: { id: emptyFile.id } });
   const saved = await db.password.findUnique({ where: { id: passwords[0] } });
   await db.password.update({ where: { id: passwords[0] }, data: { password: '00:00:00' } });
   check((await call(`/organizations/${orgs[0]}/export`, sessions.admin)).status === 422, 'undecryptable secret fails export');

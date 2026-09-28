@@ -27,6 +27,8 @@ Search includes server/asset data, and pulse includes ticket counts, so these ag
 
 ## Portable exports
 
+Attachment downloads preserve valid zero-byte files and return 404 when filesystem bytes are missing, retaining the database record for repair. Other filesystem failures remain errors rather than being mislabeled as missing data. Responses use `private, no-store` and `nosniff`. Legacy attachments remain uploader-only; sharing a parent document does not implicitly expose previously private files. Explicit owner-authorized attachment publication remains part of the ownership/lifecycle implementation.
+
 Full and organization JSON exports are administrator-only because they include decrypted vault secrets. Organization exports include records assigned to that organization; unassigned documents and links to records outside the export are excluded. Revision history and attachment bytes are included. A missing/unreadable file, an attachment exceeding 14 MB, or a vault decryption failure returns HTTP 422 with an issue list instead of a successful incomplete file. The export screen displays these issues.
 
 These JSON files are portable data snapshots, not complete system backups. They exclude accounts, sessions, audit history, integration settings, and other unsupported system records. Continue using the database/uploads/keys recovery procedure for disaster recovery. Import remaps supported owned records to the importing admin, restores document revisions, and reports missing bytes or failed records. Existing records are skipped; import is not transactional across the entire bundle and partial results must be reviewed.
