@@ -1,12 +1,13 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { getOrgScope } from '@/lib/org-scope';
+import { getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
+import { documentReadWhere } from '@/lib/document-access';
 
 /**
  * Minimal MCP (Model Context Protocol) server over Streamable HTTP (JSON-RPC 2.0).
- * Authenticate with an API key via the X-API-Key header — the key's permissions
- * and the caller's org scope apply to every tool call.
+ * Authenticate with an API key via the X-API-Key header.
+ * Document visibility follows the shared read policy.
  *
  * Tools:
  *   flexdocs_search      { query, organizationId? }
@@ -47,10 +48,7 @@ async function toolSearch(user: { id: string; role: string }, args: Record<strin
   const organizationId = args.organizationId ? String(args.organizationId) : undefined;
 
   const scope = await getOrgScope(user.id, user.role);
-  const isStaff = scope.mode === 'all';
-  const orgWhere = isStaff
-    ? (organizationId ? { organizationId } : {})
-    : { organizationId: scope.orgIds.length ? { in: scope.orgIds } : { in: ['__none__'] } };
+  const orgWhere = scopeOrgWhere(scope, organizationId);
   const terms = q.split(/\s+/).filter((t: string) => t.length > 2).slice(0, 8);
   const docContains = terms.length
     ? { OR: terms.flatMap((t: string) => [{ title: { contains: t, mode: 'insensitive' as const } }, { content: { contains: t, mode: 'insensitive' as const } }]) }
@@ -60,9 +58,8 @@ async function toolSearch(user: { id: string; role: string }, args: Record<strin
 
   const [documents, servers, assets] = await Promise.all([
     prisma.document.findMany({
-      where: { deletedAt: null, ...isStaff
-        ? { userId: user.id, isArchived: false, ...orgWhere, ...(docContains ? { OR: docContains.OR } : {}) }
-        : { ...orgWhere, isArchived: false, visibility: 'org', ...(docContains ? { OR: docContains.OR } : {}) } },
+      where: { AND: [documentReadWhere(user.id, scope), { isArchived: false,
+        ...(organizationId ? { organizationId } : {}), ...docContains }] },
       select: { id: true, title: true, category: true, content: true },
       take: 8,
     }),
@@ -87,15 +84,9 @@ async function toolSearch(user: { id: string; role: string }, args: Record<strin
 
 async function toolGetDocument(user: { id: string; role: string }, args: Record<string, unknown>) {
   const id = String(args.id ?? '');
-  const doc = await prisma.document.findUnique({ where: { deletedAt: null, id } });
-  if (!doc) return { error: 'not found' };
-
   const scope = await getOrgScope(user.id, user.role);
-  const allowed =
-    doc.userId === user.id ||
-    scope.mode === 'all' ||
-    (scope.mode === 'limited' && doc.visibility === 'org' && doc.organizationId && scope.orgIds.includes(doc.organizationId));
-  if (!allowed) return { error: 'not found' };
+  const doc = await prisma.document.findFirst({ where: { id, ...documentReadWhere(user.id, scope) } });
+  if (!doc) return { error: 'not found' };
 
   return { id: doc.id, title: doc.title, category: doc.category, content: doc.content, updatedAt: doc.updatedAt };
 }
@@ -119,7 +110,7 @@ async function toolOrgPulse(user: { id: string; role: string }, args: Record<str
     prisma.domain.count({ where: { organizationId } }),
     prisma.server.count({ where: { organizationId } }),
     prisma.ticket.count({ where: { organizationId, status: { in: ['open', 'pending'] } } }),
-    prisma.document.count({ where: { deletedAt: null, organizationId, isArchived: false } }),
+    prisma.document.count({ where: { ...documentReadWhere(user.id, scope), organizationId, isArchived: false } }),
   ]);
   return { organizationId, domains, servers, openTickets: tickets, documents: docs };
 }

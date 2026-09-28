@@ -35,6 +35,30 @@ try {
   const outside = await document(sessions.admin, 'outside', orgs[1], 'org');
   await document(sessions.admin, 'unassigned');
   const own = await document(sessions.editor, 'own-private');
+  async function mcp(cookie, name, args) {
+    const result = await call('/mcp', cookie, 'POST', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
+    check(result.status === 200, `MCP ${name} responds successfully`);
+    return JSON.parse(result.body.result.content[0].text);
+  }
+  const mcpFixtures = [];
+  for (const data of [
+    { visibility: 'private' },
+    { visibility: 'org', isArchived: true },
+    { visibility: 'org', deletedAt: new Date() },
+  ]) mcpFixtures.push(await db.document.create({ data: { userId: users[1], organizationId: orgs[0], title: suffix, content: 'MCP protected fixture', ...data } }));
+  for (const role of ['admin', 'viewer']) {
+    for (const doc of mcpFixtures) check((await mcp(sessions[role], 'flexdocs_get_document', { id: doc.id })).error === 'not found', `${role} MCP cannot read another owner's private, archived, or trashed document (${doc.id})`);
+    check((await mcp(sessions[role], 'flexdocs_org_pulse', { organizationId: orgs[0] })).documents === 1, `${role} MCP counts only readable active documents`);
+    const found = await mcp(sessions[role], 'flexdocs_search', { query: suffix, organizationId: orgs[0] });
+    check(found.documents.length === 1 && found.documents[0].id === shared.id, `${role} MCP search filters private, archived, trashed and other-org documents`);
+  }
+  check((await mcp(sessions.admin, 'flexdocs_get_document', { id: own.id })).error === 'not found', 'admin MCP cannot read another owner private unassigned document');
+  check((await mcp(sessions.editor, 'flexdocs_get_document', { id: mcpFixtures[1].id })).id === mcpFixtures[1].id, 'owner MCP can read own archived document');
+  check((await mcp(sessions.editor, 'flexdocs_search', { query: suffix })).documents.some(doc => doc.id === own.id), 'member MCP search includes own private document');
+  check((await mcp(sessions.viewer, 'flexdocs_get_document', { id: outside.id })).error === 'not found', 'viewer MCP cannot read another organization document');
+  check((await mcp(sessions.viewer, 'flexdocs_search', { query: suffix, organizationId: orgs[1] })).documents.length === 0, 'member MCP requested organization intersects access');
+  check((await call('/mcp', null, 'POST', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'flexdocs_get_document', arguments: { id: shared.id } } })).status === 401, 'anonymous MCP document access blocked');
+  await db.document.deleteMany({ where: { id: { in: mcpFixtures.map(doc => doc.id) } } });
   for (const visible of [false, true]) {
     const result = await call('/passwords', sessions.admin, 'POST', { name: `${suffix}-${visible ? 'visible' : 'hidden'}`, username: 'synthetic', password: 'synthetic-export-secret', organizationId: orgs[0], clientVisible: visible });
     check(result.status === 201, 'create scoped credential'); passwords.push(result.body.id);
