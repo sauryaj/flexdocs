@@ -104,6 +104,11 @@ try {
   check((await call(`/passwords/${cloned.passwords[0].id}/reveal`, sessions.admin)).body.password === 'synthetic-export-secret', 'roundtrip re-encrypts vault secret');
   const invalidImport = await call('/import', sessions.admin, 'POST', { type: 'flexdocs-backup', data: { schema: 'flexdocs-backup', version: 1 } });
   check(invalidImport.status === 200 && invalidImport.body.success === false, 'malformed backup is reported without server error');
+  const cycleId = `${suffix}-cycle`;
+  const cycleBundle = { ...cloned, folders: [{ id: cycleId, name: 'Invalid cycle', parentId: cycleId }], documents: [] };
+  const cycleImport = await call('/import', sessions.admin, 'POST', { type: 'flexdocs-backup', data: cycleBundle });
+  check(cycleImport.status === 200 && cycleImport.body.success === false && cycleImport.body.errors.some(error => error.includes('cycle')), 'cyclic folder import rejected during preflight');
+  check(await db.folder.count({ where: { id: cycleId } }) === 0 && Object.keys(cycleImport.body.imported).length === 0, 'topology preflight failure writes no records');
   check((await call('/import', sessions.viewer, 'POST', { type: 'itglue', data: [{ name: 'blocked' }] })).status === 403, 'legacy import cannot bypass viewer role');
   check((await call('/import', sessions.editor, 'POST', { type: 'documents', format: 'json', data: [{ title: 'blocked' }], organizationId: orgs[1] })).status === 403, 'import cannot bypass organization scope');
   for (const role of ['editor', 'viewer', null]) check((await call('/rbac/invitations', role ? sessions[role] : null, 'POST', { email: `${suffix}@example.invalid`, role: 'viewer' })).status === (role ? 403 : 401), `${role || 'anonymous'} cannot invite users`);

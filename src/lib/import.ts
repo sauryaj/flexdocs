@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { encrypt } from '@/lib/encryption';
 import { storeFile } from '@/lib/file-storage';
 import { type BackupBundle } from '@/lib/export';
+import { validateImportTopology } from '@/lib/import-topology';
 
 export interface RestoreReport {
   success: boolean;
@@ -81,6 +82,8 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
   }
 
   const createdFolderIds = new Set<string>();
+  report.errors.push(...validateImportTopology(bundle.folders, bundle.documents));
+  if (report.errors.length) return report;
 
   // 1. Organizations + members
   for (const org of bundle.organizations as Record<string, unknown>[]) {
@@ -117,8 +120,16 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
   }
 
   for (const f of bundle.folders as Record<string, unknown>[]) {
-    if (f.parentId && createdFolderIds.has(String(f.id)) && createdFolderIds.has(String(f.parentId))) {
-      await prisma.folder.update({ where: { id: String(f.id) }, data: { parentId: String(f.parentId) } });
+    if (f.parentId && createdFolderIds.has(String(f.id))) {
+      if (!createdFolderIds.has(String(f.parentId))) {
+        report.errors.push(`folder ${f.id}: parent was not imported; folder remains at root`);
+        continue;
+      }
+      try {
+        await prisma.folder.update({ where: { id: String(f.id) }, data: { parentId: String(f.parentId) } });
+      } catch {
+        report.errors.push(`folder ${f.id}: parent link could not be restored`);
+      }
     }
   }
 
@@ -128,6 +139,10 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
 
   // 4. Documents + attachments
   for (const doc of bundle.documents as (Record<string, unknown> & { attachments?: Record<string, unknown>[]; revisions?: Record<string, unknown>[]; tagNames?: string[] })[]) {
+    if (doc.folderId && !createdFolderIds.has(String(doc.folderId))) {
+      report.errors.push(`document ${doc.id}: folder was not imported; document was not created`);
+      continue;
+    }
     const data: any = pick(doc, ['id', 'title', 'content', 'type', 'category', 'isPinned', 'isArchived', 'deletedAt', 'reviewDate', 'lastReviewedAt', 'visibility', 'organizationId', 'createdAt', 'updatedAt']);
     data.userId = adminId;
     if (doc.folderId && createdFolderIds.has(String(doc.folderId))) data.folderId = doc.folderId;
