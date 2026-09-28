@@ -41,6 +41,34 @@ test.beforeAll(async ({ request, baseURL }) => {
 test.beforeEach(async ({ context }) => { await context.addCookies(cookies); });
 test.afterAll(async ({ request, baseURL }) => { await request.post(`${baseURL}/api/logout`); });
 
+test('portable restore requires preview and explicit confirmation of the same file', async ({ context, page }) => {
+  const requests: { preview: boolean; data: unknown }[] = [];
+  await context.route('**/api/import', async route => {
+    const body = route.request().postDataJSON();
+    requests.push(body);
+    return route.fulfill({ json: body.preview
+      ? { preview: { valid: true, counts: { documents: 1 }, errors: [], warnings: ['Source counts are not predicted writes.'] } }
+      : { success: true, imported: { documents: 1 }, skipped: 0, errors: [] } });
+  });
+  await page.goto('/dashboard/settings/import-export');
+  await page.getByRole('button', { name: 'Portable Export', exact: true }).click();
+  const bundle = { schema: 'flexdocs-backup', version: 1, documents: [{ id: 'preview-doc', content: 'Exact preview body' }] };
+  await page.getByLabel('Portable backup file').setInputFiles({ name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(bundle)) });
+  await expect(page.getByRole('button', { name: 'Confirm import' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Preview Backup', exact: true }).click();
+  await expect(page.getByRole('region', { name: 'Import preview' })).toBeVisible();
+  expect(requests).toHaveLength(1);
+  expect(requests[0].preview).toBe(true);
+  await page.getByRole('button', { name: 'Cancel preview' }).click();
+  await expect(page.getByRole('button', { name: 'Confirm import' })).toHaveCount(0);
+  expect(requests).toHaveLength(1);
+  await page.getByRole('button', { name: 'Preview Backup', exact: true }).click();
+  await page.getByRole('button', { name: 'Confirm import' }).click();
+  await expect.poll(() => requests.length).toBe(3);
+  expect(requests[2]).toMatchObject({ preview: false, data: bundle });
+  await expect(page.getByRole('region', { name: 'Import preview' })).toHaveCount(0);
+});
+
 test('workspace shortcuts remain reachable beside search on narrow screens', async ({ page }) => {
   await page.goto('/dashboard');
   const shortcuts = page.getByRole('navigation', { name: 'Workspace shortcuts' });
@@ -182,7 +210,6 @@ test('session broadcasts close other editors even when storage writes fail', asy
   await openEditor(page);
   await page.locator('textarea').fill(markdown);
   await expect(page.getByText('Your latest changes could not be saved in this browser.', { exact: false })).toBeVisible();
-  const writes = server.writes();
   const other = await context.newPage();
   await other.goto('/login');
   await other.evaluate(() => {
@@ -192,6 +219,7 @@ test('session broadcasts close other editors even when storage writes fail', asy
   });
   await expect(page.getByText('This editor was closed because the account changed or signed out.', { exact: false })).toBeVisible();
   await expect(page.locator('textarea')).toHaveCount(0);
+  const writes = server.writes();
   await page.waitForTimeout(2300);
   expect(server.writes()).toBe(writes);
 });

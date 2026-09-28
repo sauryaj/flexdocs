@@ -5,6 +5,7 @@ import { hasAnyPermission } from '@/lib/rbac';
 import { auditLog } from '@/lib/audit';
 import { encrypt } from '@/lib/encryption';
 import { restoreBackup } from '@/lib/import';
+import { previewBackup } from '@/lib/import-preview';
 import { canAccessOrganization } from '@/lib/org-scope';
 import { type UserRole } from '@prisma/client';
 
@@ -51,6 +52,7 @@ export async function POST(req: Request) {
   // Full portable backup restore (admin only)
   if (target === 'flexdocs-backup') {
     if (user.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    if (body.preview === true) return NextResponse.json({ preview: previewBackup(data) });
     const report = await restoreBackup(data, user.id);
     void auditLog({ userId: user.id, action: 'data.import', resourceType: 'backup', resourceName: 'full', details: report.imported });
     return NextResponse.json({ success: report.success, imported: report.imported, skipped: report.skipped, errors: report.errors });

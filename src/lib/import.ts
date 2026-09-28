@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { encrypt } from '@/lib/encryption';
 import { storeFile } from '@/lib/file-storage';
 import { type BackupBundle } from '@/lib/export';
-import { validateImportTopology } from '@/lib/import-topology';
+import { previewBackup } from '@/lib/import-preview';
 
 export interface RestoreReport {
   success: boolean;
@@ -70,20 +70,10 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
     report.imported[k] = (report.imported[k] || 0) + n;
   };
 
-  if (!bundle || bundle.schema !== 'flexdocs-backup' || bundle.version !== 1) {
-    report.errors.push('Unsupported backup format');
-    return report;
-  }
-
-  const collections = ['organizations', 'members', 'folders', 'documents', 'passwords', 'domains', 'sslCertificates', 'assets', 'assetTypes', 'checklists', 'tickets', 'relationships', 'tags'] as const;
-  if (collections.some(key => !Array.isArray(bundle[key]))) {
-    report.errors.push('Backup is missing required record collections');
-    return report;
-  }
-
+  const preview = previewBackup(bundle);
+  report.errors.push(...preview.errors);
+  if (!preview.valid) return report;
   const createdFolderIds = new Set<string>();
-  report.errors.push(...validateImportTopology(bundle.folders, bundle.documents));
-  if (report.errors.length) return report;
 
   // 1. Organizations + members
   for (const org of bundle.organizations as Record<string, unknown>[]) {

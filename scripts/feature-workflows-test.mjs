@@ -91,6 +91,10 @@ try {
   const cloned = JSON.parse(JSON.stringify(exported.body), (_key, value) => typeof value === 'string' ? (mapping.get(value) || value) : value);
   cloned.organizations.forEach(org => { org.name += '-roundtrip'; orgs.push(org.id); });
   cloned.documents.forEach(doc => docs.push(doc.id)); cloned.passwords.forEach(p => passwords.push(p.id));
+  const preview = await call('/import', sessions.admin, 'POST', { type: 'flexdocs-backup', data: cloned, preview: true });
+  check(preview.status === 200 && preview.body.preview.valid && preview.body.preview.counts.documents === cloned.documents.length, 'portable preview validates and counts source documents');
+  check(await db.document.count({ where: { id: cloned.documents[0].id } }) === 0, 'portable preview does not create documents');
+  for (const role of ['editor', 'viewer', null]) check((await call('/import', role ? sessions[role] : null, 'POST', { type: 'flexdocs-backup', data: cloned, preview: true })).status === (role ? 403 : 401), `${role || 'anonymous'} cannot preview administrator import`);
   const restored = await call('/import', sessions.admin, 'POST', { type: 'flexdocs-backup', data: cloned });
   check(restored.status === 200 && restored.body.success && restored.body.imported.revisions > 0, 'portable import restores revisions successfully');
   const restoredDoc = cloned.documents[0];
