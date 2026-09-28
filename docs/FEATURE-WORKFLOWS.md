@@ -12,6 +12,19 @@ Administrative portable exports include Trash and preserve `deletedAt` on import
 
 The local preview on port 3101 was verified against the disposable `flexdocs-features-db` PostgreSQL database at `127.0.0.1:55432`, with Redis at port 56379. The repository `.env` defaults to database port 5432, which may be a historical tunnel. Do not assume an unqualified `npm run dev` uses the disposable database; pass the intended connection explicitly. Production database identity and backups require separate verification.
 
+## MCP authorization
+
+MCP requires the authenticated owner's current role and API-key scope to permit a tool. Session callers use their role. An invalid, expired or inactive supplied key never falls back to a browser cookie. Document visibility and organization boundaries remain enforced after tool authorization; a read scope does not expose another owner's private documents.
+
+| Tool | Required permissions (all required) |
+| --- | --- |
+| `flexdocs_get_document` | `document.read` |
+| `flexdocs_search` | `document.read`, `asset.read` |
+| `flexdocs_list_orgs` | `organization.read` |
+| `flexdocs_org_pulse` | `organization.read`, `domain.read`, `asset.read`, `report.read`, `document.read` |
+
+Search includes server/asset data, and pulse includes ticket counts, so these aggregate tools require every listed permission rather than returning unauthorized resource groups. `tools/list` advertises only permitted tools; direct calls to a known unauthorized tool return HTTP 403. Legacy `read` and `admin` scopes permit these read-only tools, still bounded by the owner's role and resource access. Unknown, empty and write-only scopes grant no MCP read access. This contract covers MCP; it does not claim that other API routes support API-key authentication.
+
 ## Portable exports
 
 Full and organization JSON exports are administrator-only because they include decrypted vault secrets. Organization exports include records assigned to that organization; unassigned documents and links to records outside the export are excluded. Revision history and attachment bytes are included. A missing/unreadable file, an attachment exceeding 14 MB, or a vault decryption failure returns HTTP 422 with an issue list instead of a successful incomplete file. The export screen displays these issues.

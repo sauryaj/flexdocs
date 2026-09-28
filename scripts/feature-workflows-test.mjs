@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { randomBytes, createHash } from 'node:crypto';
 
 if (process.env.DOCUMENT_TEST_ISOLATED !== '1') throw new Error('Requires DOCUMENT_TEST_ISOLATED=1 and a disposable database');
 const db = new PrismaClient();
@@ -59,6 +60,26 @@ try {
   check((await mcp(sessions.viewer, 'flexdocs_search', { query: suffix, organizationId: orgs[1] })).documents.length === 0, 'member MCP requested organization intersects access');
   check((await call('/mcp', null, 'POST', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'flexdocs_get_document', arguments: { id: shared.id } } })).status === 401, 'anonymous MCP document access blocked');
   await db.document.deleteMany({ where: { id: { in: mcpFixtures.map(doc => doc.id) } } });
+  async function keyRequest(key, name, args = {}, method = 'tools/call') {
+    const response = await fetch(`${base}/api/mcp`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-Key': key, Cookie: sessions.admin }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params: { name, arguments: args } }) });
+    return { status: response.status, body: await response.json() };
+  }
+  const key = `fd_${randomBytes(32).toString('hex')}`;
+  const keyRecord = await db.apiKey.create({ data: { name: suffix, key: createHash('sha256').update(key).digest('hex'), userId: users[2], permissions: 'document.read' } });
+  check((await keyRequest(key, 'flexdocs_get_document', { id: shared.id })).body.result.isError === false, 'document key reads permitted shared document');
+  check((await keyRequest(key, 'flexdocs_get_document', { id: outside.id })).body.result.isError === true, 'document key cannot bypass organization scope');
+  check((await keyRequest(key, 'flexdocs_get_document', { id: own.id })).body.result.isError === true, 'document key cannot bypass private ownership');
+  for (const name of ['flexdocs_search', 'flexdocs_list_orgs', 'flexdocs_org_pulse']) check((await keyRequest(key, name, { query: suffix, organizationId: orgs[0] })).status === 403, `document-only key cannot invoke ${name}`);
+  check((await keyRequest(key, '', {}, 'tools/list')).body.result.tools.map(tool => tool.name).join(',') === 'flexdocs_get_document', 'MCP advertises only authorized tools');
+  await db.apiKey.update({ where: { id: keyRecord.id }, data: { permissions: 'read' } });
+  check((await keyRequest(key, 'flexdocs_search', { query: suffix })).status === 200, 'legacy read key retains MCP search access');
+  await db.apiKey.update({ where: { id: keyRecord.id }, data: { permissions: '' } });
+  check((await keyRequest(key, 'flexdocs_get_document', { id: shared.id })).status === 403, 'empty key permissions fail closed');
+  await db.apiKey.update({ where: { id: keyRecord.id }, data: { permissions: 'read', expiresAt: new Date(Date.now() - 1000) } });
+  check((await keyRequest(key, 'flexdocs_get_document', { id: shared.id })).status === 401, 'expired key cannot fall back to valid admin cookie');
+  await db.apiKey.update({ where: { id: keyRecord.id }, data: { expiresAt: null, isActive: false } });
+  check((await keyRequest(key, 'flexdocs_get_document', { id: shared.id })).status === 401, 'revoked key cannot fall back to valid admin cookie');
+  await db.apiKey.delete({ where: { id: keyRecord.id } });
   for (const visible of [false, true]) {
     const result = await call('/passwords', sessions.admin, 'POST', { name: `${suffix}-${visible ? 'visible' : 'hidden'}`, username: 'synthetic', password: 'synthetic-export-secret', organizationId: orgs[0], clientVisible: visible });
     check(result.status === 201, 'create scoped credential'); passwords.push(result.body.id);
@@ -193,6 +214,7 @@ try {
   await db.folder.deleteMany({ where: { userId: { in: users } } });
   await db.tag.deleteMany({ where: { userId: { in: users } } });
   await db.session.deleteMany({ where: { userId: { in: users } } });
+  await db.apiKey.deleteMany({ where: { userId: { in: users } } });
   await db.activityLog.deleteMany({ where: { userId: { in: users } } });
   await db.organizationMember.deleteMany({ where: { organizationId: { in: orgs } } });
   await db.user.deleteMany({ where: { id: { in: users } } });

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
+import { extractAuth } from '@/lib/api-keys';
+import { canUseMcpTool } from '@/lib/mcp-access';
 import { prisma } from '@/lib/prisma';
 import { getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
 import { documentReadWhere } from '@/lib/document-access';
@@ -28,18 +29,6 @@ function rpcResult(id: RpcRequest['id'], result: Record<string, unknown>) {
 }
 function rpcError(id: RpcRequest['id'], code: number, message: string) {
   return { jsonrpc: '2.0', id, error: { code, message } };
-}
-
-async function resolveUser(req: Request) {
-  // API key first (machine clients), cookie session as fallback
-  const apiKey = req.headers.get('x-api-key');
-  if (apiKey) {
-    const { extractAuth } = await import('@/lib/api-keys');
-    const authData = await extractAuth(req);
-    if (authData) return authData.user;
-    return null;
-  }
-  return auth();
 }
 
 async function toolSearch(user: { id: string; role: string }, args: Record<string, unknown>) {
@@ -166,7 +155,8 @@ export async function POST(req: Request) {
     return new NextResponse(null, { status: 202 });
   }
 
-  const user = await resolveUser(req);
+  const authData = await extractAuth(req);
+  const user = authData?.user;
   if (!user?.id) {
     return NextResponse.json(rpcError(rpc.id, -32001, 'Unauthorized: provide X-API-Key'), { status: 401 });
   }
@@ -175,9 +165,12 @@ export async function POST(req: Request) {
   try {
     switch (rpc.method) {
       case 'tools/list':
-        return NextResponse.json(rpcResult(rpc.id, { tools: TOOLS }));
+        return NextResponse.json(rpcResult(rpc.id, { tools: TOOLS.filter(tool => canUseMcpTool(user.role, authData!.permissions, tool.name)) }));
       case 'tools/call': {
         const name = String(rpc.params?.name ?? '');
+        if (TOOLS.some(tool => tool.name === name) && !canUseMcpTool(user.role, authData!.permissions, name)) {
+          return NextResponse.json(rpcError(rpc.id, -32003, 'Forbidden: insufficient tool permissions'), { status: 403 });
+        }
         const args = (rpc.params?.arguments ?? {}) as Record<string, unknown>;
         let out: unknown;
         switch (name) {
