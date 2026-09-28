@@ -1,4 +1,5 @@
 import { validateImportTopology } from './import-topology';
+import { validateImportedDocuments } from './import-documents';
 
 export const requiredImportCollections = ['organizations', 'members', 'folders', 'documents', 'passwords', 'domains', 'sslCertificates', 'assets', 'assetTypes', 'checklists', 'tickets', 'relationships', 'tags'] as const;
 const optionalCollections = ['checklistItems', 'renewals', 'servers', 'ipamNetworks', 'contacts', 'locations', 'websites'] as const;
@@ -9,7 +10,7 @@ export function previewBackup(value: unknown) {
   const warnings = [
     'Counts describe records in the file, not predicted new records. Existing IDs and other uniqueness conflicts may be skipped.',
     'Supported owned records are assigned to the importing administrator. Organization memberships in the file may be restored for existing accounts.',
-    'Import can partially succeed. This preview checks structure and folder relationships; database constraints, individual field values and file writes are checked during execution.',
+    'Import can partially succeed. Preview checks structure, folder relationships, document fields, revisions and attachment bytes. Other record fields, database conflicts and storage availability are checked during execution.',
     'A retry does not repair every partially imported record. Review the result before retrying. Keep the original file.',
   ];
   if (!value || typeof value !== 'object' || Array.isArray(value)) return { valid: false, counts, errors: ['Unsupported backup format'], warnings };
@@ -25,6 +26,7 @@ export function previewBackup(value: unknown) {
     }
   }
   if (!errors.length) errors.push(...validateImportTopology(bundle.folders, bundle.documents));
+  if (!errors.length) errors.push(...validateImportedDocuments(bundle.documents as unknown[]));
   return { valid: errors.length === 0, counts, errors, warnings };
 }
 

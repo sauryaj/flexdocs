@@ -4,7 +4,7 @@ import { previewBackup, requiredImportCollections } from '@/lib/import-preview';
 const bundle = () => ({ schema: 'flexdocs-backup', version: 1, ...Object.fromEntries(requiredImportCollections.map(key => [key, []])) });
 
 it('counts source records without claiming to predict database writes', () => {
-  const preview = previewBackup({ ...bundle(), documents: [{ id: 'doc' }] });
+  const preview = previewBackup({ ...bundle(), documents: [{ id: 'doc', title: 'Document' }] });
   expect(preview.valid).toBe(true);
   expect(preview.counts.documents).toBe(1);
   expect(preview.warnings.join(' ')).toContain('not predicted new records');

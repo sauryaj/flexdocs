@@ -91,6 +91,13 @@ try {
   const cloned = JSON.parse(JSON.stringify(exported.body), (_key, value) => typeof value === 'string' ? (mapping.get(value) || value) : value);
   cloned.organizations.forEach(org => { org.name += '-roundtrip'; orgs.push(org.id); });
   cloned.documents.forEach(doc => docs.push(doc.id)); cloned.passwords.forEach(p => passwords.push(p.id));
+  const malformedHistory = { ...cloned, documents: cloned.documents.map((doc, index) => index ? doc : { ...doc, revisions: [null] }) };
+  for (const previewOnly of [true, false]) {
+    const rejected = await call('/import', sessions.admin, 'POST', { type: 'flexdocs-backup', data: malformedHistory, preview: previewOnly });
+    const report = previewOnly ? rejected.body.preview : rejected.body;
+    check(rejected.status === 200 && (previewOnly ? report.valid === false : report.success === false) && report.errors.some(error => error.includes('revisions')), `malformed revision rejected before writes (preview=${previewOnly})`);
+  }
+  check(await db.document.count({ where: { id: cloned.documents[0].id } }) === 0, 'malformed nested history leaves no partially imported document');
   const preview = await call('/import', sessions.admin, 'POST', { type: 'flexdocs-backup', data: cloned, preview: true });
   check(preview.status === 200 && preview.body.preview.valid && preview.body.preview.counts.documents === cloned.documents.length, 'portable preview validates and counts source documents');
   check(await db.document.count({ where: { id: cloned.documents[0].id } }) === 0, 'portable preview does not create documents');
