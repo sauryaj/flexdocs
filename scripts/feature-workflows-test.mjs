@@ -89,6 +89,8 @@ try {
   for (const collection of ['organizations', 'folders', 'documents', 'passwords']) for (const record of exported.body[collection]) mapping.set(record.id, `${suffix}-copy-${mapping.size}`);
   for (const doc of exported.body.documents) for (const revision of doc.revisions) mapping.set(revision.id, `${suffix}-copy-${mapping.size}`);
   const cloned = JSON.parse(JSON.stringify(exported.body), (_key, value) => typeof value === 'string' ? (mapping.get(value) || value) : value);
+  cloned.tags.push('__proto__', 'constructor');
+  cloned.documents[0].tagNames = [...(cloned.documents[0].tagNames || []), '__proto__', 'constructor'];
   cloned.organizations.forEach(org => { org.name += '-roundtrip'; orgs.push(org.id); });
   cloned.documents.forEach(doc => docs.push(doc.id)); cloned.passwords.forEach(p => passwords.push(p.id));
   const malformedHistory = { ...cloned, documents: cloned.documents.map((doc, index) => index ? doc : { ...doc, revisions: [null] }) };
@@ -104,6 +106,8 @@ try {
   for (const role of ['editor', 'viewer', null]) check((await call('/import', role ? sessions[role] : null, 'POST', { type: 'flexdocs-backup', data: cloned, preview: true })).status === (role ? 403 : 401), `${role || 'anonymous'} cannot preview administrator import`);
   const restored = await call('/import', sessions.admin, 'POST', { type: 'flexdocs-backup', data: cloned });
   check(restored.status === 200 && restored.body.success && restored.body.imported.revisions > 0, 'portable import restores revisions successfully');
+  const importedTagDocument = await db.document.findUnique({ where: { id: cloned.documents[0].id }, include: { tags: true } });
+  check(['__proto__', 'constructor'].every(name => importedTagDocument.tags.some(tag => tag.name === name)), 'portable import preserves prototype-like tag names');
   const restoredDoc = cloned.documents[0];
   check((await call(`/documents/${restoredDoc.id}`, sessions.admin)).status === 404, 'portable import does not reactivate trashed document');
   check((await call('/documents?trash=true', sessions.admin)).body.items.some(d => d.id === restoredDoc.id), 'imported trashed document is recoverable');

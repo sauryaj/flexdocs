@@ -29,19 +29,21 @@ async function tryCreate(model: keyof typeof prisma | any, data: Record<string, 
   }
 }
 
-interface TagIndex {
-  [name: string]: { id: string };
-}
+type TagIndex = Map<string, { id: string }>;
 
-async function ensureTags(tagNames: string[], adminId: string): Promise<TagIndex> {
-  const out: TagIndex = {};
+async function ensureTags(tagNames: string[], adminId: string, errors: string[]): Promise<TagIndex> {
+  const out: TagIndex = new Map();
   for (const name of tagNames) {
-    const tag = await prisma.tag.upsert({
-      where: { name_userId: { name, userId: adminId } },
-      update: {},
-      create: { name, userId: adminId },
-    });
-    out[name] = { id: tag.id };
+    try {
+      const tag = await prisma.tag.upsert({
+        where: { name_userId: { name, userId: adminId } },
+        update: {},
+        create: { name, userId: adminId },
+      });
+      out.set(name, { id: tag.id });
+    } catch {
+      errors.push(`tag ${name}: could not create or resolve tag`);
+    }
   }
   return out;
 }
@@ -50,16 +52,21 @@ async function attachTags(
   model: 'document' | 'password' | 'domain' | 'checklist',
   recordId: string,
   tagIndex: TagIndex,
-  tagNames: string[]
+  tagNames: string[],
+  errors: string[]
 ) {
   if (!tagNames?.length) return;
+  if (!Array.isArray(tagNames) || tagNames.some(name => typeof name !== 'string' || !tagIndex.has(name))) {
+    errors.push(`${model} ${recordId}: tags were not restored because one or more names are unavailable`);
+    return;
+  }
   try {
     await (prisma[model] as any).update({
       where: { id: recordId },
-      data: { tags: { connect: tagNames.map((n) => ({ id: tagIndex[n]?.id })).filter((x) => x.id) } },
+      data: { tags: { connect: [...new Set(tagNames)].map(name => tagIndex.get(name)!) } },
     });
   } catch {
-    // non-fatal
+    errors.push(`${model} ${recordId}: tag links could not be restored`);
   }
 }
 
@@ -125,7 +132,7 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
 
   // 3. Tags used across docs/passwords/domains
   const tagNames = [...new Set((bundle.tags as string[]) || [])];
-  const tagIndex = await ensureTags(tagNames, adminId);
+  const tagIndex = await ensureTags(tagNames, adminId, report.errors);
 
   // 4. Documents + attachments
   for (const doc of bundle.documents as (Record<string, unknown> & { attachments?: Record<string, unknown>[]; revisions?: Record<string, unknown>[]; tagNames?: string[] })[]) {
@@ -167,7 +174,7 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
         }
       }
     }
-    if (doc.tagNames?.length) await attachTags('document', String(doc.id), tagIndex, doc.tagNames);
+    if (doc.tagNames?.length) await attachTags('document', String(doc.id), tagIndex, doc.tagNames, report.errors);
   }
 
   // 5. Passwords (plaintext → re-encrypted at rest)
@@ -183,7 +190,7 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
     }
     if (!r.created) { report.skipped++; continue; }
     if (r.created) inc('passwords');
-    if (pw.tagNames?.length) await attachTags('password', String(pw.id), tagIndex, pw.tagNames);
+    if (pw.tagNames?.length) await attachTags('password', String(pw.id), tagIndex, pw.tagNames, report.errors);
   }
 
   // 6. Domains (globally-unique name: skip dups)
@@ -197,7 +204,7 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
     }
     if (!r.created) { report.skipped++; continue; }
     if (r.created) inc('domains');
-    if (d.tagNames?.length) await attachTags('domain', String(d.id), tagIndex, d.tagNames);
+    if (d.tagNames?.length) await attachTags('domain', String(d.id), tagIndex, d.tagNames, report.errors);
   }
 
   // 7. SSL certificates
