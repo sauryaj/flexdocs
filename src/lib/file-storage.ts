@@ -31,12 +31,14 @@ export async function storeFile(
   userId: string,
   documentId?: string
 ) {
+  return storeFileBytes(Buffer.from(data, 'base64'), filename, mimeType, userId, documentId);
+}
+
+export async function storeFileBytes(buffer: Buffer, filename: string, mimeType: string, userId: string, documentId?: string) {
   ensureUploadDir();
   const filePath = getFilePath(filename, userId);
-  const buffer = Buffer.from(data, 'base64');
-  writeFileSync(filePath, buffer);
-
   try {
+    writeFileSync(filePath, buffer);
     return await prisma.attachment.create({
       data: {
         filename,

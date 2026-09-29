@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { storeFile } from '@/lib/file-storage';
+import { storeFile, storeFileBytes } from '@/lib/file-storage';
+import { AttachmentUploadError, parseMultipartAttachment } from '@/lib/attachment-upload';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/rbac';
 import { type UserRole } from '@prisma/client';
@@ -36,6 +37,21 @@ export async function POST(req: Request) {
   if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   if (!hasPermission(user.role as UserRole, 'document.update')) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
+
+  if (req.headers.get('content-type')?.toLowerCase().startsWith('multipart/form-data')) {
+    try {
+      const { buffer, filename, mimeType, documentId } = await parseMultipartAttachment(req);
+      if (documentId && !await prisma.document.findFirst({ where: { id: documentId, userId: user.id, deletedAt: null } })) {
+        return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+      }
+      if (req.signal.aborted) return NextResponse.json({ error: 'Upload interrupted' }, { status: 400 });
+      const attachment = await storeFileBytes(buffer, filename, mimeType, user.id, documentId);
+      return NextResponse.json({ id: attachment.id, filename, mimeType, size: attachment.size, createdAt: attachment.createdAt }, { status: 201 });
+    } catch (error) {
+      if (error instanceof AttachmentUploadError) return NextResponse.json({ error: error.message }, { status: error.status });
+      return NextResponse.json({ error: 'Upload could not be confirmed. Refresh attachments before retrying.' }, { status: 500 });
+    }
   }
 
   const parsed = z.object({

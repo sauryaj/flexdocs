@@ -109,6 +109,23 @@ try {
   check((await call('/relationships', null)).status === 401, 'anonymous relationships blocked');
   const file = await call('/attachments', sessions.admin, 'POST', { documentId: shared.id, filename: 'fixture.txt', mimeType: 'text/plain', data: Buffer.from('portable file bytes').toString('base64') });
   check(file.status === 201, 'create portable attachment'); uploads.push(file.body.id);
+  const multipartBytes = Buffer.from([0, 255, 128, 10]);
+  async function multipart(cookie, documentId) {
+    const form = new FormData();
+    form.set('documentId', documentId);
+    form.set('file', new File([multipartBytes], 'multipart.bin'));
+    return fetch(`${base}/api/attachments`, { method: 'POST', headers: cookie ? { Cookie: cookie } : {}, body: form });
+  }
+  const multipartResponse = await multipart(sessions.admin, shared.id);
+  const multipartFile = await multipartResponse.json();
+  check(multipartResponse.status === 201 && multipartFile.size === 4 && !('filePath' in multipartFile), 'multipart upload stores bytes without exposing storage path');
+  uploads.push(multipartFile.id);
+  const download = await fetch(`${base}/api/attachments/${multipartFile.id}`, { headers: { Cookie: sessions.admin } });
+  check(download.status === 200 && Buffer.from(await download.arrayBuffer()).equals(multipartBytes), 'multipart upload downloads exact binary bytes');
+  check((await multipart(sessions.editor, shared.id)).status === 404, 'non-owner cannot upload to shared document');
+  check((await multipart(sessions.viewer, shared.id)).status === 403, 'viewer multipart upload denied');
+  check((await multipart(null, shared.id)).status === 401, 'anonymous multipart upload denied');
+  await call(`/attachments/${multipartFile.id}`, sessions.admin, 'DELETE');
   await call(`/documents/${shared.id}`, sessions.admin, 'PUT', { content: 'updated portable body', expectedUpdatedAt: shared.updatedAt });
   for (const role of ['editor', 'viewer', null]) {
     check((await call(`/organizations/${orgs[0]}/export`, role ? sessions[role] : null)).status === (role ? 403 : 401), `${role || 'anonymous'} cannot export decrypted organization snapshot`);
