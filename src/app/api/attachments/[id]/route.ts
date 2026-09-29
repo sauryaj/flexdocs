@@ -42,5 +42,5 @@ export async function DELETE(
   const deleted = await deleteFile(id, user.id);
   if (!deleted) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, cleanupPending: deleted.cleanupPending });
 }

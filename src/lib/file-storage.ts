@@ -83,18 +83,25 @@ export async function deleteFile(attachmentId: string, userId: string) {
 
   if (!attachment) return null;
 
+  const removed = await prisma.attachment.deleteMany({
+    where: { id: attachmentId, userId, OR: [{ documentId: null }, { document: { deletedAt: null } }] },
+  });
+  if (removed.count !== 1) return null;
+
+  let cleanupPending = false;
   if (attachment.storageType === 'filesystem' && attachment.filePath) {
     try {
-      if (existsSync(attachment.filePath)) {
-        unlinkSync(attachment.filePath);
+      unlinkSync(attachment.filePath);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        cleanupPending = true;
+        logger.warn('Attachment removed; storage cleanup pending', { attachmentId, code });
       }
-    } catch {
-      // File might already be deleted
     }
   }
 
-  await prisma.attachment.delete({ where: { id: attachmentId } });
-  return attachment;
+  return { ...attachment, cleanupPending };
 }
 
 export async function migrateBase64Attachments() {
