@@ -41,6 +41,36 @@ test.beforeAll(async ({ request, baseURL }) => {
 test.beforeEach(async ({ context }) => { await context.addCookies(cookies); });
 test.afterAll(async ({ request, baseURL }) => { await request.post(`${baseURL}/api/logout`); });
 
+test('a superseded attachment response cannot replace the latest list', async ({ context, page }) => {
+  await fixture(context);
+  await page.addInitScript(() => {
+    const originalFetch = window.fetch.bind(window);
+    let count = 0;
+    window.fetch = async (input, init) => {
+      if (String(input).includes('/api/attachments?')) {
+        count++;
+        if (count === 1) return new Promise<Response>(resolve => {
+          Object.assign(window, { finishOldAttachment: () => resolve(Response.json([{ id: 'old-file', filename: 'Old list file', size: 1, mimeType: 'text/plain' }])) });
+        });
+        return Response.json([{ id: 'new-file', filename: 'Latest list file', size: 1, mimeType: 'text/plain' }]);
+      }
+      return originalFetch(input, init);
+    };
+  });
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Attachments', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => 'finishOldAttachment' in window)).toBe(true);
+  await page.getByRole('button', { name: 'Attachments', exact: true }).click();
+  await page.getByRole('button', { name: 'Attachments', exact: true }).click();
+  await expect(page.getByText('Latest list file', { exact: true })).toBeVisible();
+  await page.evaluate(async () => {
+    (window as unknown as { finishOldAttachment: () => void }).finishOldAttachment();
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  await expect(page.getByText('Latest list file', { exact: true })).toBeVisible();
+  await expect(page.getByText('Old list file', { exact: true })).toHaveCount(0);
+});
+
 test('multipart uploader shows pending confirmation, cancellation and retry guidance', async ({ context, page }) => {
   await fixture(context);
   let uploads = 0;

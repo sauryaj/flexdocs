@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -207,6 +207,12 @@ function DocumentEditor({ documentId }: { documentId: string }) {
   }, [params.id]);
   const [deletingAttachment, setDeletingAttachment] = useState<string | null>(null);
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
+  const attachmentRequest = useRef<AbortController | null>(null);
+  const revisionRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => {
+    attachmentRequest.current?.abort();
+    revisionRequest.current?.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -248,41 +254,49 @@ function DocumentEditor({ documentId }: { documentId: string }) {
     return () => controller.abort();
   }, [params.id, loadAttempt]);
 
-  const fetchRevisions = async () => {
+  const fetchRevisions = useCallback(async () => {
+    revisionRequest.current?.abort();
+    const controller = new AbortController();
+    revisionRequest.current = controller;
     setRevisionsLoading(true);
     setRevisionsError('');
     try {
-      const res = await fetch(`/api/documents/${params.id}/revisions`);
+      const res = await fetch(`/api/documents/${params.id}/revisions`, { signal: controller.signal });
       if (!res.ok) throw new Error('Unable to load revision history.');
-      setRevisions(await res.json());
+      const data = await res.json();
+      if (!controller.signal.aborted) setRevisions(data);
     } catch {
-      setRevisionsError('Unable to load revision history. Please try again.');
+      if (!controller.signal.aborted) setRevisionsError('Unable to load revision history. Please try again.');
     } finally {
-      setRevisionsLoading(false);
+      if (!controller.signal.aborted) setRevisionsLoading(false);
     }
-  };
+  }, [params.id]);
 
-  const fetchAttachments = async () => {
+  const fetchAttachments = useCallback(async () => {
+    attachmentRequest.current?.abort();
+    const controller = new AbortController();
+    attachmentRequest.current = controller;
     setAttachmentsLoading(true);
     setAttachmentsError('');
     try {
-      const res = await fetch(`/api/attachments?documentId=${params.id}`);
+      const res = await fetch(`/api/attachments?documentId=${params.id}`, { signal: controller.signal });
       if (!res.ok) throw new Error('Unable to load attachments.');
-      setAttachments(await res.json());
+      const data = await res.json();
+      if (!controller.signal.aborted) setAttachments(data);
     } catch {
-      setAttachmentsError('Unable to load attachments. Please try again.');
+      if (!controller.signal.aborted) setAttachmentsError('Unable to load attachments. Please try again.');
     } finally {
-      setAttachmentsLoading(false);
+      if (!controller.signal.aborted) setAttachmentsLoading(false);
     }
-  };
+  }, [params.id]);
 
   useEffect(() => {
     if (revisionsExpanded) fetchRevisions();
-  }, [revisionsExpanded]);
+  }, [revisionsExpanded, fetchRevisions]);
 
   useEffect(() => {
     if (attachmentsExpanded) fetchAttachments();
-  }, [attachmentsExpanded]);
+  }, [attachmentsExpanded, fetchAttachments]);
 
   const doSave = async (): Promise<boolean> => {
     if (savingRef.current || !doc || doc.canEdit === false || draft.revoked) return false;
