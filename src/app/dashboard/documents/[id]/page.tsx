@@ -198,6 +198,13 @@ function DocumentEditor({ documentId }: { documentId: string }) {
   const [attachmentsError, setAttachmentsError] = useState('');
   const [attachmentActionError, setAttachmentActionError] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const uploadController = useRef<AbortController | null>(null);
+  useEffect(() => {
+    setUploading(false);
+    setUploadProgress(0);
+    return () => { uploadController.current?.abort(); uploadController.current = null; };
+  }, [params.id]);
   const [deletingAttachment, setDeletingAttachment] = useState<string | null>(null);
   const [attachmentsExpanded, setAttachmentsExpanded] = useState(false);
 
@@ -403,17 +410,25 @@ function DocumentEditor({ documentId }: { documentId: string }) {
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || uploadController.current) return;
+    const controller = new AbortController();
+    uploadController.current = controller;
     setUploading(true);
+    setUploadProgress(0);
     setAttachmentActionError('');
     try {
-      await uploadDocumentAttachment(params.id, file);
+      await uploadDocumentAttachment(params.id, file, { signal: controller.signal, onProgress: setUploadProgress });
+      if (uploadController.current !== controller) return;
       await fetchAttachments();
     } catch (error) {
+      if (uploadController.current !== controller) return;
       setAttachmentActionError(error instanceof Error ? error.message : 'Unable to confirm the upload. Refresh the attachment list before trying again.');
     } finally {
-      setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      if (uploadController.current === controller) {
+        uploadController.current = null;
+        setUploading(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
     }
   };
 
@@ -794,12 +809,18 @@ function DocumentEditor({ documentId }: { documentId: string }) {
                     {attachmentsLoading ? 'Loading...' : attachmentsError ? 'Attachments unavailable' : `${attachments.length} file${attachments.length !== 1 ? 's' : ''}`}
                   </p>
                   <div>
-                    <input ref={fileInputRef} type="file" onChange={handleFileUpload} className="hidden" />
+                    <input ref={fileInputRef} type="file" aria-label="Attachment file" onChange={handleFileUpload} className="hidden" disabled={uploading} />
                     <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="btn-primary text-xs flex items-center gap-1">
                       {uploading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />} Upload
                     </button>
                   </div>
                 </div>
+                <p className="text-xs text-slate-500">Maximum 10 MiB per file. Files are downloaded, not previewed.</p>
+                {uploading && <div className="space-y-2">
+                  <progress aria-label="Attachment upload progress" value={uploadProgress} max={100} className="w-full" />
+                  <p role="status" className="text-xs text-slate-600">{uploadProgress === 100 ? 'File sent. Waiting for server confirmation…' : `Uploading: ${uploadProgress}%`}</p>
+                  <button type="button" className="btn-secondary text-xs" onClick={() => uploadController.current?.abort()}>Cancel upload</button>
+                </div>}
                 {attachmentActionError && <p role="alert" className="text-sm text-red-600">{attachmentActionError}</p>}
                 <button onClick={() => void fetchAttachments()} disabled={attachmentsLoading} className="btn-secondary text-xs">Refresh attachments</button>
                 {attachmentsLoading ? (

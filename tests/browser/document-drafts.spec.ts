@@ -41,6 +41,31 @@ test.beforeAll(async ({ request, baseURL }) => {
 test.beforeEach(async ({ context }) => { await context.addCookies(cookies); });
 test.afterAll(async ({ request, baseURL }) => { await request.post(`${baseURL}/api/logout`); });
 
+test('multipart uploader shows pending confirmation, cancellation and retry guidance', async ({ context, page }) => {
+  await fixture(context);
+  let uploads = 0;
+  await context.route('**/api/attachments**', async route => {
+    if (route.request().method() !== 'POST') return route.fulfill({ json: [] });
+    uploads++;
+    expect(route.request().headers()['content-type']).toContain('multipart/form-data');
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    await route.fulfill({ status: 503, json: { error: 'Storage unavailable' } }).catch(() => {});
+  });
+  await openEditor(page);
+  await page.getByRole('button', { name: 'Attachments', exact: true }).click();
+  await page.getByLabel('Attachment file').setInputFiles({ name: 'notes.conf', mimeType: 'application/octet-stream', buffer: Buffer.from('exact bytes') });
+  await expect(page.getByRole('progressbar', { name: 'Attachment upload progress' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Upload', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: 'Cancel upload' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Upload cancelled' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Upload', exact: true })).toBeEnabled();
+  await page.getByLabel('Attachment file').setInputFiles({ name: 'notes.conf', mimeType: 'application/octet-stream', buffer: Buffer.from('exact bytes') });
+  await expect(page.getByRole('alert').filter({ hasText: 'Storage unavailable' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'Refresh attachments before retrying' })).toBeVisible();
+  expect(uploads).toBe(2);
+  await page.screenshot({ path: '/tmp/flexdocs-upload-ui.png', fullPage: true });
+});
+
 test('portable restore requires preview and explicit confirmation of the same file', async ({ context, page }) => {
   const requests: { preview: boolean; data: unknown }[] = [];
   await context.route('**/api/import', async route => {

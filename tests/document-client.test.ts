@@ -3,50 +3,53 @@ import { moveDocument, uploadDocumentAttachment } from '@/lib/document-client';
 
 afterEach(() => vi.unstubAllGlobals());
 
-function stubFileReader(outcome: 'load' | 'error' | 'abort' = 'load') {
-  vi.stubGlobal('FileReader', class {
-    result = 'data:application/octet-stream;base64,aGVsbG8=';
+function stubUpload(outcome: 'load' | 'error' | 'abort' | 'timeout' = 'load', status = 201, responseText = '{}') {
+  const send = vi.fn();
+  vi.stubGlobal('XMLHttpRequest', class {
+    status = status;
+    responseText = responseText;
+    upload = { onprogress: (_event: unknown) => {} };
+    open() {}
     onload = () => {};
     onerror = () => {};
     onabort = () => {};
-    readAsDataURL() { this[`on${outcome}`](); }
+    ontimeout = () => {};
+    send(body: FormData) { send(body); this.upload.onprogress({ lengthComputable: true, loaded: 5, total: 10 }); this[`on${outcome}`](); }
+    abort() { this.onabort(); }
   });
+  return send;
 }
 
 it('uploads unknown file types with a fallback MIME type and the selected document', async () => {
-  stubFileReader();
-  const fetch = vi.fn().mockResolvedValue(Response.json({ id: 'attachment' }, { status: 201 }));
-  vi.stubGlobal('fetch', fetch);
-  await uploadDocumentAttachment('doc', new File(['hello'], 'notes.conf'));
-  expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual({
-    documentId: 'doc', filename: 'notes.conf', mimeType: 'application/octet-stream', size: 5, data: 'aGVsbG8=',
-  });
+  const send = stubUpload();
+  const onProgress = vi.fn();
+  await uploadDocumentAttachment('doc', new File(['hello'], 'notes.conf'), { onProgress });
+  const form = send.mock.calls[0][0] as FormData;
+  expect(form.get('documentId')).toBe('doc');
+  expect(await (form.get('file') as File).text()).toBe('hello');
+  expect(onProgress).toHaveBeenCalledWith(50);
 });
 
-it.each(['error', 'abort'] as const)('rejects file read %s without starting an upload', async outcome => {
-  stubFileReader(outcome);
-  const fetch = vi.fn();
-  vi.stubGlobal('fetch', fetch);
-  await expect(uploadDocumentAttachment('doc', new File(['hello'], 'notes.txt'))).rejects.toThrow('retry');
-  expect(fetch).not.toHaveBeenCalled();
+it.each(['error', 'abort', 'timeout'] as const)('reports uncertain upload outcome on %s', async outcome => {
+  stubUpload(outcome);
+  await expect(uploadDocumentAttachment('doc', new File(['hello'], 'notes.txt'))).rejects.toThrow('Refresh attachments before retrying');
 });
 
 it('reports the server upload rejection', async () => {
-  stubFileReader();
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(Response.json({ error: 'Document not found' }, { status: 404 })));
+  stubUpload('load', 404, JSON.stringify({ error: 'Document not found' }));
   await expect(uploadDocumentAttachment('doc', new File(['hello'], 'notes.txt'))).rejects.toThrow('Document not found');
 });
 
 it('reports non-JSON upload failures', async () => {
-  stubFileReader();
-  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('Bad gateway', { status: 502 })));
+  stubUpload('load', 502, 'Bad gateway');
   await expect(uploadDocumentAttachment('doc', new File(['hello'], 'notes.txt'))).rejects.toThrow('could not be uploaded');
 });
 
-it('settles an upload after a network rejection', async () => {
-  stubFileReader();
-  vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Network unavailable')));
-  await expect(uploadDocumentAttachment('doc', new File(['hello'], 'notes.txt'))).rejects.toThrow('Network unavailable');
+it('rejects oversized files and cancelled requests before sending', async () => {
+  const send = stubUpload();
+  await expect(uploadDocumentAttachment('doc', new File([new Uint8Array(10 * 1024 * 1024 + 1)], 'large'))).rejects.toThrow('10 MiB');
+  await expect(uploadDocumentAttachment('doc', new File(['hello'], 'notes.txt'), { signal: AbortSignal.abort() })).rejects.toThrow('before sending');
+  expect(send).not.toHaveBeenCalled();
 });
 
 it('moves only the folder and returns the server version without sending cached content', async () => {

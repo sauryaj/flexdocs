@@ -1,20 +1,36 @@
-export async function uploadDocumentAttachment(documentId: string, file: File): Promise<void> {
-  const data = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(',')[1]);
-    reader.onerror = () => reject(new Error('The file could not be read. Select it again to retry.'));
-    reader.onabort = () => reject(new Error('Reading the file was cancelled. Select it again to retry.'));
-    reader.readAsDataURL(file);
+export async function uploadDocumentAttachment(documentId: string, file: File, options: {
+  signal?: AbortSignal; onProgress?: (percent: number) => void;
+} = {}): Promise<void> {
+  if (file.size > 10 * 1024 * 1024) throw new Error('Maximum file size is 10 MiB. Select a smaller file.');
+  if (options.signal?.aborted) throw new Error('Upload cancelled before sending.');
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    const uncertain = 'Refresh attachments before retrying; the server may have saved the file.';
+    const abort = () => xhr.abort();
+    const finish = (error?: Error) => {
+      options.signal?.removeEventListener('abort', abort);
+      if (error) reject(error); else resolve();
+    };
+    xhr.open('POST', '/api/attachments');
+    xhr.timeout = 120_000;
+    xhr.upload.onprogress = event => {
+      if (event.lengthComputable) options.onProgress?.(Math.min(100, Math.round(event.loaded / event.total * 100)));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) return finish();
+      let message = 'The attachment could not be uploaded.';
+      try { const data = JSON.parse(xhr.responseText); if (typeof data.error === 'string') message = data.error; } catch { /* Proxies may return non-JSON errors. */ }
+      finish(new Error(`${message} ${uncertain}`));
+    };
+    xhr.onerror = () => finish(new Error(`Upload connection failed. ${uncertain}`));
+    xhr.ontimeout = () => finish(new Error(`Upload timed out. ${uncertain}`));
+    xhr.onabort = () => finish(new Error(`Upload cancelled. ${uncertain}`));
+    const form = new FormData();
+    form.set('documentId', documentId);
+    form.set('file', file);
+    options.signal?.addEventListener('abort', abort, { once: true });
+    xhr.send(form);
   });
-  const response = await fetch('/api/attachments', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ documentId, filename: file.name, mimeType: file.type || 'application/octet-stream', size: file.size, data }),
-  });
-  if (!response.ok) {
-    const result = await response.json().catch(() => null);
-    throw new Error(typeof result?.error === 'string' ? result.error : 'The attachment could not be uploaded.');
-  }
 }
 
 export async function moveDocument(id: string, folderId: string | null, expectedUpdatedAt: string): Promise<unknown> {
