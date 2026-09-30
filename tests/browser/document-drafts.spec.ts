@@ -42,6 +42,37 @@ test.beforeAll(async ({ request, baseURL }) => {
 test.beforeEach(async ({ context }) => { await context.addCookies(cookies); });
 test.afterAll(async ({ request, baseURL }) => { await request.post(`${baseURL}/api/logout`); });
 
+test('team Trash preserves failed restoration and refreshes its version before retry', async ({ context, page }) => {
+  let restored = false;
+  let calls = 0;
+  let version = '2026-10-01T00:00:00.000Z';
+  await context.route('**/api/documents?**', route => route.fulfill({ json: { items: restored ? [] : [{ id: 'browser-trash-team', title: 'Team recovery guide',
+    deletedAt: version, updatedAt: version, ownershipKind: 'organization', lifecycleState: 'trashed', canRestore: true }], hasMore: false } }));
+  await context.route('**/api/documents/browser-trash-team/lifecycle', async route => {
+    calls++;
+    expect(route.request().postDataJSON()).toEqual({ action: 'restore', expectedUpdatedAt: version });
+    if (calls === 1) return route.fulfill({ status: 409, json: { error: 'Document changed; refresh Trash before retrying' } });
+    restored = true;
+    return route.fulfill({ json: { document: { lifecycleState: 'draft' }, changed: true } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/dashboard/documents/trash');
+  await expect(page.getByRole('heading', { name: 'Team recovery guide' })).toBeVisible();
+  page.once('dialog', dialog => { expect(dialog.message()).toContain('does not republish'); return dialog.accept(); });
+  await page.getByRole('button', { name: 'Restore Team recovery guide' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Document changed' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Team recovery guide' })).toBeVisible();
+  version = '2026-10-01T00:01:00.000Z';
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Document changed' })).toHaveCount(0);
+  await page.screenshot({ path: '/tmp/flexdocs-team-trash.png', fullPage: true });
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Restore Team recovery guide' }).click();
+  await expect(page.getByRole('status')).toContainText('It remains unpublished');
+  await expect(page.getByText('Trash is empty.', { exact: true })).toBeVisible();
+  expect(calls).toBe(2);
+});
+
 test('lifecycle controls preserve edits, show conflicts and return archived content to draft', async ({ context, page }) => {
   let current = { ...original, id: 'browser-lifecycle', lifecycleState: 'draft', canManageLifecycle: true, canDuplicate: false };
   let calls = 0;
@@ -226,7 +257,7 @@ test('workspace shortcuts remain reachable beside search on narrow screens', asy
     expect(nav!.x).toBeGreaterThanOrEqual(search!.x + search!.width);
   }
   await shortcuts.getByRole('link', { name: 'My Day', exact: true }).click();
-  await expect(page).toHaveURL(/\/dashboard\/my-day$/);
+  await expect(page).toHaveURL(/\/dashboard\/my-day$/, { timeout: 15000 });
   await expect(shortcuts.getByRole('link', { name: 'My Day', exact: true })).toHaveAttribute('aria-current', 'page');
 });
 

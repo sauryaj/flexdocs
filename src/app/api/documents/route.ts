@@ -3,10 +3,10 @@ import { createDocument, creationKeySchema, documentCreateSchema } from '@/lib/d
 import { auditLog } from '@/lib/audit';
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/rbac';
 import { type UserRole } from '@prisma/client';
 import { discoverDocuments } from '@/lib/document-discovery';
+import { discoverDocumentTrash } from '@/lib/document-trash';
 
 export async function GET(req: Request) {
   const user = await auth();
@@ -22,36 +22,13 @@ export async function GET(req: Request) {
   if (query.length > 500) return NextResponse.json({ error: 'Search is limited to 500 characters' }, { status: 400 });
   const category = url.searchParams.get('category');
   const folderId = url.searchParams.get('folderId');
-  if (!trash) {
-    try {
-      return NextResponse.json(await discoverDocuments(user.id, { query, organizationId, category, folderId,
-        excludeArchived: url.searchParams.get('archived') === 'false', page, limit }));
-    } catch (error) {
-      if (error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
-      throw error;
-    }
+  try {
+    return NextResponse.json(await (trash ? discoverDocumentTrash : discoverDocuments)(user.id, { query, organizationId, category, folderId,
+      excludeArchived: url.searchParams.get('archived') === 'false', page, limit }));
+  } catch (error) {
+    if (error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
+    throw error;
   }
-  const baseWhere = { userId: user.id, ownershipKind: 'personal' as const, deletedAt: { not: null }, ...(organizationId ? { organizationId } : {}) };
-  const where = { AND: [baseWhere, {
-    ...(query ? { OR: [{ title: { contains: query, mode: 'insensitive' as const } }, { content: { contains: query, mode: 'insensitive' as const } }] } : {}),
-    ...(category ? { category } : {}),
-    ...(folderId ? { folderId } : {}),
-    ...(url.searchParams.get('archived') === 'false' ? { isArchived: false } : {}),
-  }] };
-
-  const [documents, total, totalAvailable] = await Promise.all([
-    prisma.document.findMany({
-      where,
-      include: { tags: true, folder: true },
-      orderBy: [{ isPinned: 'desc' }, { updatedAt: 'desc' }, { id: 'asc' }],
-      skip: page * limit,
-      take: limit,
-    }),
-    prisma.document.count({ where }),
-    prisma.document.count({ where: baseWhere }),
-  ]);
-
-  return NextResponse.json({ items: documents, total, totalAvailable, page, limit, hasMore: (page + 1) * limit < total });
 }
 
 export async function POST(req: Request) {

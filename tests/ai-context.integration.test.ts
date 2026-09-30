@@ -28,6 +28,7 @@ import { GET as getPublishedAttachment } from '@/app/api/documents/[id]/publicat
 import { readDocumentHistory, createDocumentRevision, restoreDocumentRevision } from '@/lib/document-history';
 import { updateDocument } from '@/lib/document-update';
 import { changeDocumentLifecycle } from '@/lib/document-lifecycle';
+import { discoverDocumentTrash } from '@/lib/document-trash';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -374,6 +375,17 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await expect(changeDocumentLifecycle(ids[0], historyDocument.id, 'unarchive', lifecycleVersion)).rejects.toMatchObject({ status: 409 });
     const trashedArchive = await changeDocumentLifecycle(ids[0], historyDocument.id, 'trash', archivedTeam.document.updatedAt.toISOString());
     expect(trashedArchive.document).toMatchObject({ lifecycleState: 'trashed', isArchived: true });
+    const trashOptions = { query: trashedArchive.document.title, organizationId: orgs[1], page: 0, limit: 1 };
+    const teamTrashList = await discoverDocumentTrash(ids[0], trashOptions);
+    expect(teamTrashList.items).toEqual([expect.objectContaining({ id: historyDocument.id, canRestore: true })]);
+    expect(teamTrashList.items[0]).not.toHaveProperty('content');
+    expect(teamTrashList.total).toBe(1);
+    expect((await discoverDocumentTrash(ids[1], trashOptions)).total).toBe(0);
+    expect((await discoverDocumentTrash(ids[2], trashOptions)).total).toBe(0);
+    expect((await discoverDocumentTrash(ids[0], { ...trashOptions, organizationId: orgs[0] })).total).toBe(0);
+    await prisma.organizationDocumentationGrant.update({ where: { organizationId_userId: { organizationId: orgs[1], userId: ids[0] } }, data: { role: 'contributor' } });
+    expect((await discoverDocumentTrash(ids[0], trashOptions)).total).toBe(0);
+    await prisma.organizationDocumentationGrant.update({ where: { organizationId_userId: { organizationId: orgs[1], userId: ids[0] } }, data: { role: 'administrator' } });
     const recoveredArchive = await changeDocumentLifecycle(ids[0], historyDocument.id, 'restore', trashedArchive.document.updatedAt.toISOString());
     expect(recoveredArchive.document).toMatchObject({ lifecycleState: 'archived', isArchived: true, publishedSnapshotId: null, deletedAt: null });
     const unarchived = await changeDocumentLifecycle(ids[0], historyDocument.id, 'unarchive', recoveredArchive.document.updatedAt.toISOString());

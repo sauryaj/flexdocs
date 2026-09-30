@@ -143,6 +143,13 @@ try {
   check(teamUnarchive.status === 200 && teamUnarchive.body.document.publishedSnapshotId === null, 'unarchive clears reader publication rather than republishing');
   const teamTrash = await call(lifecyclePath, sessions.editor, 'POST', { action: 'trash', expectedUpdatedAt: teamUnarchive.body.document.updatedAt });
   check(teamTrash.status === 200 && teamTrash.body.document.lifecycleState === 'trashed', 'documentation admin moves team draft to Trash');
+  const trashQuery = `/documents?trash=true&organizationId=${orgs[0]}&q=${encodeURIComponent(teamTrash.body.document.title)}&limit=1`;
+  const teamTrashList = await call(trashQuery, sessions.editor);
+  check(teamTrashList.status === 200 && teamTrashList.body.total === 1 && teamTrashList.body.items[0].id === team.id && teamTrashList.body.items[0].canRestore === true, 'team administrator lists recoverable Trash');
+  check(!('content' in teamTrashList.body.items[0]), 'Trash list excludes working content');
+  check((await call(trashQuery, sessions.viewer)).body.total === 0, 'provenance reader cannot discover team Trash');
+  check((await call(trashQuery, sessions.admin)).body.total === 0, 'global admin without grant cannot discover team Trash');
+  check((await call(trashQuery, null)).status === 401, 'anonymous cannot discover Trash');
   const teamRestore = await call(lifecyclePath, sessions.editor, 'POST', { action: 'restore', expectedUpdatedAt: teamTrash.body.document.updatedAt });
   check(teamRestore.status === 200 && teamRestore.body.document.lifecycleState === 'draft' && teamRestore.body.document.publishedSnapshotId === null, 'team Trash restore remains an unpublished draft');
   await db.organizationDocumentationGrant.deleteMany({ where: { organizationId: orgs[0] } });
