@@ -1,6 +1,6 @@
 # Document ownership and publication migration design
 
-Status: proposed implementation contract, 2026-09-28. No schema migration or access change is shipped by this document. Implement and verify each stage before enabling team ownership.
+Status: staged implementation contract. Migration `20260930065322_documentation_ownership_foundation` adds document/folder ownership kinds defaulting to personal, a nullable document maintainer reference and an explicit organization documentation grant table. Database checks require an organization for organization ownership. No existing record is converted and no grants are created. Conversion, grant management, capability enforcement and publication remain pending; do not manually enable team rows or grants as a substitute for those services.
 
 ## Verified starting point
 
@@ -26,7 +26,7 @@ Personal owner or organization owner
        authorized reader surfaces
 ```
 
-Proposed additive fields/tables (names are design choices, not available API parameters):
+Fields/tables below describe the target contract; ownership kinds, maintainer references and documentation grants exist in the schema foundation. The remaining publication fields are proposed, and these names are not public API parameters:
 
 - Document and folder `ownershipKind`: `personal` or `organization`, default `personal`. Keep existing `userId` for compatibility and provenance; do not repurpose it as the last editor.
 - Organization ownership requires a non-null `organizationId`. Personal documents may retain their existing organization association and sharing audience without becoming team-owned.
@@ -95,4 +95,6 @@ Initial lifecycle mapping is deterministic: `deletedAt` present maps to `trashed
 5. Backup/restore and portable import/export must preserve the new ownership/publication state. Old-format imports default to personal ownership and cannot assign team grants or publish through unchecked fields.
 6. Document the first compatible app revision and prohibit older-writer rollback once team state exists. Recovery requires a tested matching database/uploads/configuration/key set. Production migration remains subject to explicit authorization.
 
-These gates are requirements, not passing test claims. The current implementation still uses owner-centric writes and lacks the proposed team model and publication snapshots.
+The foundation migration was tested against a populated disposable database containing private/shared/archived/trashed/unassigned documents, a folder, revision history and exact base64 attachment bytes. JSON comparisons excluding only the newly added fields proved existing values unchanged, personal defaults/null maintainers and no grants. Organization-required constraints rejected invalid document/folder updates. All migrations also applied to a fresh disposable schema. The local disposable preview was backed up before migration and passed 135 feature and 134 document reliability checks afterward; 250 unit tests and types passed. No production migration or updated Docker image is claimed.
+
+The broader gates above remain requirements. The current runtime still uses owner-centric access/writes and does not consume documentation grants or serve published snapshots. Team enablement requires the shared capability policy, explicit conversion, audience/attachment consent, compatible exports and migration/browser verification.
