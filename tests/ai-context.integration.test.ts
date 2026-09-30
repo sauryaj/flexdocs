@@ -24,6 +24,7 @@ import { GET as getDocument } from '@/app/api/documents/[id]/route';
 import { discoverDocuments } from '@/lib/document-discovery';
 import { GET as getPortalSummary } from '@/app/api/portal/summary/route';
 import { buildBackup, ExportIncompleteError } from '@/lib/export';
+import { GET as getPublishedAttachment } from '@/app/api/documents/[id]/publications/[snapshotId]/attachments/[attachmentId]/route';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -198,6 +199,15 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.organizationMember.create({ data: { userId: ids[2], organizationId: orgs[1] } });
     await prisma.organizationDocumentationGrant.create({ data: { userId: ids[2], organizationId: orgs[1], role: 'reader' } });
     const readerView = await readPublishedDocument(ids[2], teamDraft.id);
+    vi.stubEnv('UPLOAD_DIR', uploadRoot);
+    const fileParams = { params: Promise.resolve({ id: teamDraft.id, snapshotId: readerView.snapshotId, attachmentId: teamFile.id }) };
+    state.user = { id: ids[2], role: 'viewer' };
+    const publishedDownload = await getPublishedAttachment(new Request('http://localhost'), fileParams);
+    expect(publishedDownload.status).toBe(200);
+    expect(Buffer.from(await publishedDownload.arrayBuffer())).toEqual(originalBytes);
+    expect(publishedDownload.headers.get('Cache-Control')).toBe('private, no-store');
+    state.user = null;
+    expect((await getPublishedAttachment(new Request('http://localhost'), fileParams)).status).toBe(401);
     await expect(buildBackup({ organizationId: orgs[1] })).rejects.toBeInstanceOf(ExportIncompleteError);
     state.user = { id: ids[2], role: 'viewer' };
     expect((await POST(new Request('http://localhost/api/ai/ask', { method: 'POST', body: JSON.stringify({ question: 'Frozen team version', organizationId: orgs[1] }) }))).status).toBe(200);

@@ -1,4 +1,5 @@
 import { test, expect, type BrowserContext, type Page } from '@playwright/test';
+import { readFile } from 'node:fs/promises';
 
 const original = {
   id: 'browser-draft-a', title: 'Saved document', content: '# Saved Markdown\n', category: 'general',
@@ -40,6 +41,31 @@ test.beforeAll(async ({ request, baseURL }) => {
 });
 test.beforeEach(async ({ context }) => { await context.addCookies(cookies); });
 test.afterAll(async ({ request, baseURL }) => { await request.post(`${baseURL}/api/logout`); });
+
+test('published reader can retry an unavailable frozen attachment without entering edit mode', async ({ context, page }) => {
+  await context.route('**/api/documents/browser-published', route => route.fulfill({ json: { ...original,
+    id: 'browser-published', title: 'Published guide', canEdit: false, snapshotId: 'snapshot-a',
+    attachments: [{ attachmentId: 'frozen-file', filename: 'frozen.txt', size: 11 }],
+  } }));
+  let available = false;
+  await context.route('**/api/documents/browser-published/publications/snapshot-a/attachments/frozen-file', route =>
+    available ? route.fulfill({ body: 'exact bytes', contentType: 'application/octet-stream' })
+      : route.fulfill({ status: 503, json: { error: 'Unavailable' } }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/dashboard/documents/browser-published');
+  await expect(page.getByRole('heading', { name: 'Published guide' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Edit Document' })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Download frozen.txt' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Published file is unavailable' })).toBeVisible();
+  available = true;
+  const downloadEvent = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download frozen.txt' }).click();
+  const download = await downloadEvent;
+  expect(download.suggestedFilename()).toBe('frozen.txt');
+  expect(await readFile((await download.path())!, 'utf8')).toBe('exact bytes');
+  await expect(page.getByRole('alert').filter({ hasText: 'Published file is unavailable' })).toHaveCount(0);
+  await page.screenshot({ path: '/tmp/flexdocs-published-attachments.png', fullPage: true });
+});
 
 test('a superseded attachment response cannot replace the latest list', async ({ context, page }) => {
   await fixture(context);

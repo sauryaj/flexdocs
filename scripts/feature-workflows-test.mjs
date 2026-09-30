@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 import { randomBytes, createHash } from 'node:crypto';
+import { mkdir, writeFile, unlink } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 
 if (process.env.DOCUMENT_TEST_ISOLATED !== '1') throw new Error('Requires DOCUMENT_TEST_ISOLATED=1 and a disposable database');
 const db = new PrismaClient();
@@ -9,6 +11,7 @@ const base = process.env.TEST_BASE_URL || 'http://localhost:3101';
 const suffix = `features-${Date.now()}`;
 const password = 'Feature-workflows-test-only!';
 const users = [], orgs = [], docs = [], passwords = [], relationships = [], uploads = [];
+const publicationFiles = [];
 let checks = 0;
 const check = (value, message) => { assert.ok(value, message); checks++; console.log(`PASS ${message}`); };
 async function call(path, cookie, method = 'GET', body) {
@@ -44,12 +47,33 @@ try {
   const team = await db.document.create({ data: { userId: users[2], organizationId: orgs[0], ownershipKind: 'organization', lifecycleState: 'draft', title: suffix, content: 'unpublished team body' } });
   docs.push(team.id);
   const revision = await db.documentRevision.create({ data: { documentId: team.id, userId: users[1], version: 1, title: suffix, content: 'published team body', category: 'general' } });
-  const snapshot = await db.documentPublication.create({ data: { documentId: team.id, sourceRevisionId: revision.id, title: suffix, content: 'published team body', category: 'general', publisherId: users[1], tags: [] } });
+  const frozenBytes = randomBytes(32);
+  const frozenKey = createHash('sha256').update(frozenBytes).digest('hex');
+  const publicationDirectory = join(resolve(process.env.UPLOAD_DIR || 'uploads'), 'publication-objects');
+  await mkdir(publicationDirectory, { recursive: true });
+  const publicationPath = join(publicationDirectory, frozenKey);
+  await writeFile(publicationPath, frozenBytes, { flag: 'wx', mode: 0o600 });
+  publicationFiles.push(publicationPath);
+  const attachmentId = `${suffix}-frozen-file`;
+  const snapshot = await db.documentPublication.create({ data: { documentId: team.id, sourceRevisionId: revision.id, title: suffix, content: 'published team body', category: 'general', publisherId: users[1], tags: [], attachmentManifest: [{ attachmentId, filename: 'frozen.bin', mimeType: 'application/octet-stream', key: frozenKey, sha256: frozenKey, size: frozenBytes.length }] } });
+  const downloadPath = `/documents/${team.id}/publications/${snapshot.id}/attachments/${attachmentId}`;
   await db.document.update({ where: { id: team.id }, data: { publishedSnapshotId: snapshot.id } });
   const incompatibleExport = await call(`/organizations/${orgs[0]}/export`, sessions.admin);
   check(incompatibleExport.status === 422 && incompatibleExport.body.issues.some(issue => issue.includes('cannot preserve ownership/publication state')), 'portable export refuses lossy team publication backup');
   check((await call(`/documents/${team.id}`, sessions.viewer)).status === 404, 'team provenance owner without grant cannot read');
   await db.organizationDocumentationGrant.createMany({ data: [{ userId: users[2], organizationId: orgs[0], role: 'reader' }, { userId: users[1], organizationId: orgs[0], role: 'contributor' }] });
+  for (const role of ['viewer', 'editor']) {
+    const response = await fetch(`${base}/api${downloadPath}`, { headers: { Cookie: sessions[role] } });
+    check(response.status === 200 && Buffer.from(await response.arrayBuffer()).equals(frozenBytes), `${role} downloads exact frozen file bytes`);
+    check(response.headers.get('Cache-Control') === 'private, no-store' && response.headers.get('X-Content-Type-Options') === 'nosniff', `${role} published download has private safe headers`);
+  }
+  check((await call(downloadPath, sessions.admin)).status === 404, 'admin without team grant cannot download published file');
+  check((await call(downloadPath, null)).status === 401, 'anonymous published download blocked');
+  check((await call(downloadPath.replace(snapshot.id, 'other-snapshot'), sessions.viewer)).status === 404, 'non-current publication download blocked');
+  check((await call(downloadPath.replace(attachmentId, 'unselected-file'), sessions.viewer)).status === 404, 'unselected publication file blocked');
+  await writeFile(publicationPath, 'corrupted');
+  check((await call(downloadPath, sessions.viewer)).status === 503, 'corrupt publication bytes return unavailable rather than successful download');
+  await writeFile(publicationPath, frozenBytes);
   const publishedDetail = await call(`/documents/${team.id}`, sessions.viewer);
   check(publishedDetail.status === 200 && publishedDetail.body.content === 'published team body' && publishedDetail.body.canEdit === false && !('publishedSnapshot' in publishedDetail.body), 'HTTP reader receives safe frozen representation');
   check((await mcp(sessions.viewer, 'flexdocs_get_document', { id: team.id })).content === 'published team body', 'MCP reader receives frozen representation');
@@ -75,6 +99,7 @@ try {
   check((await mcp(sessions.admin, 'flexdocs_get_document', { id: team.id })).error === 'not found', 'MCP global admin without grant cannot read team document');
   check((await call(`/documents/${team.id}`, null)).status === 401, 'anonymous team document read blocked');
   await db.organizationDocumentationGrant.deleteMany({ where: { organizationId: orgs[0] } });
+  check((await call(downloadPath, sessions.viewer)).status === 404, 'grant revocation blocks published download');
   check((await call(`/documents/${team.id}`, sessions.viewer)).status === 404, 'HTTP grant revocation blocks subsequent read');
   await db.document.update({ where: { id: team.id }, data: { publishedSnapshotId: null } });
   await db.documentPublication.delete({ where: { id: snapshot.id } });
@@ -289,5 +314,6 @@ try {
   await db.organizationMember.deleteMany({ where: { organizationId: { in: orgs } } });
   await db.user.deleteMany({ where: { id: { in: users } } });
   await db.organization.deleteMany({ where: { id: { in: orgs } } });
+  for (const path of publicationFiles) await unlink(path);
   await db.$disconnect();
 }

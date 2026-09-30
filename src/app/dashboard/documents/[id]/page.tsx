@@ -24,6 +24,7 @@ import {
 import { formatDate } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/UIComponents';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
+import { PublishedAttachments } from '@/components/PublishedAttachments';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { Eye, Edit3, Columns } from 'lucide-react';
 import { RelatedItems } from '@/components/RelatedItems';
@@ -57,6 +58,8 @@ interface Document {
   updatedAt: string;
   tags: { id: string; name: string; color: string }[];
   folder: { id: string; name: string } | null;
+  snapshotId?: string;
+  attachments?: { attachmentId: string; filename: string; size: number }[];
 }
 
 interface Revision {
@@ -489,6 +492,7 @@ function DocumentEditor({ documentId }: { documentId: string }) {
       <h1 className="text-2xl font-bold">{doc.title}</h1>
       <p className="text-sm text-slate-500">Read only · Last updated {formatDate(doc.updatedAt)}</p>
       <MarkdownPreview content={doc.content} />
+      {doc.snapshotId && <PublishedAttachments key={`${doc.id}:${doc.snapshotId}`} documentId={doc.id} snapshotId={doc.snapshotId} files={doc.attachments || []} />}
     </div>
   );
 
