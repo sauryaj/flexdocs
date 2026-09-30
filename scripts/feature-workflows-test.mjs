@@ -41,6 +41,25 @@ try {
     check(result.status === 200, `MCP ${name} responds successfully`);
     return JSON.parse(result.body.result.content[0].text);
   }
+  const team = await db.document.create({ data: { userId: users[2], organizationId: orgs[0], ownershipKind: 'organization', lifecycleState: 'draft', title: suffix, content: 'unpublished team body' } });
+  docs.push(team.id);
+  const revision = await db.documentRevision.create({ data: { documentId: team.id, userId: users[1], version: 1, title: suffix, content: 'published team body', category: 'general' } });
+  const snapshot = await db.documentPublication.create({ data: { documentId: team.id, sourceRevisionId: revision.id, title: suffix, content: 'published team body', category: 'general', publisherId: users[1], tags: [] } });
+  await db.document.update({ where: { id: team.id }, data: { publishedSnapshotId: snapshot.id } });
+  check((await call(`/documents/${team.id}`, sessions.viewer)).status === 404, 'team provenance owner without grant cannot read');
+  await db.organizationDocumentationGrant.createMany({ data: [{ userId: users[2], organizationId: orgs[0], role: 'reader' }, { userId: users[1], organizationId: orgs[0], role: 'contributor' }] });
+  const publishedDetail = await call(`/documents/${team.id}`, sessions.viewer);
+  check(publishedDetail.status === 200 && publishedDetail.body.content === 'published team body' && publishedDetail.body.canEdit === false && !('publishedSnapshot' in publishedDetail.body), 'HTTP reader receives safe frozen representation');
+  check((await mcp(sessions.viewer, 'flexdocs_get_document', { id: team.id })).content === 'published team body', 'MCP reader receives frozen representation');
+  check((await call(`/documents/${team.id}`, sessions.editor)).body.content === 'unpublished team body', 'HTTP contributor receives working representation');
+  check((await call(`/documents/${team.id}`, sessions.admin)).status === 404, 'HTTP global admin without grant cannot read team document');
+  check((await mcp(sessions.admin, 'flexdocs_get_document', { id: team.id })).error === 'not found', 'MCP global admin without grant cannot read team document');
+  check((await call(`/documents/${team.id}`, null)).status === 401, 'anonymous team document read blocked');
+  await db.organizationDocumentationGrant.deleteMany({ where: { organizationId: orgs[0] } });
+  check((await call(`/documents/${team.id}`, sessions.viewer)).status === 404, 'HTTP grant revocation blocks subsequent read');
+  await db.document.update({ where: { id: team.id }, data: { publishedSnapshotId: null } });
+  await db.documentPublication.delete({ where: { id: snapshot.id } });
+  await db.document.delete({ where: { id: team.id } });
   const mcpFixtures = [];
   for (const data of [
     { visibility: 'private' },
@@ -238,6 +257,9 @@ try {
   await db.invitation.deleteMany({ where: { email: { startsWith: suffix } } });
   await db.relationship.deleteMany({ where: { OR: [{ id: { in: relationships.filter(Boolean) } }, { sourceId: { in: docs } }, { targetId: { in: docs } }] } });
   await db.attachment.deleteMany({ where: { userId: { in: users } } });
+  await db.document.updateMany({ where: { userId: { in: users } }, data: { publishedSnapshotId: null } });
+  await db.documentPublication.deleteMany({ where: { publisherId: { in: users } } });
+  await db.organizationDocumentationGrant.deleteMany({ where: { organizationId: { in: orgs } } });
   await db.document.deleteMany({ where: { userId: { in: users } } });
   await db.password.deleteMany({ where: { userId: { in: users } } });
   await db.folder.deleteMany({ where: { userId: { in: users } } });

@@ -105,11 +105,11 @@ describe('revision endpoint authorization', () => {
 describe('document read access', () => {
   it('keeps private owner documents visible while constraining shared access', async () => {
     const { documentReadWhere } = await import('@/lib/document-access');
-    expect(documentReadWhere('owner', { mode: 'limited', orgIds: ['allowed'] })).toEqual({ deletedAt: null, OR: [
-      { userId: 'owner' }, { organizationId: { in: ['allowed'] }, visibility: 'org', isArchived: false },
+    expect(documentReadWhere('owner', { mode: 'limited', orgIds: ['allowed'] })).toEqual({ deletedAt: null, ownershipKind: 'personal', OR: [
+      { userId: 'owner' }, { organizationId: { in: ['allowed'] }, visibility: 'org', isArchived: false, lifecycleState: null },
     ] });
-    expect(documentReadWhere('viewer', { mode: 'limited', orgIds: [] })).toEqual({ deletedAt: null, OR: [
-      { userId: 'viewer' }, { organizationId: { in: ['__none__'] }, visibility: 'org', isArchived: false },
+    expect(documentReadWhere('viewer', { mode: 'limited', orgIds: [] })).toEqual({ deletedAt: null, ownershipKind: 'personal', OR: [
+      { userId: 'viewer' }, { organizationId: { in: ['__none__'] }, visibility: 'org', isArchived: false, lifecycleState: null },
     ] });
   });
 });

@@ -19,6 +19,8 @@ import { decideDocumentReview, submitDocumentReview } from '@/lib/document-revie
 import { isImmutableFileReference, LocalImmutableFileStore } from '@/lib/immutable-file-store';
 import { publishDocumentReview } from '@/lib/document-publication';
 import { readPublishedDocument, readPublishedFile } from '@/lib/published-document-read';
+import { readDocumentDetail } from '@/lib/document-detail-read';
+import { GET as getDocument } from '@/app/api/documents/[id]/route';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -188,9 +190,21 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     expect(replayedPublication.snapshot.content).toBe('Frozen team version');
     expect((await prisma.document.findUniqueOrThrow({ where: { id: teamDraft.id } })).content).toBe('New unpublished working body');
     await expect(readPublishedDocument(ids[2], teamDraft.id)).rejects.toMatchObject({ status: 404 });
+    await expect(readDocumentDetail(ids[2], teamDraft.id)).rejects.toMatchObject({ status: 404 });
+    expect(await readDocumentDetail(ids[0], teamDraft.id)).toMatchObject({ content: 'New unpublished working body', representation: 'working', canEdit: false });
     await prisma.organizationMember.create({ data: { userId: ids[2], organizationId: orgs[1] } });
     await prisma.organizationDocumentationGrant.create({ data: { userId: ids[2], organizationId: orgs[1], role: 'reader' } });
     const readerView = await readPublishedDocument(ids[2], teamDraft.id);
+    state.user = { id: ids[2], role: 'viewer' };
+    const detailResponse = await getDocument(new Request('http://localhost/api/documents/' + teamDraft.id), { params: Promise.resolve({ id: teamDraft.id }) });
+    expect(detailResponse.status).toBe(200);
+    const detail = await detailResponse.json();
+    expect(detail).toMatchObject({ content: 'Frozen team version', representation: 'published', canEdit: false, folder: null });
+    expect(detail).not.toHaveProperty('publishedSnapshot');
+    expect(detail).not.toHaveProperty('userId');
+    expect(detail.attachments[0]).not.toHaveProperty('key');
+    state.user = null;
+    expect((await getDocument(new Request('http://localhost/api/documents/' + teamDraft.id), { params: Promise.resolve({ id: teamDraft.id }) })).status).toBe(401);
     expect(readerView.content).toBe('Frozen team version');
     expect(readerView.attachments).toEqual([{ attachmentId: teamFile.id, filename: 'legacy.bin', mimeType: 'application/octet-stream', size: originalBytes.length }]);
     expect(readerView).not.toHaveProperty('sourceRevisionId');
@@ -201,6 +215,7 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await expect(readPublishedFile(ids[2], teamDraft.id, readerView.snapshotId, 'unselected-file', storage)).rejects.toMatchObject({ status: 404 });
     await prisma.organizationDocumentationGrant.deleteMany({ where: { userId: ids[0], organizationId: orgs[1] } });
     await expect(readPublishedDocument(ids[0], teamDraft.id)).rejects.toMatchObject({ status: 404 });
+    await expect(readDocumentDetail(ids[0], teamDraft.id)).rejects.toMatchObject({ status: 404 });
     await prisma.organizationDocumentationGrant.create({ data: { userId: ids[0], organizationId: orgs[1], role: 'contributor' } });
     const revokingStorage = { put: storage.put.bind(storage), read: async (reference: Parameters<typeof storage.read>[0]) => {
       const bytes = await storage.read(reference);
@@ -229,8 +244,11 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await expect(readPublishedDocument(ids[2], privateDraft.id)).rejects.toMatchObject({ status: 404 });
     await prisma.document.update({ where: { id: privateDraft.id }, data: { organizationId: orgs[1], visibility: 'org', content: 'Unpublished personal edits', lifecycleState: 'draft' } });
     expect((await readPublishedDocument(ids[2], privateDraft.id)).content).toBe('Changed after approval');
+    expect(await readDocumentDetail(ids[2], privateDraft.id)).toMatchObject({ content: 'Changed after approval', representation: 'published', canEdit: false });
+    expect(await readDocumentDetail(ids[0], privateDraft.id)).toMatchObject({ content: 'Unpublished personal edits', representation: 'working', canEdit: true });
     await prisma.document.update({ where: { id: privateDraft.id }, data: { visibility: 'private' } });
     await expect(readPublishedDocument(ids[2], privateDraft.id)).rejects.toMatchObject({ status: 404 });
+    await expect(readDocumentDetail(ids[2], privateDraft.id)).rejects.toMatchObject({ status: 404 });
     const reviewInventory = spawnSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/storage-inventory.ts'], { env: { ...process.env, UPLOAD_DIR: uploadRoot }, encoding: 'utf8' });
     expect([0, 2]).toContain(reviewInventory.status);
     const reviewInventoryReport = JSON.parse(reviewInventory.stdout);

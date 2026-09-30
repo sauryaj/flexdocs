@@ -4,9 +4,8 @@ import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/rbac';
 import { auditLog } from '@/lib/audit';
 import { documentUpdateSchema, withDocumentWrite, snapshotDocument, nextDocumentTimestamp, DocumentWriteError, validateDocumentFolder } from '@/lib/document-write';
-import { documentReadWhere } from '@/lib/document-access';
+import { readDocumentDetail } from '@/lib/document-detail-read';
 import { documentCapabilities } from '@/lib/document-capabilities';
-import { getOrgScope } from '@/lib/org-scope';
 import { type UserRole } from '@prisma/client';
 
 export async function GET(
@@ -19,17 +18,12 @@ export async function GET(
   }
 
   const { id } = await params;
-  const scope = await getOrgScope(user.id, user.role);
-  const document = await prisma.document.findFirst({
-    where: { deletedAt: null, id, ...documentReadWhere(user.id, scope) },
-    include: { tags: true, folder: true },
-  });
-
-  if (!document) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    return NextResponse.json(await readDocumentDetail(user.id, id));
+  } catch (error) {
+    if (error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
+    throw error;
   }
-
-  return NextResponse.json({ ...document, canEdit: documentCapabilities(document, { id: user.id, role: user.role }).edit });
 }
 
 export async function PUT(

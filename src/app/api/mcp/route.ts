@@ -4,6 +4,8 @@ import { canUseMcpTool } from '@/lib/mcp-access';
 import { prisma } from '@/lib/prisma';
 import { getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
 import { documentReadWhere } from '@/lib/document-access';
+import { readDocumentDetail } from '@/lib/document-detail-read';
+import { DocumentWriteError } from '@/lib/document-write';
 
 /**
  * Minimal MCP (Model Context Protocol) server over Streamable HTTP (JSON-RPC 2.0).
@@ -73,11 +75,13 @@ async function toolSearch(user: { id: string; role: string }, args: Record<strin
 
 async function toolGetDocument(user: { id: string; role: string }, args: Record<string, unknown>) {
   const id = String(args.id ?? '');
-  const scope = await getOrgScope(user.id, user.role);
-  const doc = await prisma.document.findFirst({ where: { id, ...documentReadWhere(user.id, scope) } });
-  if (!doc) return { error: 'not found' };
-
-  return { id: doc.id, title: doc.title, category: doc.category, content: doc.content, updatedAt: doc.updatedAt };
+  try {
+    const doc = await readDocumentDetail(user.id, id);
+    return { id: doc.id, title: doc.title, category: doc.category, content: doc.content, updatedAt: doc.updatedAt };
+  } catch (error) {
+    if (error instanceof DocumentWriteError) return { error: error.status === 404 ? 'not found' : 'document unavailable' };
+    throw error;
+  }
 }
 
 async function toolListOrgs(user: { id: string; role: string }) {
