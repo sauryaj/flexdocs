@@ -35,12 +35,13 @@ export async function middleware(request: NextRequest) {
 
     if (!isAuthEndpoint) {
       const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown';
-      const key = `api:${ip}:${request.nextUrl.pathname}`;
+      const isRead = request.method === 'GET' || request.method === 'HEAD';
+      const key = `api:${isRead ? 'read' : 'write'}:${ip}:${request.nextUrl.pathname}`;
 
       // Reads are cheap and happen constantly from live dashboards (sidebar,
       // notification bell, SSE reconnects) — allow ~0.5 rps sustained per path.
       // Writes stay far stricter.
-      const limit = request.method === 'GET' || request.method === 'HEAD' ? 400 : 60;
+      const limit = isRead ? 400 : 60;
       const { allowed, remaining, resetAt } = await checkRateLimit(key, limit);
 
       response.headers.set('X-RateLimit-Limit', String(limit));
