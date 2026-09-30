@@ -7,17 +7,19 @@ const authMock = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/auth', () => ({ auth: authMock }));
 vi.mock('@/lib/audit', () => ({ auditLog: vi.fn().mockResolvedValue(undefined) }));
 
-const document = { id: 'doc', userId: 'owner', ownershipKind: 'personal', organizationId: null, isArchived: false, deletedAt: null, title: 'Title', content: 'Current text', category: 'general', updatedAt: new Date('2026-01-01T00:00:00Z') } as Document;
+const document = { id: 'doc', userId: 'owner', ownershipKind: 'personal', lifecycleState: null, organizationId: null, isArchived: false, deletedAt: null, title: 'Title', content: 'Current text', category: 'general', updatedAt: new Date('2026-01-01T00:00:00Z') } as Document;
 const tx = {
   $queryRaw: vi.fn(),
   document: { findFirst: vi.fn(), update: vi.fn() },
   documentRevision: { findFirst: vi.fn(), create: vi.fn() },
+  user: { findUnique: vi.fn() },
   folder: { findFirst: vi.fn() },
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
   tx.document.findFirst.mockResolvedValue(document);
+  tx.user.findUnique.mockResolvedValue({ id: 'owner', role: 'editor' });
   tx.documentRevision.findFirst.mockResolvedValue(null);
   Object.assign(prisma, { $transaction: vi.fn(async callback => callback(tx)) });
 });
@@ -38,7 +40,7 @@ describe('folder assignment boundaries', () => {
     const { validateDocumentFolder } = await import('@/lib/document-write');
     tx.folder.findFirst.mockResolvedValue({ organizationId });
     await expect(validateDocumentFolder(tx as unknown as Prisma.TransactionClient, 'owner', organizationId, 'folder')).resolves.toBeUndefined();
-    expect(tx.folder.findFirst).toHaveBeenCalledWith({ where: { id: 'folder', userId: 'owner' }, select: { organizationId: true } });
+    expect(tx.folder.findFirst).toHaveBeenCalledWith({ where: { id: 'folder', userId: 'owner' }, select: { organizationId: true, ownershipKind: true } });
   });
 });
 

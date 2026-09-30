@@ -26,6 +26,7 @@ import { GET as getPortalSummary } from '@/app/api/portal/summary/route';
 import { buildBackup, ExportIncompleteError } from '@/lib/export';
 import { GET as getPublishedAttachment } from '@/app/api/documents/[id]/publications/[snapshotId]/attachments/[attachmentId]/route';
 import { readDocumentHistory, createDocumentRevision, restoreDocumentRevision } from '@/lib/document-history';
+import { updateDocument } from '@/lib/document-update';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -196,7 +197,7 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     expect((await prisma.document.findUniqueOrThrow({ where: { id: teamDraft.id } })).content).toBe('New unpublished working body');
     await expect(readPublishedDocument(ids[2], teamDraft.id)).rejects.toMatchObject({ status: 404 });
     await expect(readDocumentDetail(ids[2], teamDraft.id)).rejects.toMatchObject({ status: 404 });
-    expect(await readDocumentDetail(ids[0], teamDraft.id)).toMatchObject({ content: 'New unpublished working body', representation: 'working', canEdit: false });
+    expect(await readDocumentDetail(ids[0], teamDraft.id)).toMatchObject({ content: 'New unpublished working body', representation: 'working', canEdit: true, canManageLifecycle: false });
     await prisma.organizationMember.create({ data: { userId: ids[2], organizationId: orgs[1] } });
     await prisma.organizationDocumentationGrant.create({ data: { userId: ids[2], organizationId: orgs[1], role: 'reader' } });
     const readerView = await readPublishedDocument(ids[2], teamDraft.id);
@@ -339,6 +340,25 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.organizationDocumentationGrant.deleteMany({ where: { userId: ids[0], organizationId: orgs[1] } });
     await expect(readDocumentHistory(ids[0], historyDocument.id)).rejects.toMatchObject({ status: 404 });
     await expect(restoreDocumentRevision(ids[0], historyDocument.id, oldInternal.id, restoredHistory.updatedAt.toISOString())).rejects.toMatchObject({ status: 404 });
+    await expect(updateDocument(ids[0], historyDocument.id, { content: 'Denied edit', expectedUpdatedAt: restoredHistory.updatedAt.toISOString() })).rejects.toMatchObject({ status: 404 });
+    await prisma.organizationDocumentationGrant.create({ data: { userId: ids[0], organizationId: orgs[1], role: 'contributor' } });
+    const teamFolder = await prisma.folder.create({ data: { name: token, userId: ids[1], organizationId: orgs[1], ownershipKind: 'organization' } });
+    const foreignFolder = await prisma.folder.create({ data: { name: token + '-foreign', userId: ids[0], organizationId: orgs[0], ownershipKind: 'organization' } });
+    const personalFolder = await prisma.folder.create({ data: { name: token + '-personal', userId: ids[0], organizationId: orgs[1] } });
+    for (const folderId of [foreignFolder.id, personalFolder.id]) await expect(updateDocument(ids[0], historyDocument.id, { folderId, expectedUpdatedAt: restoredHistory.updatedAt.toISOString() })).rejects.toMatchObject({ status: 404 });
+    await expect(updateDocument(ids[0], historyDocument.id, { content: 'Blind edit' })).rejects.toMatchObject({ status: 428 });
+    await expect(updateDocument(ids[0], historyDocument.id, { visibility: 'org', expectedUpdatedAt: restoredHistory.updatedAt.toISOString() })).rejects.toMatchObject({ status: 400 });
+    await expect(updateDocument(ids[0], historyDocument.id, { isArchived: true, expectedUpdatedAt: restoredHistory.updatedAt.toISOString() })).rejects.toMatchObject({ status: 409 });
+    const updateReview = await submitDocumentReview(ids[0], historyDocument.id, restoredHistory.updatedAt.toISOString(), [ids[1]]);
+    const updatedTeam = await updateDocument(ids[0], historyDocument.id, { content: 'Team working edit after review', tags: [token], folderId: teamFolder.id, expectedUpdatedAt: updateReview.submittedAt.toISOString() });
+    expect(updatedTeam).toMatchObject({ content: 'Team working edit after review', lifecycleState: 'draft', publishedSnapshotId: historyPublication.id, canEdit: true, canManageLifecycle: false, folderId: teamFolder.id });
+    expect(updatedTeam.tags.map(tag => tag.name)).toEqual([token]);
+    expect((await prisma.documentReview.findUniqueOrThrow({ where: { id: updateReview.id } })).decision).toBe('withdrawn');
+    expect((await readPublishedDocument(ids[2], historyDocument.id)).content).toBe('Frozen history reader content');
+    const editAttempts = await Promise.allSettled([0, 1].map(() => updateDocument(ids[0], historyDocument.id, { isPinned: true, expectedUpdatedAt: updatedTeam.updatedAt.toISOString() })));
+    expect(editAttempts.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect(editAttempts.filter(result => result.status === 'rejected').map(result => result.status === 'rejected' && result.reason.status)).toEqual([409]);
+    expect(await prisma.activityLog.count({ where: { resourceId: historyDocument.id, action: 'document.update' } })).toBe(2);
     const reviewInventory = spawnSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/storage-inventory.ts'], { env: { ...process.env, UPLOAD_DIR: uploadRoot }, encoding: 'utf8' });
     expect([0, 2]).toContain(reviewInventory.status);
     const reviewInventoryReport = JSON.parse(reviewInventory.stdout);
@@ -353,6 +373,7 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.documentReview.deleteMany({ where: { submittedById: { in: ids } } });
     await prisma.attachment.deleteMany({ where: { userId: { in: ids } } });
     await prisma.document.deleteMany({ where: { userId: { in: ids } } });
+    await prisma.folder.deleteMany({ where: { userId: { in: ids } } });
     await prisma.tag.deleteMany({ where: { userId: { in: ids } } });
     await prisma.server.deleteMany({ where: { userId: { in: ids } } });
     await prisma.flexibleAsset.deleteMany({ where: { userId: { in: ids } } });

@@ -14,7 +14,7 @@ export async function readDocumentHistory(actorId: string, documentId: string) {
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }
 
-async function withHistoryWrite<T>(actorId: string, documentId: string, expectedUpdatedAt: string | undefined,
+export async function withDocumentCapabilityWrite<T>(actorId: string, documentId: string, expectedUpdatedAt: string | undefined,
   action: 'edit' | 'restoreHistory', write: (tx: Prisma.TransactionClient, document: Document) => Promise<T>) {
   return prisma.$transaction(async tx => {
     await lockDocumentationAdministration(tx);
@@ -32,11 +32,11 @@ async function withHistoryWrite<T>(actorId: string, documentId: string, expected
   });
 }
 
-async function withdrawSupersededReviews(tx: Prisma.TransactionClient, actorId: string, documentId: string) {
+export async function withdrawSupersededReviews(tx: Prisma.TransactionClient, actorId: string, documentId: string, reason = 'history_version_replaced') {
   const pending = await tx.documentReview.findMany({ where: { documentId, decision: 'pending' }, select: { id: true } });
   for (const review of pending) {
-    await tx.documentReview.update({ where: { id: review.id }, data: { decision: 'withdrawn', decidedById: actorId, decidedAt: new Date(), feedback: 'Working version replaced through document history' } });
-    await tx.activityLog.create({ data: { userId: actorId, action: 'document.review.withdrawn', resourceType: 'document', resourceId: documentId, details: JSON.stringify({ reviewId: review.id, reason: 'history_version_replaced' }) } });
+    await tx.documentReview.update({ where: { id: review.id }, data: { decision: 'withdrawn', decidedById: actorId, decidedAt: new Date(), feedback: 'Working version replaced; submit the current version for review' } });
+    await tx.activityLog.create({ data: { userId: actorId, action: 'document.review.withdrawn', resourceType: 'document', resourceId: documentId, details: JSON.stringify({ reviewId: review.id, reason }) } });
   }
 }
 
@@ -57,11 +57,11 @@ async function saveHistoryVersion(tx: Prisma.TransactionClient, actorId: string,
 
 export async function createDocumentRevision(actorId: string, documentId: string, input: z.infer<typeof revisionSchema>) {
   const { expectedUpdatedAt, message, ...fields } = revisionSchema.parse(input);
-  return withHistoryWrite(actorId, documentId, expectedUpdatedAt, 'edit', (tx, document) => saveHistoryVersion(tx, actorId, document, fields, message || null));
+  return withDocumentCapabilityWrite(actorId, documentId, expectedUpdatedAt, 'edit', (tx, document) => saveHistoryVersion(tx, actorId, document, fields, message || null));
 }
 
 export async function restoreDocumentRevision(actorId: string, documentId: string, revisionId: string, expectedUpdatedAt?: string) {
-  return withHistoryWrite(actorId, documentId, expectedUpdatedAt, 'restoreHistory', async (tx, document) => {
+  return withDocumentCapabilityWrite(actorId, documentId, expectedUpdatedAt, 'restoreHistory', async (tx, document) => {
     const revision = await tx.documentRevision.findFirst({ where: { id: revisionId, documentId } });
     if (!revision) throw new DocumentWriteError(404, 'Revision not found');
     return saveHistoryVersion(tx, actorId, document, { title: revision.title, content: revision.content, category: revision.category }, `Restored from revision v${revision.version}`, revision.id);

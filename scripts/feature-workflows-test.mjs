@@ -46,6 +46,9 @@ try {
   }
   const team = await db.document.create({ data: { userId: users[2], organizationId: orgs[0], ownershipKind: 'organization', lifecycleState: 'draft', title: suffix, content: 'unpublished team body' } });
   docs.push(team.id);
+  const privateWorkingFile = await db.attachment.create({ data: { documentId: team.id, userId: users[2], filename: 'internal-working.txt', mimeType: 'text/plain', size: 6, storageType: 'base64', data: Buffer.from('secret').toString('base64') } });
+  check((await call(`/attachments/${privateWorkingFile.id}`, sessions.viewer)).status === 404, 'legacy uploader endpoint cannot expose team working file to a reader');
+  check(!(await call(`/attachments?documentId=${team.id}`, sessions.viewer)).body.some(item => item.id === privateWorkingFile.id), 'legacy attachment listing excludes team working files');
   const revision = await db.documentRevision.create({ data: { documentId: team.id, userId: users[1], version: 1, title: suffix, content: 'published team body', category: 'general' } });
   const frozenBytes = randomBytes(32);
   const frozenKey = createHash('sha256').update(frozenBytes).digest('hex');
@@ -98,6 +101,14 @@ try {
   check((await call(`/documents/${team.id}`, sessions.admin)).status === 404, 'HTTP global admin without grant cannot read team document');
   check((await mcp(sessions.admin, 'flexdocs_get_document', { id: team.id })).error === 'not found', 'MCP global admin without grant cannot read team document');
   check((await call(`/documents/${team.id}`, null)).status === 401, 'anonymous team document read blocked');
+  check((await call(`/documents/${team.id}`, sessions.editor)).body.canEdit === true, 'contributor detail enables team draft editing');
+  check((await call(`/documents/${team.id}`, sessions.viewer, 'PUT', { content: 'denied' })).status === 403, 'viewer cannot edit working team copy');
+  check((await call(`/documents/${team.id}`, sessions.admin, 'PUT', { content: 'denied' })).status === 404, 'ungranted admin cannot edit team copy');
+  check((await call(`/documents/${team.id}`, sessions.editor, 'PUT', { content: 'blind edit' })).status === 428, 'team PUT requires expected version');
+  const teamEditVersion = (await db.document.findUniqueOrThrow({ where: { id: team.id } })).updatedAt.toISOString();
+  const teamEdit = await call(`/documents/${team.id}`, sessions.editor, 'PUT', { content: 'Team saved working content', expectedUpdatedAt: teamEditVersion });
+  check(teamEdit.status === 200 && teamEdit.body.canEdit && teamEdit.body.canManageLifecycle === false && teamEdit.body.publishedSnapshotId === snapshot.id, 'contributor saves draft while preserving publication and capability flags');
+  check((await call(`/documents/${team.id}`, sessions.viewer)).body.content === 'published team body', 'reader sees frozen publication after team PUT');
   const teamHistory = await call(`/documents/${team.id}/revisions`, sessions.editor);
   check(teamHistory.status === 200 && teamHistory.body.some(item => item.id === revision.id), 'contributor reads team history across revision authors');
   check((await call(`/documents/${team.id}/revisions`, sessions.viewer)).status === 404, 'reader provenance owner cannot read internal team history');
@@ -116,6 +127,7 @@ try {
   check(afterRestore.lifecycleState === 'draft' && afterRestore.publishedSnapshotId === snapshot.id, 'history restore creates draft and preserves publication pointer');
   check((await call(`/documents/${team.id}`, sessions.viewer)).body.content === 'published team body', 'history restoration leaves reader publication unchanged');
   await db.organizationDocumentationGrant.deleteMany({ where: { organizationId: orgs[0] } });
+  check((await call(`/documents/${team.id}`, sessions.editor, 'PUT', { content: 'denied after revocation', expectedUpdatedAt: teamEdit.body.updatedAt })).status === 404, 'revoked contributor cannot update team copy');
   check((await call(`/documents/${team.id}/revisions`, sessions.editor)).status === 404, 'revoked contributor cannot read team history');
   check((await call(downloadPath, sessions.viewer)).status === 404, 'grant revocation blocks published download');
   check((await call(`/documents/${team.id}`, sessions.viewer)).status === 404, 'HTTP grant revocation blocks subsequent read');

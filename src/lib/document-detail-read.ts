@@ -13,7 +13,9 @@ export async function readDocumentDetail(actorId: string, documentId: string) {
     if (!actor || !hasPermission(actor.role, 'document.read') || !record || record.deletedAt) throw new DocumentWriteError(404, 'Not found');
     const { publishedSnapshot, ...document } = record;
     const capabilities = await resolveDocumentCapabilities({ ...document, hasPublishedSnapshot: !!publishedSnapshot }, actor, tx);
-    if (capabilities.readWorking) return { document, published: false, canEdit: document.ownershipKind === 'personal' && capabilities.edit };
+    if (capabilities.readWorking) return { document, published: false,
+      canEdit: capabilities.edit && !(document.lifecycleState !== null && document.isArchived) && !(document.ownershipKind === 'organization' && document.lifecycleState === null),
+      canManageLifecycle: document.ownershipKind === 'personal' && document.lifecycleState === null && capabilities.manageLifecycle };
     if (document.ownershipKind === 'organization') {
       if (!capabilities.readPublished) throw new DocumentWriteError(404, 'Not found');
       return { document: null, published: true, canEdit: false };
@@ -27,7 +29,9 @@ export async function readDocumentDetail(actorId: string, documentId: string) {
     }
     return { document, published: false, canEdit: false };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
-  if (!selection.published && selection.document) return { ...selection.document, canEdit: selection.canEdit, representation: 'working' as const };
+  if (!selection.published && selection.document) return { ...selection.document, canEdit: selection.canEdit,
+    canManageLifecycle: selection.canManageLifecycle ?? false, canDuplicate: selection.document.ownershipKind === 'personal' && selection.document.lifecycleState === null && selection.canEdit,
+    representation: 'working' as const };
   const snapshot = await readPublishedDocument(actorId, documentId);
   return { id: snapshot.documentId, title: snapshot.title, content: snapshot.content, category: snapshot.category,
     organizationId: snapshot.organizationId, tags: snapshot.tags.map((name, index) => ({ id: `published-tag-${index}`, name })),

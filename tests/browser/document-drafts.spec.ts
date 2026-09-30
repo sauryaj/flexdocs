@@ -42,6 +42,32 @@ test.beforeAll(async ({ request, baseURL }) => {
 test.beforeEach(async ({ context }) => { await context.addCookies(cookies); });
 test.afterAll(async ({ request, baseURL }) => { await request.post(`${baseURL}/api/logout`); });
 
+test('team contributor edits a draft while lifecycle and private attachment controls remain restricted', async ({ context, page }) => {
+  let team = { ...original, id: 'browser-team', ownershipKind: 'organization', canManageLifecycle: false, canDuplicate: false, organizationId: 'team-org' };
+  let saved = false;
+  await context.route('**/api/documents/browser-team', async route => {
+    if (route.request().method() === 'PUT') {
+      const input = route.request().postDataJSON();
+      expect(input.expectedUpdatedAt).toBe(team.updatedAt);
+      team = { ...team, ...input, updatedAt: '2026-09-30T00:00:00.000Z' };
+      saved = true;
+    }
+    return route.fulfill({ json: team });
+  });
+  await page.goto('/dashboard/documents/browser-team');
+  await expect(page.getByText('Team draft · Saved edits do not change the published version.')).toBeVisible();
+  for (const name of ['Archive', 'Delete', 'Duplicate']) await expect(page.getByTitle(name, { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel('Visibility')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Attachments', exact: true })).toHaveCount(0);
+  await page.locator('textarea').fill('# Team draft changes');
+  await page.getByRole('button', { name: 'Save Now', exact: true }).click();
+  await expect.poll(() => saved).toBe(true);
+  await expect(page.locator('textarea')).toHaveValue('# Team draft changes');
+  await expect(page.getByTitle('Archive', { exact: true })).toHaveCount(0);
+  await page.getByRole('heading', { name: 'Edit Document' }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: '/tmp/flexdocs-team-draft-editor.png', fullPage: true });
+});
+
 test('published reader can retry an unavailable frozen attachment without entering edit mode', async ({ context, page }) => {
   await context.route('**/api/documents/browser-published', route => route.fulfill({ json: { ...original,
     id: 'browser-published', title: 'Published guide', canEdit: false, snapshotId: 'snapshot-a',

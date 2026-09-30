@@ -26,8 +26,9 @@ export class DocumentWriteError extends Error {
 
 export async function validateDocumentFolder(tx: Prisma.TransactionClient, userId: string, organizationId: string | null, folderId?: string | null) {
   if (!folderId) return;
-  const folder = await tx.folder.findFirst({ where: { id: folderId, userId }, select: { organizationId: true } });
+  const folder = await tx.folder.findFirst({ where: { id: folderId, userId }, select: { organizationId: true, ownershipKind: true } });
   if (!folder) throw new DocumentWriteError(404, 'Folder not found');
+  if (folder.ownershipKind === 'organization') throw new DocumentWriteError(400, 'Personal documents require personal folders.');
   if (folder.organizationId !== organizationId) throw new DocumentWriteError(400, 'Document and folder must belong to the same organization.');
 }
 

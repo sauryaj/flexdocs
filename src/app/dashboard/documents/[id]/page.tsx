@@ -46,6 +46,9 @@ const categories = [
 interface Document {
   id: string;
   canEdit?: boolean;
+  canManageLifecycle?: boolean;
+  canDuplicate?: boolean;
+  ownershipKind?: 'personal' | 'organization';
   title: string;
   content: string;
   category: string;
@@ -517,7 +520,7 @@ function DocumentEditor({ documentId }: { documentId: string }) {
           >
             <Pin className="w-5 h-5" />
           </button>
-          <button
+          {doc.canDuplicate !== false && <button
             onClick={async () => {
               const res = await fetch(`/api/documents/${doc.id}/duplicate`, { method: 'POST' });
               if (res.ok) {
@@ -529,8 +532,8 @@ function DocumentEditor({ documentId }: { documentId: string }) {
             title="Duplicate"
           >
             <Copy className="w-5 h-5" />
-          </button>
-          <button
+          </button>}
+          {doc.canManageLifecycle !== false && <><button
             onClick={toggleArchive}
             className={`p-2 rounded-lg transition-colors ${doc.isArchived ? 'bg-slate-200 text-slate-700' : 'hover:bg-slate-100'}`}
             title={doc.isArchived ? 'Unarchive' : 'Archive'}
@@ -539,11 +542,12 @@ function DocumentEditor({ documentId }: { documentId: string }) {
           </button>
           <button onClick={() => setShowDelete(true)} className="p-2 hover:bg-red-50 text-red-500 rounded-lg" title="Delete">
             <Trash2 className="w-5 h-5" />
-          </button>
+          </button></>}
         </div>
       </div>
 
       {/* Two-column layout */}
+      {doc.ownershipKind === 'organization' && <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">Team draft · Saved edits do not change the published version.</p>}
       {conflict && <section className="card p-4 space-y-3" aria-label="Save conflict comparison">
         <h2 className="font-semibold">Resolve conflicting edits</h2>
         <p className="text-sm">The server has a newer version. Edit your local text to combine the changes you want to keep. Accepting the baseline below does not save; Save Now checks for further server changes.</p>
@@ -633,7 +637,7 @@ function DocumentEditor({ documentId }: { documentId: string }) {
                 <p className="text-xs text-red-600 mt-1">This document is past its review date.</p>
               )}
             </div>
-            {doc?.organizationId && (
+            {doc?.organizationId && doc.ownershipKind !== 'organization' && (
               <div>
                 <label htmlFor="doc-visibility" className="block text-sm font-medium text-slate-700 mb-1">Visibility</label>
                 <select
@@ -739,7 +743,7 @@ function DocumentEditor({ documentId }: { documentId: string }) {
         {/* Right: Sidebar panels */}
         <div className="w-full xl:w-80 shrink-0 space-y-4 xl:sticky xl:top-24">
           {/* Related Items */}
-          {doc?.id && <RelatedItems entityType="document" entityId={doc.id} />}
+          {doc?.id && doc.ownershipKind !== 'organization' && <RelatedItems entityType="document" entityId={doc.id} />}
 
           {/* Version History */}
           <div className="card overflow-hidden">
@@ -806,7 +810,7 @@ function DocumentEditor({ documentId }: { documentId: string }) {
           </div>
 
           {/* Attachments */}
-          <div className="card overflow-hidden">
+          {doc.ownershipKind !== 'organization' && <div className="card overflow-hidden">
             <button
               onClick={() => setAttachmentsExpanded(!attachmentsExpanded)}
               className="w-full flex items-center justify-between p-4 hover:bg-slate-50 transition-colors"
@@ -870,7 +874,7 @@ function DocumentEditor({ documentId }: { documentId: string }) {
                 )}
               </div>
             )}
-          </div>
+          </div>}
 
         </div>
       </div>

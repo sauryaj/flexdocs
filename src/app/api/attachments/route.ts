@@ -18,7 +18,7 @@ export async function GET(req: Request) {
   if (documentId) where.documentId = documentId;
 
   const attachments = await prisma.attachment.findMany({
-    where: { ...where, OR: [{ documentId: null }, { document: { deletedAt: null } }] },
+    where: { ...where, OR: [{ documentId: null }, { document: { deletedAt: null, ownershipKind: 'personal' } }] },
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
   if (req.headers.get('content-type')?.toLowerCase().startsWith('multipart/form-data')) {
     try {
       const { buffer, filename, mimeType, documentId } = await parseMultipartAttachment(req);
-      if (documentId && !await prisma.document.findFirst({ where: { id: documentId, userId: user.id, deletedAt: null } })) {
+      if (documentId && !await prisma.document.findFirst({ where: { id: documentId, userId: user.id, deletedAt: null, ownershipKind: 'personal' } })) {
         return NextResponse.json({ error: 'Document not found' }, { status: 404 });
       }
       if (req.signal.aborted) return NextResponse.json({ error: 'Upload interrupted' }, { status: 400 });
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'Invalid attachment (maximum encoded size: 14 MB)' }, { status: 400 });
   const { filename, mimeType, size, data, documentId } = parsed.data;
 
-  if (documentId && (typeof documentId !== 'string' || !await prisma.document.findFirst({ where: { deletedAt: null, id: documentId, userId: user.id } }))) {
+  if (documentId && (typeof documentId !== 'string' || !await prisma.document.findFirst({ where: { deletedAt: null, id: documentId, userId: user.id, ownershipKind: 'personal' } }))) {
     return NextResponse.json({ error: 'Document not found' }, { status: 404 });
   }
 
