@@ -44,3 +44,30 @@ export async function changeDocumentationGrant(actorId: string, organizationId: 
     return result;
   });
 }
+
+export async function removeOrganizationMember(actorId: string, membershipId: string) {
+  return prisma.$transaction(async tx => {
+    const membership = await tx.organizationMember.findUnique({ where: { id: membershipId } });
+    if (!membership) return;
+    await tx.$queryRaw`SELECT "id" FROM "Organization" WHERE "id" = ${membership.organizationId} FOR UPDATE`;
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" IN (${Prisma.join([...new Set([actorId, membership.userId])].sort())}) ORDER BY "id" FOR UPDATE`;
+    const actor = await tx.user.findUnique({ where: { id: actorId }, select: { role: true } });
+    if (!actor || !hasPermission(actor.role, 'user.manage')) throw new DocumentationGrantError(403, 'Forbidden');
+    await tx.$queryRaw`SELECT "id" FROM "OrganizationMember" WHERE "id" = ${membershipId} FOR UPDATE`;
+    const current = await tx.organizationMember.findUnique({ where: { id: membershipId } });
+    if (!current) return;
+    const grant = await tx.organizationDocumentationGrant.findUnique({ where: { organizationId_userId: { organizationId: current.organizationId, userId: current.userId } } });
+    if (grant?.role === 'administrator') {
+      const replacement = await tx.organizationDocumentationGrant.count({ where: {
+        organizationId: current.organizationId, role: 'administrator', userId: { not: current.userId },
+        user: { role: { in: ['admin', 'editor'] }, organizationMembers: { some: { organizationId: current.organizationId } } },
+      } });
+      if (!replacement) throw new DocumentationGrantError(409, 'Assign another documentation administrator first');
+    }
+    await tx.organizationDocumentationGrant.deleteMany({ where: { organizationId: current.organizationId, userId: current.userId } });
+    await tx.document.updateMany({ where: { organizationId: current.organizationId, ownershipKind: 'organization', responsibleUserId: current.userId }, data: { responsibleUserId: null } });
+    await tx.organizationMember.delete({ where: { id: membershipId } });
+    await tx.activityLog.create({ data: { userId: actorId, action: 'organization.member.remove', resourceType: 'organization', resourceId: current.organizationId,
+      details: JSON.stringify({ targetUserId: current.userId, revokedDocumentationRole: grant?.role ?? null }) } });
+  });
+}

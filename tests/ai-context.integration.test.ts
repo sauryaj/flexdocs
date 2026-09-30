@@ -9,7 +9,7 @@ vi.mock('@/lib/prisma', async () => {
 import { prisma } from '@/lib/prisma';
 import { POST } from '@/app/api/ai/ask/route';
 import { resolveDocumentCapabilities } from '@/lib/document-capability-service';
-import { changeDocumentationGrant } from '@/lib/documentation-grants';
+import { changeDocumentationGrant, removeOrganizationMember } from '@/lib/documentation-grants';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -65,6 +65,15 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     expect(removals.filter(result => result.status === 'rejected')).toHaveLength(1);
     expect(await prisma.organizationDocumentationGrant.count({ where: { organizationId: orgs[0], role: 'administrator' } })).toBe(1);
     expect(await prisma.activityLog.count({ where: { resourceId: orgs[0], action: 'documentation.grant.change' } })).toBe(3);
+    const remainingAdmin = await prisma.organizationDocumentationGrant.findFirstOrThrow({ where: { organizationId: orgs[0], role: 'administrator' } });
+    const protectedMember = await prisma.organizationMember.findUniqueOrThrow({ where: { organizationId_userId: { organizationId: orgs[0], userId: remainingAdmin.userId } } });
+    await expect(removeOrganizationMember(ids[0], protectedMember.id)).rejects.toMatchObject({ status: 409 });
+    await changeDocumentationGrant(ids[0], orgs[0], ids[2], 'reader');
+    const readerMembership = await prisma.organizationMember.findUniqueOrThrow({ where: { organizationId_userId: { organizationId: orgs[0], userId: ids[2] } } });
+    await expect(removeOrganizationMember(ids[2], readerMembership.id)).rejects.toMatchObject({ status: 403 });
+    await removeOrganizationMember(ids[0], readerMembership.id);
+    expect(await prisma.organizationDocumentationGrant.count({ where: { userId: ids[2] } })).toBe(0);
+    expect(await prisma.activityLog.count({ where: { resourceId: orgs[0], action: 'organization.member.remove' } })).toBe(1);
     await prisma.organizationMember.deleteMany({ where: { userId: ids[2] } });
     state.user = { id: ids[2], role: 'viewer' };
     const callsBefore = provider.mock.calls.length;
