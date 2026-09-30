@@ -22,6 +22,12 @@ Milestone order: data safety/deployment; access/ownership; lifecycle/usability; 
 
 ## Findings register
 
+### Current ownership and lifecycle increment (2026-10-01)
+
+The original milestone table above is a baseline register, not the full current implementation inventory. Shared current-capability services now cover team draft editing and history, explicit documentation grant administration, published representations across list/search/detail/AI/MCP/portal, and selected immutable attachment downloads. Review submission/decisions and publication have database-tested services; their API/UI workflows remain incomplete. Dedicated archive/Trash/restore transitions now have live role and concurrency coverage, but their new-model UI and team Trash listing remain pending. See `DOCUMENT-OWNERSHIP-DESIGN.md` for detailed evidence and limits.
+
+Next deliverables are lifecycle and review/publication UI integration, team working attachments, explicit ownership conversion/transfer and retirement, complete portable round trips, and operational recovery/versioned releases. These increments do not close any of the nine sections by themselves.
+
 | ID | Severity | Evidence and reproduction | Impact / next action |
 | --- | --- | --- | --- |
 | ACCESS-03 | High, fixed for current legacy retrieval | Ask the Docs server/asset retrieval omitted organization scope for limited users unless the request supplied an organization. Document retrieval also used a separate visibility policy. | Infrastructure retrieval now uses `scopeOrgWhere`; documents use `documentReadWhere`, with keyword matching in a separate AND clause. Five route tests cover membership boundaries and input validation. A real disposable PostgreSQL test captures the actual provider request locally for admin/editor/viewer and anonymous route cases: foreign data is excluded for scoped members and another owner's private document is excluded. Synthetic records are cleaned up. The provider is stubbed; this does not test live authentication or an external AI service. Team publication integration remains pending. |

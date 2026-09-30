@@ -6,7 +6,7 @@ Single and bulk document deletion set `deletedAt` rather than removing rows. The
 
 This workflow covers the Next.js application used by the main Docker deployment. The separate `flexdocs-go` implementation still uses permanent deletion and does not enforce Trash visibility. Do not run it against this application's database until its document paths have equivalent recovery and access controls.
 
-`GET /api/documents?trash=true` is owner-scoped and paginated. `POST /api/documents/:id/restore` restores only a currently trashed document owned by the caller. Viewers and unauthenticated callers cannot restore. There is no automatic expiry or permanent-delete endpoint. Deletion and restoration are audited. Concurrent revision writes lock the parent; updates cannot edit an already trashed document.
+`GET /api/documents?trash=true` is owner-scoped and paginated. The legacy `POST /api/documents/:id/restore` route restores only a currently trashed personal document in legacy mode owned by the caller; team and lifecycle-enabled records use the dedicated lifecycle API below. Viewers and unauthenticated callers cannot restore. There is no automatic expiry or permanent-delete endpoint. Deletion and restoration are audited. Concurrent revision writes lock the parent; updates cannot edit an already trashed document.
 
 Administrative portable exports include Trash and preserve `deletedAt` on import, so recovery cannot silently reactivate deleted articles. Full SQL/uploads backups also retain this state. Apply the `document_trash` migration and regenerate Prisma before starting the updated app; rebuild and rerun the initializer for Docker installations.
 
@@ -94,3 +94,8 @@ Migration `20260922084627_invitation_organization` adds the optional organizatio
 The development server also now keeps maintenance imports inside the Node runtime. Development-only CSP permits the eval-based Next.js refresh runtime; production does not permit `unsafe-eval`.
 
 The invitation acceptance transaction claims the link before checking the account. This serializes competing requests and ensures that the losing request reports an already-used link, rather than incorrectly requiring sign-in after the winning request creates the account. Failed identity checks roll back the claim.
+## Dedicated document lifecycle API
+
+`POST /api/documents/[id]/lifecycle` accepts `{ "action": "archive" | "unarchive" | "trash" | "restore", "expectedUpdatedAt": "<ISO timestamp>" }`. Lifecycle-enabled records require the current timestamp (428 if absent, 409 if stale). Current document lifecycle capability is required in addition to the global delete permission. Team provenance or a global administrator role alone is insufficient. The response contains `document` and `changed`.
+
+Archive and Trash remove publication access while retaining history and immutable files. Unarchive and restore clear the publication pointer and require a new publication workflow before readers regain access. Restoring an archived record keeps it archived; personal restoration makes it private. Pending reviews are withdrawn and state changes are audited in the same transaction. Retrying with the old version returns a conflict; durable lifecycle retry keys are not implemented. The lifecycle UI and team Trash discovery are still pending. Legacy bulk/restore routes exclude these records.

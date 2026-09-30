@@ -27,6 +27,7 @@ import { buildBackup, ExportIncompleteError } from '@/lib/export';
 import { GET as getPublishedAttachment } from '@/app/api/documents/[id]/publications/[snapshotId]/attachments/[attachmentId]/route';
 import { readDocumentHistory, createDocumentRevision, restoreDocumentRevision } from '@/lib/document-history';
 import { updateDocument } from '@/lib/document-update';
+import { changeDocumentLifecycle } from '@/lib/document-lifecycle';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -359,6 +360,28 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     expect(editAttempts.filter(result => result.status === 'fulfilled')).toHaveLength(1);
     expect(editAttempts.filter(result => result.status === 'rejected').map(result => result.status === 'rejected' && result.reason.status)).toEqual([409]);
     expect(await prisma.activityLog.count({ where: { resourceId: historyDocument.id, action: 'document.update' } })).toBe(2);
+    const lifecycleVersion = (await prisma.document.findUniqueOrThrow({ where: { id: historyDocument.id } })).updatedAt.toISOString();
+    await expect(changeDocumentLifecycle(ids[0], historyDocument.id, 'archive', lifecycleVersion)).rejects.toMatchObject({ status: 404 });
+    await prisma.organizationDocumentationGrant.update({ where: { organizationId_userId: { organizationId: orgs[1], userId: ids[0] } }, data: { role: 'administrator' } });
+    await expect(changeDocumentLifecycle(ids[0], historyDocument.id, 'archive')).rejects.toMatchObject({ status: 428 });
+    const archivedTeam = await changeDocumentLifecycle(ids[0], historyDocument.id, 'archive', lifecycleVersion);
+    expect(archivedTeam.document).toMatchObject({ lifecycleState: 'archived', isArchived: true, publishedSnapshotId: historyPublication.id });
+    await expect(readPublishedDocument(ids[2], historyDocument.id)).rejects.toMatchObject({ status: 404 });
+    expect((await discoverDocuments(ids[2], { query: 'Frozen history reader content', page: 0, limit: 10 })).total).toBe(0);
+    await expect(updateDocument(ids[0], historyDocument.id, { content: 'Denied archived edit', expectedUpdatedAt: archivedTeam.document.updatedAt.toISOString() })).rejects.toMatchObject({ status: 404 });
+    await expect(changeDocumentLifecycle(ids[0], historyDocument.id, 'unarchive', lifecycleVersion)).rejects.toMatchObject({ status: 409 });
+    const trashedArchive = await changeDocumentLifecycle(ids[0], historyDocument.id, 'trash', archivedTeam.document.updatedAt.toISOString());
+    expect(trashedArchive.document).toMatchObject({ lifecycleState: 'trashed', isArchived: true });
+    const recoveredArchive = await changeDocumentLifecycle(ids[0], historyDocument.id, 'restore', trashedArchive.document.updatedAt.toISOString());
+    expect(recoveredArchive.document).toMatchObject({ lifecycleState: 'archived', isArchived: true, publishedSnapshotId: null, deletedAt: null });
+    const unarchived = await changeDocumentLifecycle(ids[0], historyDocument.id, 'unarchive', recoveredArchive.document.updatedAt.toISOString());
+    expect(unarchived.document).toMatchObject({ lifecycleState: 'draft', isArchived: false, publishedSnapshotId: null });
+    expect(await prisma.documentPublication.count({ where: { id: historyPublication.id } })).toBe(1);
+    await expect(readPublishedDocument(ids[2], historyDocument.id)).rejects.toMatchObject({ status: 404 });
+    const trashRace = await Promise.allSettled([0, 1].map(() => changeDocumentLifecycle(ids[0], historyDocument.id, 'trash', unarchived.document.updatedAt.toISOString())));
+    expect(trashRace.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect(trashRace.filter(result => result.status === 'rejected').map(result => result.status === 'rejected' && result.reason.status)).toEqual([409]);
+    expect(await prisma.activityLog.count({ where: { resourceId: historyDocument.id, action: 'document.lifecycle.trash' } })).toBe(2);
     const reviewInventory = spawnSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/storage-inventory.ts'], { env: { ...process.env, UPLOAD_DIR: uploadRoot }, encoding: 'utf8' });
     expect([0, 2]).toContain(reviewInventory.status);
     const reviewInventoryReport = JSON.parse(reviewInventory.stdout);

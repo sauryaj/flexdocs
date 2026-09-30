@@ -26,7 +26,7 @@ export async function POST(req: Request) {
   }
 
   const owned = await prisma.document.findMany({
-    where: { deletedAt: null, id: { in: ids }, userId: user.id },
+    where: { deletedAt: null, id: { in: ids }, userId: user.id, ownershipKind: 'personal', lifecycleState: null },
     select: { id: true },
   });
   const ownedIds = owned.map((d) => d.id);
@@ -35,7 +35,7 @@ export async function POST(req: Request) {
 
   if (action === 'delete') {
     if (!hasPermission(user.role, 'document.delete')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
-    const res = await prisma.document.updateMany({ where: { id: { in: ownedIds }, userId: user.id, deletedAt: null }, data: { deletedAt: new Date() } });
+    const res = await prisma.document.updateMany({ where: { id: { in: ownedIds }, userId: user.id, deletedAt: null, ownershipKind: 'personal', lifecycleState: null }, data: { deletedAt: new Date() } });
     updated = res.count;
     auditLog({ userId: user.id, action: 'document.trash.bulk', resourceType: 'document', details: { ids: ownedIds, updated } }).catch(() => {});
   } else if (action === 'tag') {
@@ -48,13 +48,14 @@ export async function POST(req: Request) {
       create: { name: tag, userId: user.id },
     });
     for (const id of ownedIds) {
-      await prisma.$executeRaw`
+      const affected = await prisma.$executeRaw`
         INSERT INTO "_DocumentToTag" ("A", "B")
-        SELECT ${id}, ${t.id}
-        WHERE NOT EXISTS (
+        SELECT d.id, ${t.id} FROM "Document" d
+        WHERE d.id = ${id} AND d."userId" = ${user.id} AND d."deletedAt" IS NULL
+          AND d."ownershipKind" = 'personal' AND d."lifecycleState" IS NULL AND NOT EXISTS (
           SELECT 1 FROM "_DocumentToTag" WHERE "A" = ${id} AND "B" = ${t.id}
         )`;
-      updated++;
+      updated += affected;
     }
   } else {
     const data =
@@ -62,7 +63,7 @@ export async function POST(req: Request) {
       : action === 'unarchive' ? { isArchived: false }
       : action === 'pin' ? { isPinned: true }
       : { isPinned: false };
-    const res = await prisma.document.updateMany({ where: { id: { in: ownedIds }, userId: user.id, deletedAt: null }, data });
+    const res = await prisma.document.updateMany({ where: { id: { in: ownedIds }, userId: user.id, deletedAt: null, ownershipKind: 'personal', lifecycleState: null }, data });
     updated = res.count;
   }
 

@@ -10,7 +10,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!hasPermission(user.role, 'document.update')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   const { id } = await params;
   const result = await prisma.document.updateMany({
-    where: { id, userId: user.id, deletedAt: { not: null } },
+    where: { id, userId: user.id, deletedAt: { not: null }, ownershipKind: 'personal', lifecycleState: null },
     // Restoring privately avoids immediately republishing a previously shared article.
     data: { deletedAt: null, visibility: 'private' },
   });
