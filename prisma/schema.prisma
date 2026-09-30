@@ -197,6 +197,8 @@ model DocumentReview {
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
   sourceRevisionId String
   sourceRevision DocumentRevision @relation(fields: [documentId, sourceRevisionId], references: [documentId, id], onDelete: Restrict)
+  tags Json @default("[]")
+  attachmentManifest Json @default("[]")
   submittedById String
   reviewerIds String[]
   decision DocumentReviewDecision @default(pending)

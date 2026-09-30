@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -16,7 +16,7 @@ import { resolveDocumentCapabilities } from '@/lib/document-capability-service';
 import { changeDocumentationGrant, removeOrganizationMember } from '@/lib/documentation-grants';
 import { administerAccount } from '@/lib/account-administration';
 import { decideDocumentReview, submitDocumentReview } from '@/lib/document-review';
-import { LocalImmutableFileStore } from '@/lib/immutable-file-store';
+import { isImmutableFileReference, LocalImmutableFileStore } from '@/lib/immutable-file-store';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -118,9 +118,25 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.document.update({ where: { id: draft.id }, data: { content: 'New working content' } });
     expect((await prisma.documentPublication.findUniqueOrThrow({ where: { id: snapshot.id } })).content).toBe('Frozen content');
     await expect(prisma.documentReview.create({ data: { documentId: draft.id, sourceRevisionId: revision.id, submittedById: ids[0], reviewerIds: [], decision: 'approved' } })).rejects.toThrow();
-    const reviewDraft = await prisma.document.create({ data: { userId: ids[0], title: 'Review exact version', content: 'Submitted body', lifecycleState: 'draft' } });
+    const reviewDraft = await prisma.document.create({ data: { userId: ids[0], title: 'Review exact version', content: 'Submitted body', lifecycleState: 'draft', tags: { create: { name: 'Frozen review tag', userId: ids[0] } } } });
+    const workingPath = join(uploadRoot, 'working-file');
+    const originalBytes = Buffer.from([0, 255, 128]);
+    writeFileSync(workingPath, originalBytes);
+    const workingAttachment = await prisma.attachment.create({ data: { documentId: reviewDraft.id, userId: ids[0], filename: 'review.bin', mimeType: 'application/octet-stream', size: 3, storageType: 'filesystem', filePath: workingPath } });
+    const privateUploaderAttachment = await prisma.attachment.create({ data: { documentId: reviewDraft.id, userId: ids[1], filename: 'private.bin', mimeType: 'application/octet-stream', size: 0, storageType: 'base64', data: '' } });
+    const storage = new LocalImmutableFileStore(uploadRoot);
+    await expect(submitDocumentReview(ids[0], reviewDraft.id, reviewDraft.updatedAt.toISOString(), [ids[0]], { attachmentIds: [privateUploaderAttachment.id], uploadRoot, storage })).rejects.toMatchObject({ status: 404 });
+    expect(await prisma.documentReview.count({ where: { documentId: reviewDraft.id } })).toBe(0);
     await expect(submitDocumentReview(ids[0], reviewDraft.id, reviewDraft.updatedAt.toISOString(), [ids[2]])).rejects.toMatchObject({ status: 400 });
-    const submitted = await submitDocumentReview(ids[0], reviewDraft.id, reviewDraft.updatedAt.toISOString(), [ids[0]]);
+    const submitted = await submitDocumentReview(ids[0], reviewDraft.id, reviewDraft.updatedAt.toISOString(), [ids[0]], { attachmentIds: [workingAttachment.id], uploadRoot, storage });
+    expect(submitted.tags).toEqual(['Frozen review tag']);
+    const frozenFile = (submitted.attachmentManifest as unknown[])[0];
+    expect(isImmutableFileReference(frozenFile)).toBe(true);
+    if (!isImmutableFileReference(frozenFile)) throw new Error('Invalid captured reference');
+    writeFileSync(workingPath, 'replacement');
+    unlinkSync(workingPath);
+    expect(await storage.read(frozenFile)).toEqual(originalBytes);
+    await expect(prisma.documentReview.update({ where: { id: submitted.id }, data: { tags: ['Replaced tag'] } })).rejects.toThrow();
     await expect(decideDocumentReview(ids[1], submitted.id, 'approved')).rejects.toMatchObject({ status: 404 });
     await prisma.document.update({ where: { id: reviewDraft.id }, data: { content: 'Later working copy', updatedAt: new Date(submitted.submittedAt.getTime() + 1) } });
     await expect(decideDocumentReview(ids[0], submitted.id, 'approved')).rejects.toMatchObject({ status: 409 });
@@ -137,7 +153,12 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
       await prisma.organizationDocumentationGrant.create({ data: { organizationId: orgs[1], userId: ids[index], role } });
     }
     const teamDraft = await prisma.document.create({ data: { userId: ids[2], organizationId: orgs[1], ownershipKind: 'organization', lifecycleState: 'draft', title: 'Team review', content: 'Frozen team version' } });
-    const teamReview = await submitDocumentReview(ids[0], teamDraft.id, teamDraft.updatedAt.toISOString(), [ids[1]]);
+    const teamFile = await prisma.attachment.create({ data: { documentId: teamDraft.id, userId: ids[0], filename: 'legacy.bin', mimeType: 'application/octet-stream', size: originalBytes.length, storageType: 'base64', data: originalBytes.toString('base64') } });
+    const teamReview = await submitDocumentReview(ids[0], teamDraft.id, teamDraft.updatedAt.toISOString(), [ids[1]], { attachmentIds: [teamFile.id], uploadRoot, storage });
+    await prisma.attachment.delete({ where: { id: teamFile.id } });
+    const teamFrozenFile = (teamReview.attachmentManifest as unknown[])[0];
+    if (!isImmutableFileReference(teamFrozenFile)) throw new Error('Invalid captured team file');
+    expect(await storage.read(teamFrozenFile)).toEqual(originalBytes);
     await expect(decideDocumentReview(ids[0], teamReview.id, 'approved')).rejects.toMatchObject({ status: 404 });
     await prisma.organizationMember.deleteMany({ where: { organizationId: orgs[1], userId: ids[1] } });
     await expect(decideDocumentReview(ids[1], teamReview.id, 'approved')).rejects.toMatchObject({ status: 404 });
@@ -149,7 +170,9 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.document.updateMany({ where: { userId: { in: ids } }, data: { publishedSnapshotId: null } });
     await prisma.documentPublication.deleteMany({ where: { publisherId: { in: ids } } });
     await prisma.documentReview.deleteMany({ where: { submittedById: { in: ids } } });
+    await prisma.attachment.deleteMany({ where: { userId: { in: ids } } });
     await prisma.document.deleteMany({ where: { userId: { in: ids } } });
+    await prisma.tag.deleteMany({ where: { userId: { in: ids } } });
     await prisma.server.deleteMany({ where: { userId: { in: ids } } });
     await prisma.flexibleAsset.deleteMany({ where: { userId: { in: ids } } });
     await prisma.organizationMember.deleteMany({ where: { userId: { in: ids } } });

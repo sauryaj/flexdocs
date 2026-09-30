@@ -2,14 +2,15 @@ import { prisma } from '@/lib/prisma';
 import { lockDocumentationAdministration } from '@/lib/documentation-grants';
 import { resolveDocumentCapabilities } from '@/lib/document-capability-service';
 import { DocumentWriteError, nextDocumentTimestamp } from '@/lib/document-write';
+import { freezeReviewAttachments, type ReviewAttachmentSelection } from '@/lib/review-attachments';
 
-export async function submitDocumentReview(actorId: string, documentId: string, expectedUpdatedAt: string, reviewerIds: string[]) {
+export async function submitDocumentReview(actorId: string, documentId: string, expectedUpdatedAt: string, reviewerIds: string[], files?: ReviewAttachmentSelection) {
   const reviewers = [...new Set(reviewerIds)];
   if (!reviewers.length || reviewers.length > 10) throw new DocumentWriteError(400, 'Choose between one and ten reviewers');
   return prisma.$transaction(async tx => {
     await lockDocumentationAdministration(tx);
     await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${documentId} FOR UPDATE`;
-    const document = await tx.document.findUnique({ where: { id: documentId } });
+    const document = await tx.document.findUnique({ where: { id: documentId }, include: { tags: { select: { name: true } } } });
     const actor = await tx.user.findUnique({ where: { id: actorId }, select: { id: true, role: true } });
     if (!document || !actor || !(await resolveDocumentCapabilities(document, actor, tx)).submitReview) throw new DocumentWriteError(404, 'Not found');
     if (document.isArchived || !document.lifecycleState || !['draft', 'in_review'].includes(document.lifecycleState)) throw new DocumentWriteError(409, 'Document must use the draft review lifecycle');
@@ -20,14 +21,15 @@ export async function submitDocumentReview(actorId: string, documentId: string, 
     }
     const pending = await tx.documentReview.findFirst({ where: { documentId, decision: 'pending' } });
     if (pending) throw new DocumentWriteError(409, 'Withdraw the current review before submitting another version');
+    const attachmentManifest = await freezeReviewAttachments(tx, document, actorId, files);
     const previous = await tx.documentRevision.findFirst({ where: { documentId }, orderBy: { version: 'desc' } });
     const revision = await tx.documentRevision.create({ data: { documentId, userId: actorId, title: document.title, content: document.content, category: document.category, version: (previous?.version ?? 0) + 1, message: 'Submitted for review' } });
     const submittedAt = nextDocumentTimestamp(document);
-    const review = await tx.documentReview.create({ data: { documentId, sourceRevisionId: revision.id, submittedById: actorId, reviewerIds: reviewers, submittedAt } });
+    const review = await tx.documentReview.create({ data: { documentId, sourceRevisionId: revision.id, submittedById: actorId, reviewerIds: reviewers, submittedAt, tags: document.tags.map(tag => tag.name).sort(), attachmentManifest } });
     await tx.document.update({ where: { id: documentId }, data: { lifecycleState: 'in_review', updatedAt: submittedAt } });
     await tx.activityLog.create({ data: { userId: actorId, action: 'document.review.submit', resourceType: 'document', resourceId: documentId, details: JSON.stringify({ reviewId: review.id, sourceRevisionId: revision.id, reviewerIds: reviewers }) } });
     return review;
-  });
+  }, { timeout: 30_000 });
 }
 
 export async function decideDocumentReview(actorId: string, reviewId: string, decision: 'approved' | 'rejected' | 'withdrawn', feedback?: string) {
