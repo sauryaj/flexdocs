@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => {
-  const models = ['organization', 'document', 'password', 'domain', 'sslCertificate', 'flexibleAsset', 'flexibleAssetType', 'checklist', 'checklistItem', 'renewalItem', 'server', 'ipamNetwork', 'contact', 'location', 'website', 'ticket', 'ticketReply', 'relationship', 'folder', 'organizationMember'];
+  const models = ['organization', 'document', 'password', 'domain', 'sslCertificate', 'flexibleAsset', 'flexibleAssetType', 'checklist', 'checklistItem', 'renewalItem', 'server', 'ipamNetwork', 'contact', 'location', 'website', 'ticket', 'ticketReply', 'relationship', 'folder', 'organizationMember', 'organizationDocumentationGrant'];
   return { prisma: Object.fromEntries(models.map(name => [name, { findMany: vi.fn() }])), decrypt: vi.fn(), existsSync: vi.fn(), readFileSync: vi.fn(), statSync: vi.fn() };
 });
 vi.mock('@/lib/prisma', () => ({ prisma: mocks.prisma }));
@@ -59,4 +59,14 @@ it('exports files above the old 8 MB cutoff without omitting their bytes', async
   mocks.readFileSync.mockReturnValue(bytes);
   const result = await buildBackup();
   expect(result.documents).toEqual([expect.objectContaining({ attachments: [expect.objectContaining({ data: bytes.toString('base64') })] })]);
+});
+
+it.each([{ ownershipKind: 'organization' }, { lifecycleState: 'draft' }, { publications: [{ id: 'snapshot' }] }, { reviews: [{ id: 'review' }] }])('rejects a lossy v1 documentation backup %j', async state => {
+  mocks.prisma.document.findMany.mockResolvedValue([{ id: 'd', tags: [], revisions: [], attachments: [], ...state }]);
+  await expect(buildBackup()).rejects.toMatchObject({ issues: [expect.stringContaining('cannot preserve ownership/publication state')] });
+});
+it('rejects omitted documentation grant policy in scoped exports', async () => {
+  mocks.prisma.organizationDocumentationGrant.findMany.mockResolvedValue([{ id: 'grant' }]);
+  await expect(buildBackup({ organizationId: 'org' })).rejects.toBeInstanceOf(ExportIncompleteError);
+  expect(mocks.prisma.organizationDocumentationGrant.findMany).toHaveBeenCalledWith({ where: { organizationId: 'org' }, select: { id: true } });
 });

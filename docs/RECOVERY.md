@@ -8,6 +8,8 @@ A recoverable FlexDocs installation needs three separately protected components:
 
 The Backups screen and `make backup` create **database-only** backups. They do not copy uploads or keys, and there is no implemented S3/GCS environment-variable switch for automatic offsite copying.
 
+Portable JSON format v1 cannot restore team ownership/grants, lifecycle states, review records or immutable publications. Export returns HTTP 422 when those records are in scope, rather than producing a lossy bundle marked complete. Use database, uploads, configuration and key recovery for such installations until a tested portable format upgrade is available. Immutable publication files live inside the uploads root and must be included in that backup.
+
 ## Routine backup
 
 Run `make backup` from the repository root. The command fails if `pg_dump` fails and only renames a nonempty dump from `.partial` to `.sql` after successful completion. Local command-line backups live in `./backups`; UI backups use the configured `BACKUP_DIR` in the app container, normally the backups volume. These can be different locations.

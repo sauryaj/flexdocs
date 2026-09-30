@@ -59,10 +59,10 @@ export async function buildBackup(filter?: { organizationId?: string }): Promise
   const docWhere = orgWhere;
   const issues: string[] = [];
 
-  const [organizations, documents, passwords, domains, sslCertificates, assets, assetTypes, checklists, checklistItems, renewals, servers, ipamNetworks, contacts, locations, websites, tickets, replies, relationships, folders, members] =
+  const [organizations, documents, passwords, domains, sslCertificates, assets, assetTypes, checklists, checklistItems, renewals, servers, ipamNetworks, contacts, locations, websites, tickets, replies, relationships, folders, members, grants] =
     await Promise.all([
       prisma.organization.findMany(orgId ? { where: { id: orgId } } : undefined),
-      prisma.document.findMany({ where: docWhere, include: { attachments: true, tags: true, revisions: { orderBy: { version: 'asc' } } } }),
+      prisma.document.findMany({ where: docWhere, include: { attachments: true, tags: true, revisions: { orderBy: { version: 'asc' } }, publications: { select: { id: true } }, reviews: { select: { id: true } } } }),
       prisma.password.findMany({ where: orgWhere, include: { tags: true } }),
       prisma.domain.findMany({ where: orgWhere, include: { tags: true } }),
       orgId
@@ -85,7 +85,17 @@ export async function buildBackup(filter?: { organizationId?: string }): Promise
       orgId
         ? prisma.organizationMember.findMany({ where: { organizationId: orgId }, include: { user: { select: { email: true } } } })
         : prisma.organizationMember.findMany({ include: { user: { select: { email: true } } } }),
+      prisma.organizationDocumentationGrant.findMany({ where: orgWhere, select: { id: true } }),
     ]);
+
+  // Version 1 import cannot restore team policy or immutable publications. Never label that lossy bundle complete.
+  for (const document of documents) {
+    if (document.ownershipKind === 'organization' || document.lifecycleState != null || document.publishedSnapshotId || document.publications?.length || document.reviews?.length) {
+      issues.push(`Document ${document.id}: portable format v1 cannot preserve ownership/publication state; use database/uploads/configuration/key recovery`);
+    }
+  }
+  if (folders.some(folder => folder.ownershipKind === 'organization') || grants.length) issues.push('Portable format v1 cannot preserve team folders or documentation grants; use database/uploads/configuration/key recovery');
+  if (issues.length) throw new ExportIncompleteError(issues);
 
   // Decrypt secret material so the backup is truly portable
   const passwordsOut = passwords.map((p) => {
@@ -104,7 +114,9 @@ export async function buildBackup(filter?: { organizationId?: string }): Promise
   });
 
   const docsOut = documents.map((d) => {
-    const plain = pluck([d])[0];
+    const plain: Record<string, unknown> = pluck([d])[0];
+    delete plain.publications;
+    delete plain.reviews;
     const attachments = d.attachments.map((a) => {
       const out: Record<string, unknown> = {
         filename: a.filename,

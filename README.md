@@ -182,6 +182,8 @@ MIT
 
 See [the reliability review](docs/DOCUMENTATION-RELIABILITY.md) for verified fixes, save-conflict behavior, access boundaries, and remaining deployment work. Follow [the recovery guide](docs/RECOVERY.md) to protect document history, uploaded files, and encryption keys. SQL backups alone are not full disaster recovery.
 
+Portable JSON v1 exports reject team grants/ownership, lifecycle and publication records with HTTP 422 because that format cannot restore them faithfully. Use the complete database/uploads/configuration/key recovery path for these installations; a portable format upgrade remains pending.
+
 Local Docker discovery is disabled by default. Opt in with `docker-compose -f docker-compose.yml -f docker-compose.discovery.yml up -d --build` only when needed; the Docker socket grants control of the host. Database and Redis host ports bind only to loopback.
 
 The root Docker deployment is the supported application path. The experimental

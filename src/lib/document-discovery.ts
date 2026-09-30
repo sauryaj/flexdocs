@@ -12,6 +12,7 @@ export interface DocumentDiscoveryOptions {
   category?: string | null;
   folderId?: string | null;
   excludeArchived?: boolean;
+  knowledgeBase?: boolean;
   page: number;
   limit: number;
 }
@@ -38,10 +39,13 @@ export async function discoverDocuments(actorId: string, options: DocumentDiscov
       WHERE m."userId" = ${actor.id} AND m."organizationId" = d."organizationId"
       AND g.role::text IN ('contributor', 'reviewer', 'administrator'))` : Prisma.sql`FALSE`;
     const shared = Prisma.sql`d.visibility = 'org' AND NOT d."isArchived" AND ${scoped}`;
+    const working = options.knowledgeBase
+      ? Prisma.sql`d."ownershipKind" = 'personal' AND d."lifecycleState" IS NULL AND ${shared}`
+      : Prisma.sql`(d."ownershipKind" = 'personal' AND (d."userId" = ${actor.id} OR (d."lifecycleState" IS NULL AND ${shared})))
+        OR (d."ownershipKind" = 'organization' AND ${maintenance})`;
     // Choose the visible version before matching, sorting or counting; working fields must not influence reader results.
     const representations = Prisma.sql`WITH access AS (
-      SELECT d.*, ((d."ownershipKind" = 'personal' AND (d."userId" = ${actor.id} OR (d."lifecycleState" IS NULL AND ${shared})))
-        OR (d."ownershipKind" = 'organization' AND ${maintenance})) AS working
+      SELECT d.*, (${working}) AS working
       FROM "Document" d WHERE d."deletedAt" IS NULL
       ${options.organizationId ? Prisma.sql`AND d."organizationId" = ${options.organizationId}` : Prisma.empty}
     ), visible AS (

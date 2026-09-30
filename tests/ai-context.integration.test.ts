@@ -22,6 +22,8 @@ import { readPublishedDocument, readPublishedFile } from '@/lib/published-docume
 import { readDocumentDetail } from '@/lib/document-detail-read';
 import { GET as getDocument } from '@/app/api/documents/[id]/route';
 import { discoverDocuments } from '@/lib/document-discovery';
+import { GET as getPortalSummary } from '@/app/api/portal/summary/route';
+import { buildBackup, ExportIncompleteError } from '@/lib/export';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -185,7 +187,7 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     expect(await prisma.activityLog.count({ where: { resourceId: teamDraft.id, action: 'document.publish' } })).toBe(1);
     expect(published[0].snapshot.content).toBe('Frozen team version');
     expect(published[0].snapshot.attachmentManifest).toEqual(teamReview.attachmentManifest);
-    await prisma.document.update({ where: { id: teamDraft.id }, data: { content: 'New unpublished working body', lifecycleState: 'draft' } });
+    await prisma.document.update({ where: { id: teamDraft.id }, data: { title: 'Working team title', content: 'New unpublished working body', lifecycleState: 'draft' } });
     const replayedPublication = await publishDocumentReview(ids[1], teamReview.id, storage);
     expect(replayedPublication.replayed).toBe(true);
     expect(replayedPublication.snapshot.content).toBe('Frozen team version');
@@ -196,6 +198,23 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.organizationMember.create({ data: { userId: ids[2], organizationId: orgs[1] } });
     await prisma.organizationDocumentationGrant.create({ data: { userId: ids[2], organizationId: orgs[1], role: 'reader' } });
     const readerView = await readPublishedDocument(ids[2], teamDraft.id);
+    await expect(buildBackup({ organizationId: orgs[1] })).rejects.toBeInstanceOf(ExportIncompleteError);
+    state.user = { id: ids[2], role: 'viewer' };
+    expect((await POST(new Request('http://localhost/api/ai/ask', { method: 'POST', body: JSON.stringify({ question: 'Frozen team version', organizationId: orgs[1] }) }))).status).toBe(200);
+    expect(context).toContain('Frozen team version');
+    expect(context).not.toContain('New unpublished working body');
+    expect(context).not.toContain('Working team title');
+    state.user = { id: ids[0], role: 'admin' };
+    await POST(new Request('http://localhost/api/ai/ask', { method: 'POST', body: JSON.stringify({ question: 'New unpublished working body', organizationId: orgs[1] }) }));
+    expect(context).toContain('New unpublished working body');
+    for (const [index, role] of [[2, 'viewer'], [0, 'admin']] as const) {
+      state.user = { id: ids[index], role };
+      const portal = await getPortalSummary();
+      expect(portal.status).toBe(200);
+      const kb = (await portal.json()).kb;
+      expect(kb.find((item: { id: string }) => item.id === teamDraft.id)).toMatchObject({ title: 'Team review' });
+      expect(JSON.stringify(kb)).not.toContain('Working team title');
+    }
     const discovered = await discoverDocuments(ids[2], { query: 'Frozen team version', page: 0, limit: 1 });
     expect(discovered.total).toBe(1);
     expect(discovered.items[0]).toMatchObject({ id: teamDraft.id, content: 'Frozen team version', representation: 'published' });
@@ -239,6 +258,8 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await expect(readPublishedDocument(ids[0], teamDraft.id)).rejects.toMatchObject({ status: 404 });
     await expect(readDocumentDetail(ids[0], teamDraft.id)).rejects.toMatchObject({ status: 404 });
     expect((await discoverDocuments(ids[0], { query: 'New unpublished working body', page: 0, limit: 10 })).total).toBe(0);
+    state.user = { id: ids[0], role: 'admin' };
+    expect((await (await getPortalSummary()).json()).kb.some((item: { id: string }) => item.id === teamDraft.id)).toBe(false);
     await prisma.organizationDocumentationGrant.create({ data: { userId: ids[0], organizationId: orgs[1], role: 'contributor' } });
     const revokingStorage = { put: storage.put.bind(storage), read: async (reference: Parameters<typeof storage.read>[0]) => {
       const bytes = await storage.read(reference);
@@ -271,6 +292,10 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     expect((await discoverDocuments(ids[2], { query: 'Changed after approval', page: 0, limit: 10 })).items.some(item => item.id === privateDraft.id && item.representation === 'published')).toBe(true);
     expect((await discoverDocuments(ids[2], { query: 'Unpublished personal edits', page: 0, limit: 10 })).total).toBe(0);
     expect(await readDocumentDetail(ids[0], privateDraft.id)).toMatchObject({ content: 'Unpublished personal edits', representation: 'working', canEdit: true });
+    state.user = { id: ids[2], role: 'viewer' };
+    await POST(new Request('http://localhost/api/ai/ask', { method: 'POST', body: JSON.stringify({ question: 'Changed after approval', organizationId: orgs[1] }) }));
+    expect(context).toContain('Changed after approval');
+    expect(context).not.toContain('Unpublished personal edits');
     await prisma.document.update({ where: { id: privateDraft.id }, data: { visibility: 'private' } });
     await expect(readPublishedDocument(ids[2], privateDraft.id)).rejects.toMatchObject({ status: 404 });
     await expect(readDocumentDetail(ids[2], privateDraft.id)).rejects.toMatchObject({ status: 404 });

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { canAccessOrganization, getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
-import { documentReadWhere } from '@/lib/document-access';
+import { discoverDocuments } from '@/lib/document-discovery';
 
 export const maxDuration = 60;
 
@@ -40,17 +40,7 @@ export async function POST(req: Request) {
   const terms = q.split(/\s+/).filter((t: string) => t.length > 2).slice(0, 8);
 
   const [documents, servers, assets] = await Promise.all([
-    prisma.document.findMany({
-      where: { AND: [documentReadWhere(user.id, scope), {
-        isArchived: false,
-        ...(organizationId ? { organizationId } : {}),
-        ...(terms.length ? { OR: terms.flatMap((t: string) => [{ title: { contains: t, mode: 'insensitive' as const } }, { content: { contains: t, mode: 'insensitive' as const } }]) } : {}),
-      }],
-      },
-      select: { id: true, title: true, content: true, category: true, updatedAt: true },
-      orderBy: { updatedAt: 'desc' },
-      take: 6,
-    }),
+    discoverDocuments(user.id, { terms, organizationId, excludeArchived: true, page: 0, limit: 6 }).then(result => result.items),
     prisma.server.findMany({
       where: { ...(isStaff ? { userId: user.id } : {}), ...orgFilter },
       select: { id: true, name: true, hostname: true, ipAddress: true, os: true, status: true },
