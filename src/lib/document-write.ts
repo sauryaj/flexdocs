@@ -49,11 +49,11 @@ export async function withDocumentWrite<T>(
   });
 }
 
-export async function snapshotDocument(tx: Prisma.TransactionClient, document: Document, message: string) {
+export async function snapshotDocument(tx: Prisma.TransactionClient, document: Document, message: string, capturedById = document.userId) {
   const latest = await tx.documentRevision.findFirst({ where: { documentId: document.id }, orderBy: { version: 'desc' } });
   if (latest && latest.title === document.title && latest.content === document.content && latest.category === document.category) return latest;
   return tx.documentRevision.create({ data: {
-    documentId: document.id, userId: document.userId,
+    documentId: document.id, userId: capturedById,
     title: document.title, content: document.content, category: document.category,
     version: (latest?.version ?? 0) + 1, message,
   } });

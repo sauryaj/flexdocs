@@ -1,8 +1,7 @@
 import { hasPermission } from '@/lib/rbac';
-import { auditLog } from '@/lib/audit';
-import { revisionSchema, withDocumentWrite, snapshotDocument, nextDocumentTimestamp, DocumentWriteError } from '@/lib/document-write';
+import { revisionSchema, DocumentWriteError } from '@/lib/document-write';
+import { readDocumentHistory, createDocumentRevision } from '@/lib/document-history';
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 import { auth } from '@/lib/auth';
 
 export async function GET(
@@ -16,20 +15,11 @@ export async function GET(
 
   const { id } = await params;
 
-  const document = await prisma.document.findFirst({
-    where: { deletedAt: null, id, userId: user.id },
-  });
-
-  if (!document) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try { return NextResponse.json(await readDocumentHistory(user.id, id)); }
+  catch (error) {
+    if (error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
+    throw error;
   }
-
-  const revisions = await prisma.documentRevision.findMany({
-    where: { documentId: id, userId: user.id },
-    orderBy: { version: 'desc' },
-  });
-
-  return NextResponse.json(revisions);
 }
 
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -39,19 +29,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const parsed = revisionSchema.safeParse(await req.json().catch(() => null));
   if (!parsed.success) return NextResponse.json({ error: 'Invalid revision' }, { status: 400 });
   const { id } = await params;
-  const { expectedUpdatedAt, message, ...fields } = parsed.data;
   try {
-    const result = await withDocumentWrite(id, user.id, expectedUpdatedAt, async (tx, document) => {
-      await snapshotDocument(tx, document, 'Saved before revision');
-      const updated = await tx.document.update({ where: { id }, data: { ...fields, updatedAt: nextDocumentTimestamp(document) } });
-      const latest = await tx.documentRevision.findFirst({ where: { documentId: id }, orderBy: { version: 'desc' } });
-      const revision = await tx.documentRevision.create({ data: {
-        documentId: id, userId: user.id, title: updated.title, content: updated.content, category: updated.category,
-        version: (latest?.version ?? 0) + 1, message: message || null,
-      } });
-      return { ...revision, updatedAt: updated.updatedAt };
-    });
-    auditLog({ userId: user.id, action: 'document.update', resourceType: 'document', resourceId: id, details: { revision: result.version } }).catch(() => {});
+    const result = await createDocumentRevision(user.id, id, parsed.data);
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
