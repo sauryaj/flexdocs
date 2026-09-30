@@ -92,9 +92,23 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     expect(provider.mock.calls.length).toBe(callsBefore);
     state.user = null;
     expect((await POST(new Request('http://localhost/api/ai/ask', { method: 'POST', body: '{}' }))).status).toBe(401);
+    const draft = await prisma.document.create({ data: { userId: ids[0], title: 'Publication source', content: 'Frozen content', lifecycleState: 'draft' } });
+    const revision = await prisma.documentRevision.create({ data: { documentId: draft.id, userId: ids[0], title: draft.title, content: draft.content, category: draft.category, version: 1 } });
+    const snapshot = await prisma.documentPublication.create({ data: { documentId: draft.id, sourceRevisionId: revision.id, title: draft.title, content: draft.content, category: draft.category, tags: [], publisherId: ids[0] } });
+    await expect(prisma.documentPublication.update({ where: { id: snapshot.id }, data: { content: 'Overwrite' } })).rejects.toThrow();
+    await expect(prisma.document.update({ where: { id: draft.id }, data: { lifecycleState: 'trashed' } })).rejects.toThrow();
+    const other = await prisma.document.findFirstOrThrow({ where: { userId: ids[0], id: { not: draft.id } } });
+    await expect(prisma.document.update({ where: { id: other.id }, data: { publishedSnapshotId: snapshot.id } })).rejects.toThrow();
+    await expect(prisma.documentPublication.create({ data: { documentId: other.id, sourceRevisionId: revision.id, title: 'Wrong revision', content: '', category: 'general', tags: [], publisherId: ids[0] } })).rejects.toThrow();
+    await prisma.document.update({ where: { id: draft.id }, data: { publishedSnapshotId: snapshot.id, lifecycleState: 'published' } });
+    await prisma.document.update({ where: { id: draft.id }, data: { content: 'New working content' } });
+    expect((await prisma.documentPublication.findUniqueOrThrow({ where: { id: snapshot.id } })).content).toBe('Frozen content');
+    await expect(prisma.documentReview.create({ data: { documentId: draft.id, sourceRevisionId: revision.id, submittedById: ids[0], reviewerIds: [], decision: 'approved' } })).rejects.toThrow();
   } finally {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
+    await prisma.document.updateMany({ where: { userId: { in: ids } }, data: { publishedSnapshotId: null } });
+    await prisma.documentPublication.deleteMany({ where: { publisherId: { in: ids } } });
     await prisma.document.deleteMany({ where: { userId: { in: ids } } });
     await prisma.server.deleteMany({ where: { userId: { in: ids } } });
     await prisma.flexibleAsset.deleteMany({ where: { userId: { in: ids } } });

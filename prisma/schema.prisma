@@ -126,6 +126,11 @@ model Document {
   reviewDate     DateTime?
   lastReviewedAt DateTime?
   visibility     String   @default("private") // private | org (client-facing KB)
+  lifecycleState DocumentLifecycle?
+  publishedSnapshotId String? @unique
+  publishedSnapshot DocumentPublication? @relation("CurrentPublication", fields: [publishedSnapshotId], references: [id], onDelete: Restrict)
+  publications DocumentPublication[] @relation("DocumentPublications")
+  reviews DocumentReview[]
   folderId    String?
   folder      Folder?  @relation(fields: [folderId], references: [id])
   userId         String
@@ -150,6 +155,57 @@ model Document {
   @@index([userId, deletedAt])
   @@index([createdAt])
   @@index([responsibleUserId])
+}
+
+enum DocumentLifecycle {
+  draft
+  in_review
+  published
+  archived
+  trashed
+}
+
+enum DocumentReviewDecision {
+  pending
+  approved
+  rejected
+  withdrawn
+}
+
+model DocumentPublication {
+  id String @id @default(cuid())
+  documentId String
+  document Document @relation("DocumentPublications", fields: [documentId], references: [id], onDelete: Restrict)
+  sourceRevisionId String
+  sourceRevision DocumentRevision @relation(fields: [documentId, sourceRevisionId], references: [documentId, id], onDelete: Restrict)
+  currentFor Document? @relation("CurrentPublication")
+  title String
+  content String
+  category String
+  tags Json
+  attachmentManifest Json @default("[]")
+  publisherId String
+  publishedAt DateTime @default(now())
+
+  @@unique([documentId, sourceRevisionId])
+  @@index([documentId, publishedAt])
+}
+
+model DocumentReview {
+  id String @id @default(cuid())
+  documentId String
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sourceRevisionId String
+  sourceRevision DocumentRevision @relation(fields: [documentId, sourceRevisionId], references: [documentId, id], onDelete: Restrict)
+  submittedById String
+  reviewerIds String[]
+  decision DocumentReviewDecision @default(pending)
+  decidedById String?
+  feedback String?
+  submittedAt DateTime @default(now())
+  decidedAt DateTime?
+
+  @@index([documentId, decision])
 }
 
 model OrganizationDocumentationGrant {
@@ -601,6 +657,10 @@ model DocumentRevision {
   createdAt  DateTime @default(now())
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  publications DocumentPublication[]
+  reviews DocumentReview[]
+
+  @@unique([documentId, id])
 
   @@index([documentId])
   @@index([createdAt])
