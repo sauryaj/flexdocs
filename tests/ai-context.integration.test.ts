@@ -120,7 +120,7 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await expect(prisma.documentReview.create({ data: { documentId: draft.id, sourceRevisionId: revision.id, submittedById: ids[0], reviewerIds: [], decision: 'approved' } })).rejects.toThrow();
     const reviewDraft = await prisma.document.create({ data: { userId: ids[0], title: 'Review exact version', content: 'Submitted body', lifecycleState: 'draft', tags: { create: { name: 'Frozen review tag', userId: ids[0] } } } });
     const workingPath = join(uploadRoot, 'working-file');
-    const originalBytes = Buffer.from([0, 255, 128]);
+    const originalBytes = Buffer.from([1, 254, 127]);
     writeFileSync(workingPath, originalBytes);
     const workingAttachment = await prisma.attachment.create({ data: { documentId: reviewDraft.id, userId: ids[0], filename: 'review.bin', mimeType: 'application/octet-stream', size: 3, storageType: 'filesystem', filePath: workingPath } });
     const privateUploaderAttachment = await prisma.attachment.create({ data: { documentId: reviewDraft.id, userId: ids[1], filename: 'private.bin', mimeType: 'application/octet-stream', size: 0, storageType: 'base64', data: '' } });
@@ -164,6 +164,12 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await expect(decideDocumentReview(ids[1], teamReview.id, 'approved')).rejects.toMatchObject({ status: 404 });
     await prisma.organizationMember.create({ data: { organizationId: orgs[1], userId: ids[1] } });
     expect((await decideDocumentReview(ids[1], teamReview.id, 'approved')).decision).toBe('approved');
+    const reviewInventory = spawnSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/storage-inventory.ts'], { env: { ...process.env, UPLOAD_DIR: uploadRoot }, encoding: 'utf8' });
+    expect([0, 2]).toContain(reviewInventory.status);
+    const reviewInventoryReport = JSON.parse(reviewInventory.stdout);
+    expect(reviewInventoryReport.invalidReviewManifests).not.toContain(submitted.id);
+    expect(reviewInventoryReport.unreferenced.some((file: { path: string }) => file.path.endsWith(frozenFile.key))).toBe(false);
+    expect(reviewInventoryReport.missing).not.toContain(`review:${submitted.id}:${frozenFile.key}`);
   } finally {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();

@@ -10,18 +10,20 @@ async function main() {
   try {
     const records = await db.attachment.findMany({ where: { storageType: 'filesystem' }, select: { id: true, filePath: true } });
     const publications = await db.documentPublication.findMany({ select: { id: true, attachmentManifest: true } });
+    const reviews = await db.documentReview.findMany({ select: { id: true, attachmentManifest: true } });
     const invalidPublicationManifests: string[] = [];
-    for (const publication of publications) {
-      const manifest = publication.attachmentManifest;
+    const invalidReviewManifests: string[] = [];
+    for (const source of [...publications.map(value => ({ ...value, kind: 'publication' })), ...reviews.map(value => ({ ...value, kind: 'review' }))]) {
+      const manifest = source.attachmentManifest;
       if (!Array.isArray(manifest) || manifest.some(reference => !isImmutableFileReference(reference))) {
-        invalidPublicationManifests.push(publication.id);
+        (source.kind === 'publication' ? invalidPublicationManifests : invalidReviewManifests).push(source.id);
         continue;
       }
-      for (const reference of manifest) if (isImmutableFileReference(reference)) records.push({ id: `publication:${publication.id}:${reference.key}`, filePath: join(root, PUBLICATION_OBJECT_DIRECTORY, reference.key) });
+      for (const reference of manifest) if (isImmutableFileReference(reference)) records.push({ id: `${source.kind}:${source.id}:${reference.key}`, filePath: join(root, PUBLICATION_OBJECT_DIRECTORY, reference.key) });
     }
     const report = await inspectAttachmentStorage(root, records);
-    console.log(JSON.stringify({ readOnly: true, warning: 'Point-in-time inventory; concurrent uploads/deletes can change results. No files are deleted. Review configuration, backups and references before any cleanup.', invalidPublicationManifests, ...report }, null, 2));
-    if (invalidPublicationManifests.length || report.missing.length || report.outsideRoot.length || report.skippedSymlinks.length || report.unreferenced.length) process.exitCode = 2;
+    console.log(JSON.stringify({ readOnly: true, warning: 'Point-in-time inventory; concurrent uploads/deletes can change results. No files are deleted. Review configuration, backups and references before any cleanup.', invalidPublicationManifests, invalidReviewManifests, ...report }, null, 2));
+    if (invalidPublicationManifests.length || invalidReviewManifests.length || report.missing.length || report.outsideRoot.length || report.skippedSymlinks.length || report.unreferenced.length) process.exitCode = 2;
   } finally { await db.$disconnect(); }
 }
 main().catch(() => { console.error('Storage inventory failed. Check database access, upload directory and filesystem permissions; no cleanup was performed.'); process.exitCode = 1; });
