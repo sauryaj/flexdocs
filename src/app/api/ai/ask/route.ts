@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
-import { canAccessOrganization, getOrgScope } from '@/lib/org-scope';
+import { canAccessOrganization, getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
+import { documentReadWhere } from '@/lib/document-access';
 
 export const maxDuration = 60;
 
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
   }
 
   const { question, organizationId } = await req.json().catch(() => ({}));
-  if (!question?.trim()) {
+  if (typeof question !== 'string' || !question.trim() || (organizationId !== undefined && typeof organizationId !== 'string')) {
     return NextResponse.json({ error: 'question is required' }, { status: 400 });
   }
   if (organizationId && !(await canAccessOrganization(user.id, user.role, organizationId))) {
@@ -32,22 +33,19 @@ export async function POST(req: Request) {
 
   const scope = await getOrgScope(user.id, user.role);
   const isStaff = scope.mode === 'all';
-  const orgFilter = organizationId ? { organizationId } : {};
+  const orgFilter = scopeOrgWhere(scope, organizationId);
 
   // Retrieval: keyword match over the caller's visible data only
   const q = question.trim().slice(0, 500);
   const terms = q.split(/\s+/).filter((t: string) => t.length > 2).slice(0, 8);
-  const docWhere = isStaff
-    ? { userId: user.id, isArchived: false, ...orgFilter }
-    : { organizationId: organizationId ?? { in: scope.mode === 'limited' && scope.orgIds.length ? scope.orgIds : ['__none__'] }, isArchived: false, visibility: 'org' };
 
   const [documents, servers, assets] = await Promise.all([
     prisma.document.findMany({
-      where: { deletedAt: null,
-        ...docWhere,
-        OR: terms.length
-          ? terms.flatMap((t: string) => [{ title: { contains: t, mode: 'insensitive' as const } }, { content: { contains: t, mode: 'insensitive' as const } }])
-          : undefined,
+      where: { AND: [documentReadWhere(user.id, scope), {
+        isArchived: false,
+        ...(organizationId ? { organizationId } : {}),
+        ...(terms.length ? { OR: terms.flatMap((t: string) => [{ title: { contains: t, mode: 'insensitive' as const } }, { content: { contains: t, mode: 'insensitive' as const } }]) } : {}),
+      }],
       },
       select: { id: true, title: true, content: true, category: true, updatedAt: true },
       orderBy: { updatedAt: 'desc' },
