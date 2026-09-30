@@ -8,6 +8,7 @@ vi.mock('@/lib/prisma', async () => {
 });
 import { prisma } from '@/lib/prisma';
 import { POST } from '@/app/api/ai/ask/route';
+import { resolveDocumentCapabilities } from '@/lib/document-capability-service';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -43,6 +44,16 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
         expect(context).not.toContain('FOREIGN_MARKER');
       }
     }
+    const teamDocument = { userId: ids[0], ownershipKind: 'organization' as const, organizationId: orgs[0], isArchived: false, deletedAt: null };
+    await prisma.organizationDocumentationGrant.create({ data: { userId: ids[1], organizationId: orgs[0], role: 'contributor' } });
+    expect((await resolveDocumentCapabilities(teamDocument, { id: ids[1], role: 'editor' })).edit).toBe(true);
+    await prisma.organizationMember.deleteMany({ where: { userId: ids[1], organizationId: orgs[0] } });
+    expect((await resolveDocumentCapabilities(teamDocument, { id: ids[1], role: 'editor' })).edit).toBe(false);
+    await prisma.organizationMember.deleteMany({ where: { userId: ids[2] } });
+    state.user = { id: ids[2], role: 'viewer' };
+    const callsBefore = provider.mock.calls.length;
+    expect((await POST(new Request('http://localhost/api/ai/ask', { method: 'POST', body: JSON.stringify({ question: token }) }))).status).toBe(200);
+    expect(provider.mock.calls.length).toBe(callsBefore);
     state.user = null;
     expect((await POST(new Request('http://localhost/api/ai/ask', { method: 'POST', body: '{}' }))).status).toBe(401);
   } finally {
@@ -52,6 +63,7 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.server.deleteMany({ where: { userId: { in: ids } } });
     await prisma.flexibleAsset.deleteMany({ where: { userId: { in: ids } } });
     await prisma.organizationMember.deleteMany({ where: { userId: { in: ids } } });
+    await prisma.organizationDocumentationGrant.deleteMany({ where: { userId: { in: ids } } });
     await prisma.organization.deleteMany({ where: { id: { in: orgs } } });
     await prisma.user.deleteMany({ where: { id: { in: ids } } });
     await prisma.$disconnect();
