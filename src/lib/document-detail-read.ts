@@ -15,7 +15,7 @@ export async function readDocumentDetail(actorId: string, documentId: string) {
     const capabilities = await resolveDocumentCapabilities({ ...document, hasPublishedSnapshot: !!publishedSnapshot }, actor, tx);
     if (capabilities.readWorking) return { document, published: false,
       canEdit: capabilities.edit && !(document.lifecycleState !== null && document.isArchived) && !(document.ownershipKind === 'organization' && document.lifecycleState === null),
-      canManageLifecycle: document.ownershipKind === 'personal' && document.lifecycleState === null && capabilities.manageLifecycle };
+      canManageLifecycle: capabilities.manageLifecycle && !(document.ownershipKind === 'organization' && document.lifecycleState === null) };
     if (document.ownershipKind === 'organization') {
       if (!capabilities.readPublished) throw new DocumentWriteError(404, 'Not found');
       return { document: null, published: true, canEdit: false };

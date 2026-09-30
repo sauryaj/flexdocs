@@ -25,6 +25,7 @@ import { formatDate } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/UIComponents';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { PublishedAttachments } from '@/components/PublishedAttachments';
+import { DocumentLifecycleControls } from '@/components/DocumentLifecycleControls';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { Eye, Edit3, Columns } from 'lucide-react';
 import { RelatedItems } from '@/components/RelatedItems';
@@ -49,6 +50,7 @@ interface Document {
   canManageLifecycle?: boolean;
   canDuplicate?: boolean;
   ownershipKind?: 'personal' | 'organization';
+  lifecycleState?: string | null;
   title: string;
   content: string;
   category: string;
@@ -494,6 +496,8 @@ function DocumentEditor({ documentId }: { documentId: string }) {
       <Link href="/dashboard/documents" className="btn-secondary">Back to documents</Link>
       <h1 className="text-2xl font-bold">{doc.title}</h1>
       <p className="text-sm text-slate-500">Read only · Last updated {formatDate(doc.updatedAt)}</p>
+      {doc.lifecycleState && doc.canManageLifecycle && <DocumentLifecycleControls documentId={doc.id} updatedAt={doc.updatedAt} archived={doc.isArchived} blocked={false}
+        onChanged={action => action === 'trash' ? router.push('/dashboard/documents') : setLoadAttempt(value => value + 1)} />}
       <MarkdownPreview content={doc.content} />
       {doc.snapshotId && <PublishedAttachments key={`${doc.id}:${doc.snapshotId}`} documentId={doc.id} snapshotId={doc.snapshotId} files={doc.attachments || []} />}
     </div>
@@ -533,7 +537,7 @@ function DocumentEditor({ documentId }: { documentId: string }) {
           >
             <Copy className="w-5 h-5" />
           </button>}
-          {doc.canManageLifecycle !== false && <><button
+          {!doc.lifecycleState && doc.canManageLifecycle !== false && <><button
             onClick={toggleArchive}
             className={`p-2 rounded-lg transition-colors ${doc.isArchived ? 'bg-slate-200 text-slate-700' : 'hover:bg-slate-100'}`}
             title={doc.isArchived ? 'Unarchive' : 'Archive'}
@@ -548,6 +552,9 @@ function DocumentEditor({ documentId }: { documentId: string }) {
 
       {/* Two-column layout */}
       {doc.ownershipKind === 'organization' && <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">Team draft · Saved edits do not change the published version.</p>}
+      {doc.lifecycleState && doc.canManageLifecycle && <DocumentLifecycleControls documentId={doc.id} updatedAt={doc.updatedAt} archived={doc.isArchived}
+        blocked={saving || hasUnsavedChanges || !!conflict || !!draft.revoked || !!recoveryPreview}
+        onChanged={action => action === 'trash' ? router.push('/dashboard/documents') : setLoadAttempt(value => value + 1)} />}
       {conflict && <section className="card p-4 space-y-3" aria-label="Save conflict comparison">
         <h2 className="font-semibold">Resolve conflicting edits</h2>
         <p className="text-sm">The server has a newer version. Edit your local text to combine the changes you want to keep. Accepting the baseline below does not save; Save Now checks for further server changes.</p>

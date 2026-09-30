@@ -1,6 +1,7 @@
 import { type z } from 'zod';
 import { documentUpdateSchema, DocumentWriteError, validateDocumentFolder, snapshotDocument, nextDocumentTimestamp } from '@/lib/document-write';
 import { withDocumentCapabilityWrite, withdrawSupersededReviews } from '@/lib/document-history';
+import { resolveDocumentCapabilities } from '@/lib/document-capability-service';
 
 export async function updateDocument(actorId: string, documentId: string, input: z.infer<typeof documentUpdateSchema>) {
   const { expectedUpdatedAt, tags, reviewDate, reviewAcknowledged, ...fields } = documentUpdateSchema.parse(input);
@@ -25,7 +26,8 @@ export async function updateDocument(actorId: string, documentId: string, input:
       ...(tags !== undefined ? { tags: { set: [], connectOrCreate: tags.map(name => ({ where: { name_userId: { name, userId: actorId } }, create: { name, userId: actorId } })) } } : {}),
     }, include: { tags: true, folder: true } });
     await tx.activityLog.create({ data: { userId: actorId, action: 'document.update', resourceType: 'document', resourceId: documentId, details: JSON.stringify({ fields: Object.keys(input).filter(key => key !== 'expectedUpdatedAt') }) } });
-    return { ...updated, canEdit: true, canManageLifecycle: updated.ownershipKind === 'personal' && updated.lifecycleState === null,
+    const actor = await tx.user.findUniqueOrThrow({ where: { id: actorId }, select: { id: true, role: true } });
+    return { ...updated, canEdit: true, canManageLifecycle: (await resolveDocumentCapabilities(updated, actor, tx)).manageLifecycle,
       canDuplicate: updated.ownershipKind === 'personal' && updated.lifecycleState === null };
   });
 }

@@ -364,7 +364,9 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await expect(changeDocumentLifecycle(ids[0], historyDocument.id, 'archive', lifecycleVersion)).rejects.toMatchObject({ status: 404 });
     await prisma.organizationDocumentationGrant.update({ where: { organizationId_userId: { organizationId: orgs[1], userId: ids[0] } }, data: { role: 'administrator' } });
     await expect(changeDocumentLifecycle(ids[0], historyDocument.id, 'archive')).rejects.toMatchObject({ status: 428 });
+    expect(await readDocumentDetail(ids[0], historyDocument.id)).toMatchObject({ canManageLifecycle: true, canEdit: true });
     const archivedTeam = await changeDocumentLifecycle(ids[0], historyDocument.id, 'archive', lifecycleVersion);
+    expect(await readDocumentDetail(ids[0], historyDocument.id)).toMatchObject({ canManageLifecycle: true, canEdit: false, isArchived: true });
     expect(archivedTeam.document).toMatchObject({ lifecycleState: 'archived', isArchived: true, publishedSnapshotId: historyPublication.id });
     await expect(readPublishedDocument(ids[2], historyDocument.id)).rejects.toMatchObject({ status: 404 });
     expect((await discoverDocuments(ids[2], { query: 'Frozen history reader content', page: 0, limit: 10 })).total).toBe(0);

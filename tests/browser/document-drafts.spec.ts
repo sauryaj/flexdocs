@@ -42,6 +42,41 @@ test.beforeAll(async ({ request, baseURL }) => {
 test.beforeEach(async ({ context }) => { await context.addCookies(cookies); });
 test.afterAll(async ({ request, baseURL }) => { await request.post(`${baseURL}/api/logout`); });
 
+test('lifecycle controls preserve edits, show conflicts and return archived content to draft', async ({ context, page }) => {
+  let current = { ...original, id: 'browser-lifecycle', lifecycleState: 'draft', canManageLifecycle: true, canDuplicate: false };
+  let calls = 0;
+  await context.route('**/api/documents/browser-lifecycle', route => route.fulfill({ json: current }));
+  await context.route('**/api/documents/browser-lifecycle/lifecycle', async route => {
+    calls++;
+    const body = route.request().postDataJSON();
+    expect(body.expectedUpdatedAt).toBe(current.updatedAt);
+    if (calls === 1) return route.fulfill({ status: 409, json: { error: 'Document changed; reload before changing its lifecycle' } });
+    current = { ...current, lifecycleState: body.action === 'archive' ? 'archived' : 'draft', isArchived: body.action === 'archive',
+      canEdit: body.action !== 'archive', updatedAt: new Date().toISOString() };
+    return route.fulfill({ json: { document: current, changed: true } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/dashboard/documents/browser-lifecycle');
+  const archive = page.getByRole('button', { name: 'Archive document', exact: true });
+  await page.locator('textarea').fill('# Unsaved edits');
+  await expect(archive).toBeDisabled();
+  await page.locator('textarea').fill(original.content);
+  await expect(archive).toBeEnabled();
+  page.once('dialog', dialog => dialog.accept());
+  await archive.click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Document changed; reload' })).toBeVisible();
+  await expect(page.locator('textarea')).toHaveValue(original.content);
+  page.once('dialog', dialog => dialog.accept());
+  await archive.click();
+  await expect(page.getByRole('button', { name: 'Return to draft', exact: true })).toBeVisible();
+  await expect(page.locator('textarea')).toHaveCount(0);
+  await page.screenshot({ path: '/tmp/flexdocs-lifecycle-archived.png', fullPage: true });
+  page.once('dialog', dialog => { expect(dialog.message()).toContain('does not republish'); return dialog.accept(); });
+  await page.getByRole('button', { name: 'Return to draft', exact: true }).click();
+  await expect(page.locator('textarea')).toHaveValue(original.content);
+  expect(calls).toBe(3);
+});
+
 test('team contributor edits a draft while lifecycle and private attachment controls remain restricted', async ({ context, page }) => {
   let team = { ...original, id: 'browser-team', ownershipKind: 'organization', canManageLifecycle: false, canDuplicate: false, organizationId: 'team-org' };
   let saved = false;

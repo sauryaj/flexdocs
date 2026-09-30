@@ -133,7 +133,10 @@ try {
   check((await call(lifecyclePath, sessions.admin, 'POST', { action: 'archive' })).status === 404, 'global admin without grant cannot manage team lifecycle');
   await db.organizationDocumentationGrant.update({ where: { organizationId_userId: { organizationId: orgs[0], userId: users[1] } }, data: { role: 'administrator' } });
   check((await call(lifecyclePath, sessions.editor, 'POST', { action: 'archive' })).status === 428, 'team lifecycle requires expected version');
+  check((await call(`/documents/${team.id}`, sessions.editor)).body.canManageLifecycle === true, 'team administrator receives lifecycle controls');
   const teamArchive = await call(lifecyclePath, sessions.editor, 'POST', { action: 'archive', expectedUpdatedAt: afterRestore.updatedAt.toISOString() });
+  const archivedDetail = await call(`/documents/${team.id}`, sessions.editor);
+  check(archivedDetail.status === 200 && archivedDetail.body.canEdit === false && archivedDetail.body.canManageLifecycle === true, 'archived team administrator can recover without editing');
   check(teamArchive.status === 200 && teamArchive.body.document.lifecycleState === 'archived', 'documentation admin archives atomically');
   check((await call(downloadPath, sessions.viewer)).status === 404, 'archive blocks published file reads');
   const teamUnarchive = await call(lifecyclePath, sessions.editor, 'POST', { action: 'unarchive', expectedUpdatedAt: teamArchive.body.document.updatedAt });
