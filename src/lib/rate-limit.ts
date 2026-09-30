@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
+import type Redis from 'ioredis';
 
 const WINDOW_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 10;
 
-let redis: any = null;
+let redis: Redis | null = null;
 
-async function getRedis(): Promise<any> {
+async function getRedis(): Promise<Redis | null> {
   if (redis !== null) return redis;
   const url = process.env.REDIS_URL;
   if (!url) return null;
@@ -29,26 +30,16 @@ export async function checkRateLimit(key: string, maxAttempts: number = MAX_ATTE
     try {
       const redisKey = `ratelimit:${key}`;
       const now = Date.now();
-      const ttl = await r.ttl(redisKey) as number;
-
-      if (ttl === -2) {
-        // Key doesn't exist
-        await r.set(redisKey, '1', 'PX', WINDOW_MS);
-        return { allowed: true, remaining: maxAttempts - 1, resetAt: now + WINDOW_MS };
-      }
-
-      const count = await r.incr(redisKey);
-      if (count === 1) {
-        await r.pexpire(redisKey, WINDOW_MS);
-      }
-
-      if (count > maxAttempts) {
-        const pttl = await r.pttl(redisKey) as number;
-        return { allowed: false, remaining: 0, resetAt: now + pttl };
-      }
-
-      const pttl = await r.pttl(redisKey) as number;
-      return { allowed: true, remaining: Math.max(0, maxAttempts - count), resetAt: now + pttl };
+      const [count, ttl] = await r.eval(`
+        local count = redis.call('INCR', KEYS[1])
+        local ttl = redis.call('PTTL', KEYS[1])
+        if ttl < 0 then
+          redis.call('PEXPIRE', KEYS[1], ARGV[1])
+          ttl = tonumber(ARGV[1])
+        end
+        return {count, ttl}
+      `, 1, redisKey, WINDOW_MS) as [number, number];
+      return { allowed: count <= maxAttempts, remaining: Math.max(0, maxAttempts - count), resetAt: now + ttl };
     } catch {
       // Fall through to in-memory
     }

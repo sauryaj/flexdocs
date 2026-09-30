@@ -80,6 +80,11 @@ jobs:
       - name: Apply schema
         run: npx prisma migrate deploy
 
+      - name: Concurrent Redis rate limits
+        env:
+          DOCUMENT_TEST_ISOLATED: '1'
+        run: npm run test:limits
+
       - name: Seed database (creates admin@flexdocs.local)
         run: npx -y tsx prisma/seed.ts
 

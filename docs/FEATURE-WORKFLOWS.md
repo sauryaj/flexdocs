@@ -16,6 +16,8 @@ The local preview on port 3101 was verified against the disposable `flexdocs-fea
 
 Generic API throttling uses separate read (GET/HEAD: 400) and write (other methods: 60) counters per IP/path over the existing 15-minute window. Reading a list no longer consumes its write budget. Redis keys use `ratelimit:api:read:<IP>:<PATH>` and `ratelimit:api:write:<IP>:<PATH>`. Existing mixed counters expire naturally; deploying this change starts fresh generic budgets once. Dedicated authentication counters are unchanged. This does not change how the deployment establishes trusted client IPs.
 
+Request counter increments and expiry establishment run atomically in Redis, preventing concurrent first requests from resetting the count. Counters lacking an expiry regain the existing 15-minute expiry without resetting their count. `DOCUMENT_TEST_ISOLATED=1` with an explicit disposable `REDIS_URL` is required for `npm run test:limits`, which tests concurrent admission, counter integrity, expiry/reset and expiry repair. It creates and removes only a random test key. The per-account failed-login counter is a separate mechanism; this check does not establish its concurrency behavior.
+
 MCP requires the authenticated owner's current role and API-key scope to permit a tool. Session callers use their role. An invalid, expired or inactive supplied key never falls back to a browser cookie. Document visibility and organization boundaries remain enforced after tool authorization; a read scope does not expose another owner's private documents.
 
 | Tool | Required permissions (all required) |

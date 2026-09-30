@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "audit:storage": "tsx scripts/storage-inventory.ts",
+    "test:limits": "tsx scripts/rate-limit-concurrency-test.ts",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
