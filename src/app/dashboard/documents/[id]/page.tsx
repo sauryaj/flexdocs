@@ -114,6 +114,7 @@ function DocumentEditor({ documentId }: { documentId: string }) {
   const [loadError, setLoadError] = useState('');
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [workflowBusy, setWorkflowBusy] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [viewMode, setViewMode] = useState<'write' | 'preview' | 'split'>('write');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -252,11 +253,13 @@ function DocumentEditor({ documentId }: { documentId: string }) {
           v: vis,
         });
         setDirty(false);
+        setWorkflowBusy(false);
         setLoading(false);
       }).catch((error) => {
         if (controller.signal.aborted) return;
         setLoadError(error instanceof Error ? error.message : 'Unable to load document. Please try again.');
         setDoc(null);
+        setWorkflowBusy(false);
         setLoading(false);
       });
     return () => controller.abort();
@@ -492,19 +495,20 @@ function DocumentEditor({ documentId }: { documentId: string }) {
   }
 
   if (doc.canEdit === false) return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <fieldset disabled={workflowBusy} className="max-w-4xl mx-auto space-y-6 min-w-0 w-full">
       <Link href="/dashboard/documents" className="btn-secondary">Back to documents</Link>
       <h1 className="text-2xl font-bold">{doc.title}</h1>
       <p className="text-sm text-slate-500">Read only · Last updated {formatDate(doc.updatedAt)}</p>
       {doc.lifecycleState && doc.canManageLifecycle && <DocumentLifecycleControls documentId={doc.id} updatedAt={doc.updatedAt} archived={doc.isArchived} blocked={false}
+        onBusyChange={setWorkflowBusy}
         onChanged={action => action === 'trash' ? router.push('/dashboard/documents') : setLoadAttempt(value => value + 1)} />}
       <MarkdownPreview content={doc.content} />
       {doc.snapshotId && <PublishedAttachments key={`${doc.id}:${doc.snapshotId}`} documentId={doc.id} snapshotId={doc.snapshotId} files={doc.attachments || []} />}
-    </div>
+    </fieldset>
   );
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <fieldset disabled={workflowBusy} className="max-w-7xl mx-auto space-y-6 min-w-0 w-full">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
@@ -553,6 +557,7 @@ function DocumentEditor({ documentId }: { documentId: string }) {
       {/* Two-column layout */}
       {doc.ownershipKind === 'organization' && <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">Team draft · Saved edits do not change the published version.</p>}
       {doc.lifecycleState && doc.canManageLifecycle && <DocumentLifecycleControls documentId={doc.id} updatedAt={doc.updatedAt} archived={doc.isArchived}
+        onBusyChange={setWorkflowBusy}
         blocked={saving || hasUnsavedChanges || !!conflict || !!draft.revoked || !!recoveryPreview}
         onChanged={action => action === 'trash' ? router.push('/dashboard/documents') : setLoadAttempt(value => value + 1)} />}
       {conflict && <section className="card p-4 space-y-3" aria-label="Save conflict comparison">
@@ -893,6 +898,6 @@ function DocumentEditor({ documentId }: { documentId: string }) {
         title="Move to Trash"
         message="This document will be hidden from normal views. You can restore it, including its history and attachments, from Trash."
       />
-    </div>
+    </fieldset>
   );
 }

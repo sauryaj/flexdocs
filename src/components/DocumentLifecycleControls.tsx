@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-export function DocumentLifecycleControls({ documentId, updatedAt, archived, blocked, onChanged }: {
+export function DocumentLifecycleControls({ documentId, updatedAt, archived, blocked, onChanged, onBusyChange }: {
   documentId: string; updatedAt: string; archived: boolean; blocked: boolean;
   onChanged: (action: 'archive' | 'unarchive' | 'trash') => void;
+  onBusyChange?: (busy: boolean) => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -20,9 +21,11 @@ export function DocumentLifecycleControls({ documentId, updatedAt, archived, blo
     if (!window.confirm(message)) return;
     pending.current = true;
     setBusy(true);
+    onBusyChange?.(true);
     setError('');
     const controller = new AbortController();
     request.current = controller;
+    let changed = false;
     try {
       const response = await fetch(`/api/documents/${documentId}/lifecycle`, { method: 'POST', signal: controller.signal,
         headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action, expectedUpdatedAt: updatedAt }) });
@@ -30,10 +33,11 @@ export function DocumentLifecycleControls({ documentId, updatedAt, archived, blo
       if (controller.signal.aborted) return;
       if (!response.ok) throw new Error(result.error || 'Lifecycle change failed');
       onChanged(action);
+      changed = true;
     } catch (failure) {
       if (controller.signal.aborted) return;
       setError(failure instanceof Error ? failure.message : 'Unable to confirm the change. Reload to check the current state before retrying.');
-    } finally { pending.current = false; setBusy(false); }
+    } finally { pending.current = false; setBusy(false); if (!changed) onBusyChange?.(false); }
   };
 
   return <section aria-label="Document lifecycle" className="rounded-lg border border-slate-200 p-3 space-y-2">

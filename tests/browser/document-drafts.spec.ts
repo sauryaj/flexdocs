@@ -76,12 +76,15 @@ test('team Trash preserves failed restoration and refreshes its version before r
 test('lifecycle controls preserve edits, show conflicts and return archived content to draft', async ({ context, page }) => {
   let current = { ...original, id: 'browser-lifecycle', lifecycleState: 'draft', canManageLifecycle: true, canDuplicate: false };
   let calls = 0;
+  let release = () => {};
+  const hold = new Promise<void>(resolve => { release = resolve; });
   await context.route('**/api/documents/browser-lifecycle', route => route.fulfill({ json: current }));
   await context.route('**/api/documents/browser-lifecycle/lifecycle', async route => {
     calls++;
     const body = route.request().postDataJSON();
     expect(body.expectedUpdatedAt).toBe(current.updatedAt);
     if (calls === 1) return route.fulfill({ status: 409, json: { error: 'Document changed; reload before changing its lifecycle' } });
+    if (calls === 2) await hold;
     current = { ...current, lifecycleState: body.action === 'archive' ? 'archived' : 'draft', isArchived: body.action === 'archive',
       canEdit: body.action !== 'archive', updatedAt: new Date().toISOString() };
     return route.fulfill({ json: { document: current, changed: true } });
@@ -99,6 +102,8 @@ test('lifecycle controls preserve edits, show conflicts and return archived cont
   await expect(page.locator('textarea')).toHaveValue(original.content);
   page.once('dialog', dialog => dialog.accept());
   await archive.click();
+  try { await expect(page.locator('textarea')).toBeDisabled(); }
+  finally { release(); }
   await expect(page.getByRole('button', { name: 'Return to draft', exact: true })).toBeVisible();
   await expect(page.locator('textarea')).toHaveCount(0);
   await page.screenshot({ path: '/tmp/flexdocs-lifecycle-archived.png', fullPage: true });

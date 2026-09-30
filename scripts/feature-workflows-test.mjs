@@ -153,6 +153,15 @@ try {
   const teamRestore = await call(lifecyclePath, sessions.editor, 'POST', { action: 'restore', expectedUpdatedAt: teamTrash.body.document.updatedAt });
   check(teamRestore.status === 200 && teamRestore.body.document.lifecycleState === 'draft' && teamRestore.body.document.publishedSnapshotId === null, 'team Trash restore remains an unpublished draft');
   const reviewsPath = `/documents/${team.id}/reviews`;
+  const reviewersPath = `/documents/${team.id}/reviewers`;
+  check((await call(reviewersPath, null)).status === 401, 'anonymous reviewer discovery blocked');
+  check((await call(reviewersPath, sessions.viewer)).status === 403, 'viewer reviewer discovery blocked');
+  check((await call(reviewersPath, sessions.admin)).status === 404, 'ungranted admin reviewer discovery blocked');
+  const initialCandidates = await call(reviewersPath, sessions.editor);
+  check(initialCandidates.status === 200 && initialCandidates.body.total === 1 && initialCandidates.body.items[0].id === users[1] && !('password' in initialCandidates.body.items[0]), 'reviewer discovery returns current eligible team administrators only');
+  check((await call(`${reviewersPath}?page=1`, sessions.editor)).body.items.length === 0, 'reviewer discovery pages without repeating candidates');
+  check((await call(`${reviewersPath}?q=missing-candidate`, sessions.editor)).body.total === 0, 'reviewer search filters before counting');
+  check((await call(`${reviewersPath}?q=${'a'.repeat(201)}`, sessions.editor)).status === 400, 'reviewer search rejects oversized query');
   await db.attachment.update({ where: { id: privateWorkingFile.id }, data: { data: frozenBytes.toString('base64'), size: frozenBytes.length } });
   const reviewInput = { expectedUpdatedAt: teamRestore.body.document.updatedAt, reviewerIds: [users[0]], attachmentIds: [privateWorkingFile.id] };
   check((await call(reviewsPath, null, 'POST', reviewInput)).status === 401, 'anonymous review submission blocked');
@@ -191,6 +200,8 @@ try {
   check(approvalReplay.status === 200 && !('document' in approvalReplay.body) && !('attachmentManifest' in approvalReplay.body), 'identical decision replay has the same safe DTO boundary');
   await db.organizationMember.delete({ where: { organizationId_userId: { organizationId: orgs[0], userId: users[0] } } });
   check((await call(reviewsPath, sessions.admin)).status === 404, 'review reads recheck current reviewer membership');
+  const revokedCandidates = await call(reviewersPath, sessions.editor);
+  check(revokedCandidates.body.total === 1 && revokedCandidates.body.items[0].id === users[1], 'reviewer discovery excludes revoked membership despite retained grant');
   check((await call(reviewedFilePath, sessions.admin)).status === 404, 'review download rechecks current reviewer membership');
   check((await call(`${decisionPath}/publish`, sessions.editor, 'POST')).status === 409, 'publication rechecks approver membership');
   await db.organizationMember.create({ data: { organizationId: orgs[0], userId: users[0] } });
