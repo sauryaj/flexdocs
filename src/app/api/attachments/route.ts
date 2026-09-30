@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { storeFile, storeFileBytes } from '@/lib/file-storage';
-import { AttachmentUploadError, parseMultipartAttachment } from '@/lib/attachment-upload';
+import { AttachmentUploadError, parseMultipartAttachment, parseLegacyAttachmentBody } from '@/lib/attachment-upload';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/rbac';
 import { type UserRole } from '@prisma/client';
@@ -54,11 +54,16 @@ export async function POST(req: Request) {
     }
   }
 
+  let body: unknown;
+  try { body = await parseLegacyAttachmentBody(req); }
+  catch (error) {
+    return NextResponse.json({ error: error instanceof AttachmentUploadError ? error.message : 'Upload interrupted' }, { status: error instanceof AttachmentUploadError ? error.status : 400 });
+  }
   const parsed = z.object({
     filename: z.string().min(1).max(255), mimeType: z.string().min(1).max(255),
     data: z.string().min(1).max(14_000_000), size: z.number().nonnegative().optional(),
     documentId: z.string().nullable().optional(),
-  }).safeParse(await req.json().catch(() => null));
+  }).safeParse(body);
   if (!parsed.success) return NextResponse.json({ error: 'Invalid attachment (maximum encoded size: 14 MB)' }, { status: 400 });
   const { filename, mimeType, size, data, documentId } = parsed.data;
 

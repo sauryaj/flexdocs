@@ -5,6 +5,12 @@ export class AttachmentUploadError extends Error {
   constructor(message: string, public status: number) { super(message); }
 }
 
+export async function parseLegacyAttachmentBody(request: Request): Promise<unknown> {
+  const bytes = await readBoundedBody(request, 14_000_000 + 64 * 1024);
+  try { return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); }
+  catch { throw new AttachmentUploadError('Invalid attachment JSON', 400); }
+}
+
 export async function readBoundedBody(request: Request, limit: number): Promise<Uint8Array> {
   const length = request.headers.get('content-length');
   if (length && Number(length) > limit) throw new AttachmentUploadError('Upload exceeds the request size limit', 413);

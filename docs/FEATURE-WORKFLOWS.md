@@ -39,6 +39,8 @@ Attachment downloads preserve valid zero-byte files and return 404 when filesyst
 
 The document editor sends multipart requests with transfer progress, a separate waiting-for-confirmation state, a cancel button, a 120-second timeout and a 10 MiB client-side size check. Only one upload runs per editor; changing documents/unmounting aborts its request. Cancellation and connection failures warn that the server may already have saved the file and offer attachment refresh before retrying. Duplicate-safe retry is still pending: cancellation does not guarantee server rollback. The legacy JSON/base64 path remains for existing clients.
 
+Legacy JSON upload requests are bounded to 14,000,000 bytes plus 64 KiB metadata/framing allowance before JSON decoding. The existing encoded data limit remains 14,000,000 characters. Oversized bodies return 413 even without `Content-Length`; malformed JSON/UTF-8 returns 400. This prevents schema validation from occurring only after an unbounded body has been buffered.
+
 Attachment and revision list requests cancel their predecessors and ignore stale success/error/completion callbacks. Unmounting cancels outstanding list reads. A browser regression deliberately resolves an older attachment response after a newer one and verifies that the current list remains intact. Editors are also keyed by document ID, isolating state when switching documents.
 
 Attachment deletion commits its owner/Trash-scoped database removal before deleting bytes. Database failures preserve the file. A crash or filesystem failure after database success may leave an unreferenced file; the latter returns `cleanupPending: true` and emits an attachment-ID/error-code warning without file contents or paths. There is no automatic purge.

@@ -1,5 +1,5 @@
 import { expect, it, vi } from 'vitest';
-import { MAX_ATTACHMENT_BYTES, parseMultipartAttachment, readBoundedBody } from '@/lib/attachment-upload';
+import { MAX_ATTACHMENT_BYTES, parseMultipartAttachment, readBoundedBody, parseLegacyAttachmentBody } from '@/lib/attachment-upload';
 
 function upload(bytes: Uint8Array, type = '') {
   const form = new FormData();
@@ -7,6 +7,12 @@ function upload(bytes: Uint8Array, type = '') {
   form.set('documentId', 'doc');
   return new Request('http://localhost/upload', { method: 'POST', body: form });
 }
+it('bounds legacy JSON before parsing and rejects malformed JSON', async () => {
+  const request = (body: string) => new Request('http://localhost/upload', { method: 'POST', body });
+  expect(await parseLegacyAttachmentBody(request('{"data":"YQ=="}'))).toEqual({ data: 'YQ==' });
+  await expect(parseLegacyAttachmentBody(request('{broken'))).rejects.toMatchObject({ status: 400 });
+  await expect(parseLegacyAttachmentBody(request('x'.repeat(14_000_000 + 64 * 1024 + 1)))).rejects.toMatchObject({ status: 413 });
+});
 it('preserves arbitrary binary and empty files with unknown types', async () => {
   for (const bytes of [new Uint8Array([0, 255, 128]), new Uint8Array()]) {
     const result = await parseMultipartAttachment(upload(bytes));
