@@ -11,6 +11,17 @@ export async function lockDocumentationAdministration(tx: Prisma.TransactionClie
   await tx.$queryRaw`SELECT pg_advisory_xact_lock(627491, 1)::text`;
 }
 
+export async function listDocumentationGrants(actorId: string, organizationId: string) {
+  return prisma.$transaction(async tx => {
+    const actor = await tx.user.findUnique({ where: { id: actorId }, select: { role: true } });
+    const membership = await tx.organizationMember.findUnique({ where: { organizationId_userId: { organizationId, userId: actorId } } });
+    const grant = await tx.organizationDocumentationGrant.findUnique({ where: { organizationId_userId: { organizationId, userId: actorId } } });
+    if (!actor || (actor.role !== 'admin' && !(membership && grant?.role === 'administrator' && hasPermission(actor.role, 'document.update')))) throw new DocumentationGrantError(403, 'Forbidden');
+    if (!(await tx.organization.findUnique({ where: { id: organizationId }, select: { id: true } }))) throw new DocumentationGrantError(404, 'Not found');
+    return tx.organizationDocumentationGrant.findMany({ where: { organizationId }, select: { userId: true, role: true, createdAt: true, updatedAt: true }, orderBy: { userId: 'asc' } });
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+}
+
 export async function changeDocumentationGrant(actorId: string, organizationId: string, targetId: string, role: DocumentationRole | null) {
   if (role !== null && !['reader', 'contributor', 'reviewer', 'administrator'].includes(role)) throw new DocumentationGrantError(400, 'Invalid documentation role');
   return prisma.$transaction(async tx => {
