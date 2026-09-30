@@ -2,6 +2,7 @@ import { lstat, readdir, realpath } from 'node:fs/promises';
 import { isAbsolute, join, relative, resolve } from 'node:path';
 
 export async function inspectAttachmentStorage(root: string, records: { id: string; filePath: string | null }[], now = Date.now()) {
+  const configuredRoot = resolve(root);
   const canonicalRoot = await realpath(root);
   const files = new Map<string, number>();
   const skippedSymlinks: string[] = [];
@@ -19,7 +20,9 @@ export async function inspectAttachmentStorage(root: string, records: { id: stri
   const outsideRoot: string[] = [];
   for (const record of records) {
     if (!record.filePath) { missing.push(record.id); continue; }
-    const path = resolve(record.filePath);
+    const configuredRelative = relative(configuredRoot, resolve(record.filePath));
+    const insideConfiguredRoot = configuredRelative !== '..' && !configuredRelative.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) && !isAbsolute(configuredRelative);
+    const path = insideConfiguredRoot ? join(canonicalRoot, configuredRelative) : resolve(record.filePath);
     const rel = relative(canonicalRoot, path);
     if (rel.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) || rel === '..' || isAbsolute(rel)) {
       outsideRoot.push(record.id); continue;

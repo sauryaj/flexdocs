@@ -24,3 +24,19 @@ it('reports missing and unreferenced files without following symlinks or changin
     expect(await inspectAttachmentStorage(root, [])).toMatchObject({ scannedFiles: 2 });
   } finally { await rm(root, { recursive: true }); }
 });
+
+it('normalizes a configured root alias without following nested symlinks', async () => {
+  const parent = await realpath(await mkdtemp(join(tmpdir(), 'flexdocs-inventory-alias-')));
+  const root = join(parent, 'root');
+  const alias = join(parent, 'alias');
+  try {
+    const { mkdir } = await import('node:fs/promises');
+    await mkdir(root);
+    await writeFile(join(root, 'kept'), 'keep');
+    await symlink(root, alias);
+    const report = await inspectAttachmentStorage(alias, [{ id: 'kept', filePath: join(alias, 'kept') }]);
+    expect(report.missing).toEqual([]);
+    expect(report.outsideRoot).toEqual([]);
+    expect(report.unreferenced).toEqual([]);
+  } finally { await rm(parent, { recursive: true }); }
+});

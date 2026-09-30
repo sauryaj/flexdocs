@@ -1,5 +1,9 @@
 import { expect, it, vi } from 'vitest';
 import { randomUUID } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 const state = vi.hoisted(() => ({ user: null as { id: string; role: 'admin' | 'editor' | 'viewer' } | null }));
 vi.mock('@/lib/auth', () => ({ auth: async () => state.user }));
 vi.mock('@/lib/prisma', async () => {
@@ -12,11 +16,13 @@ import { resolveDocumentCapabilities } from '@/lib/document-capability-service';
 import { changeDocumentationGrant, removeOrganizationMember } from '@/lib/documentation-grants';
 import { administerAccount } from '@/lib/account-administration';
 import { decideDocumentReview, submitDocumentReview } from '@/lib/document-review';
+import { LocalImmutableFileStore } from '@/lib/immutable-file-store';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
   const ids: string[] = [];
   const orgs: string[] = [];
+  const uploadRoot = mkdtempSync(join(tmpdir(), 'flexdocs-publication-audit-'));
   vi.stubEnv('AI_API_KEY', 'synthetic');
   let context = '';
   const provider = vi.fn(async (_url: unknown, options: RequestInit | undefined) => {
@@ -95,7 +101,14 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     expect((await POST(new Request('http://localhost/api/ai/ask', { method: 'POST', body: '{}' }))).status).toBe(401);
     const draft = await prisma.document.create({ data: { userId: ids[0], title: 'Publication source', content: 'Frozen content', lifecycleState: 'draft' } });
     const revision = await prisma.documentRevision.create({ data: { documentId: draft.id, userId: ids[0], title: draft.title, content: draft.content, category: draft.category, version: 1 } });
-    const snapshot = await prisma.documentPublication.create({ data: { documentId: draft.id, sourceRevisionId: revision.id, title: draft.title, content: draft.content, category: draft.category, tags: [], publisherId: ids[0] } });
+    const fileReference = await new LocalImmutableFileStore(uploadRoot).put(Buffer.from([0, 255, 128]));
+    const snapshot = await prisma.documentPublication.create({ data: { documentId: draft.id, sourceRevisionId: revision.id, title: draft.title, content: draft.content, category: draft.category, tags: [], attachmentManifest: [{ ...fileReference }], publisherId: ids[0] } });
+    const inventory = spawnSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/storage-inventory.ts'], { env: { ...process.env, UPLOAD_DIR: uploadRoot }, encoding: 'utf8' });
+    expect([0, 2]).toContain(inventory.status);
+    const inventoryReport = JSON.parse(inventory.stdout);
+    expect(inventoryReport.invalidPublicationManifests).not.toContain(snapshot.id);
+    expect(inventoryReport.unreferenced.some((file: { path: string }) => file.path.endsWith(fileReference.key))).toBe(false);
+    expect(inventoryReport.missing).not.toContain(`publication:${snapshot.id}:${fileReference.key}`);
     await expect(prisma.documentPublication.update({ where: { id: snapshot.id }, data: { content: 'Overwrite' } })).rejects.toThrow();
     await expect(prisma.document.update({ where: { id: draft.id }, data: { lifecycleState: 'trashed' } })).rejects.toThrow();
     const other = await prisma.document.findFirstOrThrow({ where: { userId: ids[0], id: { not: draft.id } } });
@@ -145,5 +158,6 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.organization.deleteMany({ where: { id: { in: orgs } } });
     await prisma.user.deleteMany({ where: { id: { in: ids } } });
     await prisma.$disconnect();
+    rmSync(uploadRoot, { recursive: true });
   }
 });
