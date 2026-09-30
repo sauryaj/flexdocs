@@ -7,7 +7,7 @@ const authMock = vi.hoisted(() => vi.fn());
 vi.mock('@/lib/auth', () => ({ auth: authMock }));
 vi.mock('@/lib/audit', () => ({ auditLog: vi.fn().mockResolvedValue(undefined) }));
 
-const document = { id: 'doc', userId: 'owner', title: 'Title', content: 'Current text', category: 'general', updatedAt: new Date('2026-01-01T00:00:00Z') } as Document;
+const document = { id: 'doc', userId: 'owner', ownershipKind: 'personal', organizationId: null, isArchived: false, deletedAt: null, title: 'Title', content: 'Current text', category: 'general', updatedAt: new Date('2026-01-01T00:00:00Z') } as Document;
 const tx = {
   $queryRaw: vi.fn(),
   document: { findFirst: vi.fn(), update: vi.fn() },

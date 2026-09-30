@@ -5,6 +5,7 @@ import { hasPermission } from '@/lib/rbac';
 import { auditLog } from '@/lib/audit';
 import { documentUpdateSchema, withDocumentWrite, snapshotDocument, nextDocumentTimestamp, DocumentWriteError, validateDocumentFolder } from '@/lib/document-write';
 import { documentReadWhere } from '@/lib/document-access';
+import { documentCapabilities } from '@/lib/document-capabilities';
 import { getOrgScope } from '@/lib/org-scope';
 import { type UserRole } from '@prisma/client';
 
@@ -28,7 +29,7 @@ export async function GET(
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
-  return NextResponse.json({ ...document, canEdit: document.userId === user.id && hasPermission(user.role, 'document.update') });
+  return NextResponse.json({ ...document, canEdit: documentCapabilities(document, { id: user.id, role: user.role }).edit });
 }
 
 export async function PUT(
@@ -49,6 +50,7 @@ export async function PUT(
   const { expectedUpdatedAt, tags, reviewDate, reviewAcknowledged, ...fields } = parsed.data;
   try {
     const updated = await withDocumentWrite(id, user.id, expectedUpdatedAt, async (tx, document) => {
+      if (!documentCapabilities(document, { id: user.id, role: user.role }).edit) throw new DocumentWriteError(404, 'Not found');
       await validateDocumentFolder(tx, user.id, document.organizationId, fields.folderId);
       if ((fields.content !== undefined && fields.content !== document.content) ||
           (fields.title !== undefined && fields.title !== document.title) ||
@@ -100,6 +102,10 @@ export async function DELETE(
   });
 
   if (!document) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  }
+
+  if (!documentCapabilities(document, { id: user.id, role: user.role }).manageLifecycle) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
