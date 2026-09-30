@@ -11,6 +11,7 @@ import { POST } from '@/app/api/ai/ask/route';
 import { resolveDocumentCapabilities } from '@/lib/document-capability-service';
 import { changeDocumentationGrant, removeOrganizationMember } from '@/lib/documentation-grants';
 import { administerAccount } from '@/lib/account-administration';
+import { decideDocumentReview, submitDocumentReview } from '@/lib/document-review';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -104,11 +105,37 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.document.update({ where: { id: draft.id }, data: { content: 'New working content' } });
     expect((await prisma.documentPublication.findUniqueOrThrow({ where: { id: snapshot.id } })).content).toBe('Frozen content');
     await expect(prisma.documentReview.create({ data: { documentId: draft.id, sourceRevisionId: revision.id, submittedById: ids[0], reviewerIds: [], decision: 'approved' } })).rejects.toThrow();
+    const reviewDraft = await prisma.document.create({ data: { userId: ids[0], title: 'Review exact version', content: 'Submitted body', lifecycleState: 'draft' } });
+    await expect(submitDocumentReview(ids[0], reviewDraft.id, reviewDraft.updatedAt.toISOString(), [ids[2]])).rejects.toMatchObject({ status: 400 });
+    const submitted = await submitDocumentReview(ids[0], reviewDraft.id, reviewDraft.updatedAt.toISOString(), [ids[0]]);
+    await expect(decideDocumentReview(ids[1], submitted.id, 'approved')).rejects.toMatchObject({ status: 404 });
+    await prisma.document.update({ where: { id: reviewDraft.id }, data: { content: 'Later working copy', updatedAt: new Date(submitted.submittedAt.getTime() + 1) } });
+    await expect(decideDocumentReview(ids[0], submitted.id, 'approved')).rejects.toMatchObject({ status: 409 });
+    expect((await prisma.documentReview.findUniqueOrThrow({ where: { id: submitted.id } })).decision).toBe('pending');
+    await decideDocumentReview(ids[0], submitted.id, 'withdrawn');
+    const freshDraft = await prisma.document.findUniqueOrThrow({ where: { id: reviewDraft.id } });
+    const resubmitted = await submitDocumentReview(ids[0], reviewDraft.id, freshDraft.updatedAt.toISOString(), [ids[0]]);
+    expect((await decideDocumentReview(ids[0], resubmitted.id, 'approved')).decision).toBe('approved');
+    await decideDocumentReview(ids[0], resubmitted.id, 'approved');
+    expect(await prisma.activityLog.count({ where: { resourceId: reviewDraft.id, action: 'document.review.approved' } })).toBe(1);
+    expect((await prisma.document.findUniqueOrThrow({ where: { id: reviewDraft.id } })).publishedSnapshotId).toBeNull();
+    for (const [index, role] of [[0, 'contributor'], [1, 'reviewer']] as const) {
+      await prisma.organizationMember.create({ data: { organizationId: orgs[1], userId: ids[index] } });
+      await prisma.organizationDocumentationGrant.create({ data: { organizationId: orgs[1], userId: ids[index], role } });
+    }
+    const teamDraft = await prisma.document.create({ data: { userId: ids[2], organizationId: orgs[1], ownershipKind: 'organization', lifecycleState: 'draft', title: 'Team review', content: 'Frozen team version' } });
+    const teamReview = await submitDocumentReview(ids[0], teamDraft.id, teamDraft.updatedAt.toISOString(), [ids[1]]);
+    await expect(decideDocumentReview(ids[0], teamReview.id, 'approved')).rejects.toMatchObject({ status: 404 });
+    await prisma.organizationMember.deleteMany({ where: { organizationId: orgs[1], userId: ids[1] } });
+    await expect(decideDocumentReview(ids[1], teamReview.id, 'approved')).rejects.toMatchObject({ status: 404 });
+    await prisma.organizationMember.create({ data: { organizationId: orgs[1], userId: ids[1] } });
+    expect((await decideDocumentReview(ids[1], teamReview.id, 'approved')).decision).toBe('approved');
   } finally {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
     await prisma.document.updateMany({ where: { userId: { in: ids } }, data: { publishedSnapshotId: null } });
     await prisma.documentPublication.deleteMany({ where: { publisherId: { in: ids } } });
+    await prisma.documentReview.deleteMany({ where: { submittedById: { in: ids } } });
     await prisma.document.deleteMany({ where: { userId: { in: ids } } });
     await prisma.server.deleteMany({ where: { userId: { in: ids } } });
     await prisma.flexibleAsset.deleteMany({ where: { userId: { in: ids } } });
