@@ -128,25 +128,26 @@ export async function recordFailedLogin(identifier: string): Promise<{ locked: b
   if (r) {
     try {
       const key = `lockout:${identifier}`;
-      const raw = await r.get(key);
-      let count = 1;
-      let lockedUntil = 0;
-      if (raw) {
-        const data = JSON.parse(raw) as { count: number; lockedUntil: number };
-        if (data.lockedUntil > Date.now()) {
-          return { locked: true, retryAfterMs: data.lockedUntil - Date.now() };
-        }
-        count = data.count + 1;
-      }
-      if (count >= MAX_FAILED_LOGINS) {
-        lockedUntil = Date.now() + LOCKOUT_MS;
-        count = 0;
-      }
-      await r.set(key, JSON.stringify({ count, lockedUntil }), 'PX', LOCKOUT_MS + 60 * 1000);
-      if (lockedUntil > Date.now()) {
-        return { locked: true, retryAfterMs: LOCKOUT_MS };
-      }
-      return { locked: false, retryAfterMs: 0 };
+      const retryAfterMs = await r.eval(`
+        local now = tonumber(ARGV[1])
+        local count = 0
+        local raw = redis.call('GET', KEYS[1])
+        if raw then
+          local data = cjson.decode(raw)
+          if data.lockedUntil > now then return data.lockedUntil - now end
+          count = data.count
+        end
+        count = count + 1
+        local lockedUntil = 0
+        if count >= tonumber(ARGV[2]) then
+          lockedUntil = now + tonumber(ARGV[3])
+          count = 0
+        end
+        redis.call('SET', KEYS[1], cjson.encode({count=count, lockedUntil=lockedUntil}), 'PX', ARGV[4])
+        if lockedUntil > now then return lockedUntil - now end
+        return 0
+      `, 1, key, Date.now(), MAX_FAILED_LOGINS, LOCKOUT_MS, LOCKOUT_MS + 60 * 1000) as number;
+      return { locked: retryAfterMs > 0, retryAfterMs };
     } catch {
       // fall through
     }

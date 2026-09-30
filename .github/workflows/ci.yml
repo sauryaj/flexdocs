@@ -80,7 +80,7 @@ jobs:
       - name: Apply schema
         run: npx prisma migrate deploy
 
-      - name: Concurrent Redis rate limits
+      - name: Concurrent Redis request limits and account lockout
         env:
           DOCUMENT_TEST_ISOLATED: '1'
         run: npm run test:limits
