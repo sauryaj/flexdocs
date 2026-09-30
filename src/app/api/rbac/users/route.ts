@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/rbac';
+import { administerAccount } from '@/lib/account-administration';
+import { DocumentationGrantError } from '@/lib/documentation-grants';
 
 export async function GET() {
   const user = await auth();
@@ -28,20 +30,19 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const { userId, role } = await req.json();
-  if (!userId || !role) return NextResponse.json({ error: 'userId and role required' }, { status: 400 });
+  const { userId, role } = await req.json().catch(() => ({}));
+  if (typeof userId !== 'string' || !userId || typeof role !== 'string') return NextResponse.json({ error: 'userId and role required' }, { status: 400 });
 
   if (!['admin', 'editor', 'viewer'].includes(role)) {
     return NextResponse.json({ error: 'Invalid role' }, { status: 400 });
   }
 
-  const updated = await prisma.user.update({
-    where: { id: userId },
-    data: { role },
-    select: { id: true, email: true, name: true, role: true },
-  });
-
-  return NextResponse.json(updated);
+  try {
+    return NextResponse.json(await administerAccount(user.id, userId, role as 'admin' | 'editor' | 'viewer'));
+  } catch (error) {
+    if (error instanceof DocumentationGrantError) return NextResponse.json({ error: error.message }, { status: error.status });
+    throw error;
+  }
 }
 
 export async function DELETE(req: Request) {
@@ -56,6 +57,11 @@ export async function DELETE(req: Request) {
   if (!userId) return NextResponse.json({ error: 'userId required' }, { status: 400 });
   if (userId === user.id) return NextResponse.json({ error: 'Cannot delete yourself' }, { status: 400 });
 
-  await prisma.user.delete({ where: { id: userId } });
+  try {
+    await administerAccount(user.id, userId, null);
+  } catch (error) {
+    if (error instanceof DocumentationGrantError) return NextResponse.json({ error: error.message }, { status: error.status });
+    throw error;
+  }
   return NextResponse.json({ success: true });
 }

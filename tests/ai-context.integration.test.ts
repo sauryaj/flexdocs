@@ -10,6 +10,7 @@ import { prisma } from '@/lib/prisma';
 import { POST } from '@/app/api/ai/ask/route';
 import { resolveDocumentCapabilities } from '@/lib/document-capability-service';
 import { changeDocumentationGrant, removeOrganizationMember } from '@/lib/documentation-grants';
+import { administerAccount } from '@/lib/account-administration';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -66,6 +67,16 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     expect(await prisma.organizationDocumentationGrant.count({ where: { organizationId: orgs[0], role: 'administrator' } })).toBe(1);
     expect(await prisma.activityLog.count({ where: { resourceId: orgs[0], action: 'documentation.grant.change' } })).toBe(3);
     const remainingAdmin = await prisma.organizationDocumentationGrant.findFirstOrThrow({ where: { organizationId: orgs[0], role: 'administrator' } });
+    await expect(administerAccount(ids[0], remainingAdmin.userId, 'viewer')).rejects.toMatchObject({ status: 409 });
+    await expect(administerAccount(ids[0], remainingAdmin.userId, null)).rejects.toMatchObject({ status: remainingAdmin.userId === ids[0] ? 400 : 409 });
+    await expect(administerAccount(ids[2], ids[1], 'viewer')).rejects.toMatchObject({ status: 403 });
+    await expect(administerAccount(ids[0], ids[0], null)).rejects.toMatchObject({ status: 400 });
+    const ownedDocument = await prisma.document.create({ data: { userId: ids[2], title: 'Preserve account-owned Trash', deletedAt: new Date() } });
+    await expect(administerAccount(ids[0], ids[2], null)).rejects.toMatchObject({ status: 409 });
+    expect(await prisma.document.findUnique({ where: { id: ownedDocument.id } })).not.toBeNull();
+    await prisma.document.delete({ where: { id: ownedDocument.id } });
+    expect((await administerAccount(ids[0], ids[2], 'editor'))?.role).toBe('editor');
+    expect((await administerAccount(ids[0], ids[2], 'viewer'))?.role).toBe('viewer');
     const protectedMember = await prisma.organizationMember.findUniqueOrThrow({ where: { organizationId_userId: { organizationId: orgs[0], userId: remainingAdmin.userId } } });
     await expect(removeOrganizationMember(ids[0], protectedMember.id)).rejects.toMatchObject({ status: 409 });
     await changeDocumentationGrant(ids[0], orgs[0], ids[2], 'reader');

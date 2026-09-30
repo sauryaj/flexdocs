@@ -6,9 +6,15 @@ export class DocumentationGrantError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
 
+export async function lockDocumentationAdministration(tx: Prisma.TransactionClient) {
+  // Shared by grant, membership and account changes so cross-organization races cannot strand administrators.
+  await tx.$queryRaw`SELECT pg_advisory_xact_lock(627491, 1)::text`;
+}
+
 export async function changeDocumentationGrant(actorId: string, organizationId: string, targetId: string, role: DocumentationRole | null) {
   if (role !== null && !['reader', 'contributor', 'reviewer', 'administrator'].includes(role)) throw new DocumentationGrantError(400, 'Invalid documentation role');
   return prisma.$transaction(async tx => {
+    await lockDocumentationAdministration(tx);
     // Serialize grant administration per organization, including concurrent last-admin removal.
     await tx.$queryRaw`SELECT "id" FROM "Organization" WHERE "id" = ${organizationId} FOR UPDATE`;
     const organization = await tx.organization.findUnique({ where: { id: organizationId }, select: { id: true } });
@@ -47,6 +53,7 @@ export async function changeDocumentationGrant(actorId: string, organizationId: 
 
 export async function removeOrganizationMember(actorId: string, membershipId: string) {
   return prisma.$transaction(async tx => {
+    await lockDocumentationAdministration(tx);
     const membership = await tx.organizationMember.findUnique({ where: { id: membershipId } });
     if (!membership) return;
     await tx.$queryRaw`SELECT "id" FROM "Organization" WHERE "id" = ${membership.organizationId} FOR UPDATE`;
