@@ -6,11 +6,11 @@ import { type ImmutableFileStore } from '@/lib/immutable-file-store';
 import { publicationManifestSchema, publicationTagsSchema } from '@/lib/publication-manifest';
 import { isDeepStrictEqual } from 'node:util';
 
-export async function publishDocumentReview(actorId: string, reviewId: string, storage: ImmutableFileStore) {
+export async function publishDocumentReview(actorId: string, reviewId: string, storage: ImmutableFileStore, documentId?: string) {
   return prisma.$transaction(async tx => {
     await lockDocumentationAdministration(tx);
     const initial = await tx.documentReview.findUnique({ where: { id: reviewId }, select: { documentId: true } });
-    if (!initial) throw new DocumentWriteError(404, 'Not found');
+    if (!initial || (documentId && initial.documentId !== documentId)) throw new DocumentWriteError(404, 'Not found');
     await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${initial.documentId} FOR UPDATE`;
     const review = await tx.documentReview.findUniqueOrThrow({ where: { id: reviewId }, include: { document: true, sourceRevision: true } });
     const document = review.document;

@@ -32,12 +32,12 @@ export async function submitDocumentReview(actorId: string, documentId: string, 
   }, { timeout: 30_000 });
 }
 
-export async function decideDocumentReview(actorId: string, reviewId: string, decision: 'approved' | 'rejected' | 'withdrawn', feedback?: string) {
+export async function decideDocumentReview(actorId: string, reviewId: string, decision: 'approved' | 'rejected' | 'withdrawn', feedback?: string, documentId?: string) {
   if (!['approved', 'rejected', 'withdrawn'].includes(decision) || (feedback && feedback.length > 10_000)) throw new DocumentWriteError(400, 'Invalid review decision');
   return prisma.$transaction(async tx => {
     await lockDocumentationAdministration(tx);
     const initial = await tx.documentReview.findUnique({ where: { id: reviewId }, select: { documentId: true } });
-    if (!initial) throw new DocumentWriteError(404, 'Not found');
+    if (!initial || (documentId && initial.documentId !== documentId)) throw new DocumentWriteError(404, 'Not found');
     await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${initial.documentId} FOR UPDATE`;
     const review = await tx.documentReview.findUniqueOrThrow({ where: { id: reviewId }, include: { sourceRevision: true, document: true } });
     const actor = await tx.user.findUnique({ where: { id: actorId }, select: { id: true, role: true } });

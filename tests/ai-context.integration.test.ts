@@ -29,6 +29,7 @@ import { readDocumentHistory, createDocumentRevision, restoreDocumentRevision } 
 import { updateDocument } from '@/lib/document-update';
 import { changeDocumentLifecycle } from '@/lib/document-lifecycle';
 import { discoverDocumentTrash } from '@/lib/document-trash';
+import { readDocumentReviews, readReviewedFile } from '@/lib/document-review-read';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -140,7 +141,23 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await expect(submitDocumentReview(ids[0], reviewDraft.id, reviewDraft.updatedAt.toISOString(), [ids[0]], { attachmentIds: [privateUploaderAttachment.id], uploadRoot, storage })).rejects.toMatchObject({ status: 404 });
     expect(await prisma.documentReview.count({ where: { documentId: reviewDraft.id } })).toBe(0);
     await expect(submitDocumentReview(ids[0], reviewDraft.id, reviewDraft.updatedAt.toISOString(), [ids[2]])).rejects.toMatchObject({ status: 400 });
+    const base64ReviewFile = await prisma.attachment.create({ data: { documentId: reviewDraft.id, userId: ids[0], filename: 'empty.bin', mimeType: 'application/octet-stream', size: 0, storageType: 'base64', data: '' } });
+    await expect(submitDocumentReview(ids[0], reviewDraft.id, reviewDraft.updatedAt.toISOString(), [ids[0]], { attachmentIds: [base64ReviewFile.id], uploadRoot: join(uploadRoot, 'not-created-yet'),
+      storage: { read: reference => storage.read(reference), put: async () => { throw new Error('Synthetic disk failure'); } },
+    })).rejects.toMatchObject({ status: 503 });
+    expect(await prisma.documentReview.count({ where: { documentId: reviewDraft.id } })).toBe(0);
+    expect((await prisma.document.findUniqueOrThrow({ where: { id: reviewDraft.id } })).updatedAt).toEqual(reviewDraft.updatedAt);
     const submitted = await submitDocumentReview(ids[0], reviewDraft.id, reviewDraft.updatedAt.toISOString(), [ids[0]], { attachmentIds: [workingAttachment.id], uploadRoot, storage });
+    const reviewList = await readDocumentReviews(ids[0], reviewDraft.id);
+    expect(reviewList.items[0]).toMatchObject({ id: submitted.id, canDecide: true, canWithdraw: true, sourceRevision: { content: reviewDraft.content } });
+    expect(reviewList.items[0]).not.toHaveProperty('attachmentManifest');
+    expect(reviewList.items[0].attachments[0]).not.toHaveProperty('key');
+    expect((await readReviewedFile(ids[0], reviewDraft.id, submitted.id, workingAttachment.id, storage)).bytes).toEqual(originalBytes);
+    await expect(readReviewedFile(ids[1], reviewDraft.id, submitted.id, workingAttachment.id, storage)).rejects.toMatchObject({ status: 404 });
+    await expect(readReviewedFile(ids[0], reviewDraft.id, submitted.id, privateUploaderAttachment.id, storage)).rejects.toMatchObject({ status: 404 });
+    await expect(readDocumentReviews(ids[1], reviewDraft.id)).rejects.toMatchObject({ status: 404 });
+    await expect(decideDocumentReview(ids[0], submitted.id, 'approved', undefined, 'foreign-document')).rejects.toMatchObject({ status: 404 });
+    await expect(publishDocumentReview(ids[0], submitted.id, storage, 'foreign-document')).rejects.toMatchObject({ status: 404 });
     expect(submitted.tags).toEqual(['Frozen review tag']);
     const frozenFile = (submitted.attachmentManifest as unknown[])[0];
     expect(isImmutableFileReference(frozenFile)).toBe(true);
@@ -174,6 +191,14 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     const teamFrozenFile = (teamReview.attachmentManifest as unknown[])[0];
     if (!isImmutableFileReference(teamFrozenFile)) throw new Error('Invalid captured team file');
     expect(await storage.read(teamFrozenFile)).toEqual(originalBytes);
+    expect((await readReviewedFile(ids[0], teamDraft.id, teamReview.id, teamFile.id, storage)).bytes).toEqual(originalBytes);
+    await expect(readReviewedFile(ids[1], teamDraft.id, teamReview.id, teamFile.id, {
+      put: bytes => storage.put(bytes), read: async reference => {
+        const bytes = await storage.read(reference);
+        await prisma.organizationMember.deleteMany({ where: { organizationId: orgs[1], userId: ids[1] } });
+        return bytes;
+      },
+    })).rejects.toMatchObject({ status: 404 });
     await expect(decideDocumentReview(ids[0], teamReview.id, 'approved')).rejects.toMatchObject({ status: 404 });
     await prisma.organizationMember.deleteMany({ where: { organizationId: orgs[1], userId: ids[1] } });
     await expect(decideDocumentReview(ids[1], teamReview.id, 'approved')).rejects.toMatchObject({ status: 404 });

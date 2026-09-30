@@ -94,6 +94,22 @@ Migration `20260922084627_invitation_organization` adds the optional organizatio
 The development server also now keeps maintenance imports inside the Node runtime. Development-only CSP permits the eval-based Next.js refresh runtime; production does not permit `unsafe-eval`.
 
 The invitation acceptance transaction claims the link before checking the account. This serializes competing requests and ensures that the losing request reports an already-used link, rather than incorrectly requiring sign-in after the winning request creates the account. Failed identity checks roll back the claim.
+## Review and publication APIs
+
+These routes require an explicitly lifecycle-enabled document; they do not convert legacy records or broaden sharing. Global RBAC and fresh document capabilities both apply.
+
+| Route | Contract |
+| --- | --- |
+| `GET /api/documents/[id]/reviews?page=0` | Current working-copy access; 25 frozen versions per page, counts, feedback and current action capabilities. Readers of publications cannot access internal reviews. |
+| `POST /api/documents/[id]/reviews` | Strict JSON: `expectedUpdatedAt` (ISO timestamp), `reviewerIds` (1–10 IDs), optional `attachmentIds` (up to 10). Submit current version and copy selected bytes into immutable storage. |
+| `POST /api/documents/[id]/reviews/[reviewId]` | Strict JSON: `decision` (`approved`, `rejected`, `withdrawn`), optional `feedback` (up to 10,000 characters). Approval/rejection requires a currently authorized assigned reviewer; withdrawal requires the currently authorized submitter. |
+| `POST /api/documents/[id]/reviews/[reviewId]/publish` | Publish the exact approved review after rechecking actor, approver, version and attachment integrity. Returns snapshot ID/time and `replayed`, without storage keys. |
+| `GET /api/documents/[id]/reviews/[reviewId]/attachments/[attachmentId]` | Download selected frozen bytes with current working-copy access, including an access recheck after file I/O. Private/no-store/nosniff; never exposes the storage key. |
+
+Nested decisions, publication and downloads enforce the document/review relationship. Approval alone does not publish. Identical decisions replay only for the same currently authorized actor and feedback; conflicting decisions return 409. Publication retries return the existing immutable outcome and do not reset newer working edits or reselect an old publication after lifecycle recovery. Submission currently uses version conflicts and a single pending review, without durable retry keys; after an uncertain response, refresh reviews and the document before retrying.
+
+Selected files retain the existing 10 MiB per-file and 50 MiB per-review limits. Immutable storage write failures return 503 and roll back review/revision/lifecycle/audit database changes; an interrupted transaction can still leave unreferenced objects, reported by the read-only storage audit. Missing or corrupt frozen downloads return 503. Review responses expose frozen attachment metadata, not raw manifests or filesystem paths. Review queue, reviewer selection and approval/publication UI remain pending.
+
 ## Dedicated document lifecycle API
 
 `POST /api/documents/[id]/lifecycle` accepts `{ "action": "archive" | "unarchive" | "trash" | "restore", "expectedUpdatedAt": "<ISO timestamp>" }`. Lifecycle-enabled records require the current timestamp (428 if absent, 409 if stale). Current document lifecycle capability is required in addition to the global delete permission. Team provenance or a global administrator role alone is insufficient. The response contains `document` and `changed`.
