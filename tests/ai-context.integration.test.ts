@@ -9,6 +9,7 @@ vi.mock('@/lib/prisma', async () => {
 import { prisma } from '@/lib/prisma';
 import { POST } from '@/app/api/ai/ask/route';
 import { resolveDocumentCapabilities } from '@/lib/document-capability-service';
+import { changeDocumentationGrant } from '@/lib/documentation-grants';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -49,6 +50,21 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     expect((await resolveDocumentCapabilities(teamDocument, { id: ids[1], role: 'editor' })).edit).toBe(true);
     await prisma.organizationMember.deleteMany({ where: { userId: ids[1], organizationId: orgs[0] } });
     expect((await resolveDocumentCapabilities(teamDocument, { id: ids[1], role: 'editor' })).edit).toBe(false);
+    await expect(changeDocumentationGrant(ids[2], orgs[0], ids[2], 'reader')).rejects.toMatchObject({ status: 403 });
+    await expect(changeDocumentationGrant(ids[0], orgs[0], ids[2], 'contributor')).rejects.toMatchObject({ status: 400 });
+    await expect(changeDocumentationGrant(ids[0], orgs[0], ids[1], 'administrator')).rejects.toMatchObject({ status: 400 });
+    await changeDocumentationGrant(ids[0], orgs[0], ids[0], 'administrator');
+    await expect(changeDocumentationGrant(ids[0], orgs[0], ids[0], null)).rejects.toMatchObject({ status: 409 });
+    await prisma.organizationMember.create({ data: { userId: ids[1], organizationId: orgs[0] } });
+    await changeDocumentationGrant(ids[0], orgs[0], ids[1], 'administrator');
+    const removals = await Promise.allSettled([
+      changeDocumentationGrant(ids[0], orgs[0], ids[0], null),
+      changeDocumentationGrant(ids[0], orgs[0], ids[1], null),
+    ]);
+    expect(removals.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect(removals.filter(result => result.status === 'rejected')).toHaveLength(1);
+    expect(await prisma.organizationDocumentationGrant.count({ where: { organizationId: orgs[0], role: 'administrator' } })).toBe(1);
+    expect(await prisma.activityLog.count({ where: { resourceId: orgs[0], action: 'documentation.grant.change' } })).toBe(3);
     await prisma.organizationMember.deleteMany({ where: { userId: ids[2] } });
     state.user = { id: ids[2], role: 'viewer' };
     const callsBefore = provider.mock.calls.length;
@@ -64,6 +80,7 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.flexibleAsset.deleteMany({ where: { userId: { in: ids } } });
     await prisma.organizationMember.deleteMany({ where: { userId: { in: ids } } });
     await prisma.organizationDocumentationGrant.deleteMany({ where: { userId: { in: ids } } });
+    await prisma.activityLog.deleteMany({ where: { userId: { in: ids } } });
     await prisma.organization.deleteMany({ where: { id: { in: orgs } } });
     await prisma.user.deleteMany({ where: { id: { in: ids } } });
     await prisma.$disconnect();
