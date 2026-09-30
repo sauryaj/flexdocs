@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { documentReadWhere } from '@/lib/document-access';
+import { discoverDocuments } from '@/lib/document-discovery';
 import { auth } from '@/lib/auth';
 import { getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
 
@@ -27,6 +27,7 @@ export async function GET(req: Request) {
   if (!q) {
     return NextResponse.json({ error: 'Query parameter "q" is required' }, { status: 400 });
   }
+  if (q.length > 500) return NextResponse.json({ error: 'Search is limited to 500 characters' }, { status: 400 });
 
   const scope = await getOrgScope(user.id, user.role);
   const orgWhere = scopeOrgWhere(scope, organizationId);
@@ -37,13 +38,7 @@ export async function GET(req: Request) {
   const [
     documents, passwords, domains, assets, checklists, servers, tickets, organizations, certificates, networks,
   ] = await Promise.all([
-    // Documents: staff search their own vault; clients search org-visible docs
-    prisma.document.findMany({
-      where: { deletedAt: null, AND: [documentReadWhere(user.id, scope), organizationId ? orgWhere : {}, { OR: [{ title: contains }, { content: contains }] }] },
-      take: MAX_PER_TYPE * 4,
-      orderBy: { updatedAt: 'desc' },
-      select: { id: true, title: true, content: true, updatedAt: true },
-    }),
+    discoverDocuments(user.id, { query: q, organizationId, page: 0, limit: MAX_PER_TYPE * 4 }).then(result => result.items),
     // Passwords mirror the vault list scoping
     prisma.password.findMany({
       where: isStaff

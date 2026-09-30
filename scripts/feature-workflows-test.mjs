@@ -51,6 +51,18 @@ try {
   const publishedDetail = await call(`/documents/${team.id}`, sessions.viewer);
   check(publishedDetail.status === 200 && publishedDetail.body.content === 'published team body' && publishedDetail.body.canEdit === false && !('publishedSnapshot' in publishedDetail.body), 'HTTP reader receives safe frozen representation');
   check((await mcp(sessions.viewer, 'flexdocs_get_document', { id: team.id })).content === 'published team body', 'MCP reader receives frozen representation');
+  const teamResults = await call('/documents?q=published%20team%20body&limit=1', sessions.viewer);
+  check(teamResults.status === 200 && teamResults.body.total === 1 && teamResults.body.items[0].id === team.id && teamResults.body.items[0].content === 'published team body', 'reader list matches frozen content and counts');
+  check((await call('/documents?q=unpublished%20team%20body', sessions.viewer)).body.total === 0, 'reader search cannot match unpublished content');
+  check((await call('/documents?q=unpublished%20team%20body', sessions.editor)).body.items[0]?.id === team.id, 'contributor search matches working content');
+  check((await call('/documents?q=published%20team%20body', sessions.admin)).body.total === 0, 'global admin list cannot discover team content without grant');
+  const globalPublished = await call('/search?q=published%20team%20body', sessions.viewer);
+  check(globalPublished.body.groups.find(group => group.type === 'documents')?.items.some(item => item.id === team.id), 'global search discovers frozen publication');
+  const globalHidden = await call('/search?q=unpublished%20team%20body', sessions.viewer);
+  check(!globalHidden.body.groups.find(group => group.type === 'documents')?.items.some(item => item.id === team.id), 'global search cannot match working team body for reader');
+  check(!(await mcp(sessions.viewer, 'flexdocs_search', { query: 'unpublished' })).documents.some(item => item.id === team.id), 'MCP search cannot match working team body for reader');
+  check((await mcp(sessions.viewer, 'flexdocs_search', { query: 'published' })).documents.some(item => item.id === team.id && item.excerpt === 'published team body'), 'MCP search returns frozen excerpt');
+  check((await mcp(sessions.viewer, 'flexdocs_org_pulse', { organizationId: orgs[0] })).documents === 2, 'MCP counts include authorized publication');
   check((await call(`/documents/${team.id}`, sessions.editor)).body.content === 'unpublished team body', 'HTTP contributor receives working representation');
   check((await call(`/documents/${team.id}`, sessions.admin)).status === 404, 'HTTP global admin without grant cannot read team document');
   check((await mcp(sessions.admin, 'flexdocs_get_document', { id: team.id })).error === 'not found', 'MCP global admin without grant cannot read team document');

@@ -21,6 +21,7 @@ import { publishDocumentReview } from '@/lib/document-publication';
 import { readPublishedDocument, readPublishedFile } from '@/lib/published-document-read';
 import { readDocumentDetail } from '@/lib/document-detail-read';
 import { GET as getDocument } from '@/app/api/documents/[id]/route';
+import { discoverDocuments } from '@/lib/document-discovery';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -195,6 +196,27 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.organizationMember.create({ data: { userId: ids[2], organizationId: orgs[1] } });
     await prisma.organizationDocumentationGrant.create({ data: { userId: ids[2], organizationId: orgs[1], role: 'reader' } });
     const readerView = await readPublishedDocument(ids[2], teamDraft.id);
+    const discovered = await discoverDocuments(ids[2], { query: 'Frozen team version', page: 0, limit: 1 });
+    expect(discovered.total).toBe(1);
+    expect(discovered.items[0]).toMatchObject({ id: teamDraft.id, content: 'Frozen team version', representation: 'published' });
+    expect(discovered.items[0]).not.toHaveProperty('publishedSnapshot');
+    expect(discovered.items[0]).not.toHaveProperty('userId');
+    expect((await discoverDocuments(ids[2], { query: 'New unpublished working body', page: 0, limit: 10 })).total).toBe(0);
+    expect((await discoverDocuments(ids[2], { query: 'Frozen team version', page: 1, limit: 1 })).items).toEqual([]);
+    expect((await discoverDocuments(ids[0], { query: 'New unpublished working body', page: 0, limit: 10 })).items[0]).toMatchObject({ id: teamDraft.id, representation: 'working' });
+    expect((await discoverDocuments(ids[2], { query: 'Frozen team version', organizationId: orgs[0], page: 0, limit: 10 })).total).toBe(0);
+    const olderTeam = await prisma.document.create({ data: { userId: ids[0], organizationId: orgs[1], ownershipKind: 'organization', lifecycleState: 'draft', title: 'Working title only', content: 'Unpublished older body', category: 'working-category', isPinned: true } });
+    const olderRevision = await prisma.documentRevision.create({ data: { documentId: olderTeam.id, userId: ids[0], version: 1, title: 'Older publication', content: 'Frozen team version alternate', category: 'frozen-category' } });
+    const olderSnapshot = await prisma.documentPublication.create({ data: { documentId: olderTeam.id, sourceRevisionId: olderRevision.id, title: olderRevision.title, content: olderRevision.content, category: olderRevision.category, tags: [], publisherId: ids[1], publishedAt: new Date('2000-01-01T00:00:00Z') } });
+    await prisma.document.update({ where: { id: olderTeam.id }, data: { publishedSnapshotId: olderSnapshot.id } });
+    const sortedPublications = await discoverDocuments(ids[2], { query: 'Frozen team version', page: 0, limit: 1 });
+    expect(sortedPublications.total).toBe(2);
+    expect(sortedPublications.hasMore).toBe(true);
+    expect(sortedPublications.items[0].id).toBe(teamDraft.id);
+    const olderPage = await discoverDocuments(ids[2], { query: 'Frozen team version', page: 1, limit: 1 });
+    expect(olderPage.items[0]).toMatchObject({ id: olderTeam.id, title: 'Older publication', category: 'frozen-category', isPinned: false, updatedAt: olderSnapshot.publishedAt });
+    expect((await discoverDocuments(ids[2], { category: 'working-category', page: 0, limit: 10 })).total).toBe(0);
+    expect((await discoverDocuments(ids[2], { category: 'frozen-category', page: 0, limit: 10 })).total).toBe(1);
     state.user = { id: ids[2], role: 'viewer' };
     const detailResponse = await getDocument(new Request('http://localhost/api/documents/' + teamDraft.id), { params: Promise.resolve({ id: teamDraft.id }) });
     expect(detailResponse.status).toBe(200);
@@ -216,6 +238,7 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.organizationDocumentationGrant.deleteMany({ where: { userId: ids[0], organizationId: orgs[1] } });
     await expect(readPublishedDocument(ids[0], teamDraft.id)).rejects.toMatchObject({ status: 404 });
     await expect(readDocumentDetail(ids[0], teamDraft.id)).rejects.toMatchObject({ status: 404 });
+    expect((await discoverDocuments(ids[0], { query: 'New unpublished working body', page: 0, limit: 10 })).total).toBe(0);
     await prisma.organizationDocumentationGrant.create({ data: { userId: ids[0], organizationId: orgs[1], role: 'contributor' } });
     const revokingStorage = { put: storage.put.bind(storage), read: async (reference: Parameters<typeof storage.read>[0]) => {
       const bytes = await storage.read(reference);
@@ -245,10 +268,13 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.document.update({ where: { id: privateDraft.id }, data: { organizationId: orgs[1], visibility: 'org', content: 'Unpublished personal edits', lifecycleState: 'draft' } });
     expect((await readPublishedDocument(ids[2], privateDraft.id)).content).toBe('Changed after approval');
     expect(await readDocumentDetail(ids[2], privateDraft.id)).toMatchObject({ content: 'Changed after approval', representation: 'published', canEdit: false });
+    expect((await discoverDocuments(ids[2], { query: 'Changed after approval', page: 0, limit: 10 })).items.some(item => item.id === privateDraft.id && item.representation === 'published')).toBe(true);
+    expect((await discoverDocuments(ids[2], { query: 'Unpublished personal edits', page: 0, limit: 10 })).total).toBe(0);
     expect(await readDocumentDetail(ids[0], privateDraft.id)).toMatchObject({ content: 'Unpublished personal edits', representation: 'working', canEdit: true });
     await prisma.document.update({ where: { id: privateDraft.id }, data: { visibility: 'private' } });
     await expect(readPublishedDocument(ids[2], privateDraft.id)).rejects.toMatchObject({ status: 404 });
     await expect(readDocumentDetail(ids[2], privateDraft.id)).rejects.toMatchObject({ status: 404 });
+    expect((await discoverDocuments(ids[2], { query: 'Changed after approval', page: 0, limit: 10 })).items.some(item => item.id === privateDraft.id)).toBe(false);
     const reviewInventory = spawnSync(process.execPath, ['node_modules/tsx/dist/cli.mjs', 'scripts/storage-inventory.ts'], { env: { ...process.env, UPLOAD_DIR: uploadRoot }, encoding: 'utf8' });
     expect([0, 2]).toContain(reviewInventory.status);
     const reviewInventoryReport = JSON.parse(reviewInventory.stdout);

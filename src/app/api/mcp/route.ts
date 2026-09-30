@@ -3,7 +3,7 @@ import { extractAuth } from '@/lib/api-keys';
 import { canUseMcpTool } from '@/lib/mcp-access';
 import { prisma } from '@/lib/prisma';
 import { getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
-import { documentReadWhere } from '@/lib/document-access';
+import { discoverDocuments } from '@/lib/document-discovery';
 import { readDocumentDetail } from '@/lib/document-detail-read';
 import { DocumentWriteError } from '@/lib/document-write';
 
@@ -36,24 +36,17 @@ function rpcError(id: RpcRequest['id'], code: number, message: string) {
 async function toolSearch(user: { id: string; role: string }, args: Record<string, unknown>) {
   const q = String(args.query ?? '').trim();
   if (!q) return { error: 'query is required' };
+  if (q.length > 500) return { error: 'query is limited to 500 characters' };
   const organizationId = args.organizationId ? String(args.organizationId) : undefined;
 
   const scope = await getOrgScope(user.id, user.role);
   const orgWhere = scopeOrgWhere(scope, organizationId);
   const terms = q.split(/\s+/).filter((t: string) => t.length > 2).slice(0, 8);
-  const docContains = terms.length
-    ? { OR: terms.flatMap((t: string) => [{ title: { contains: t, mode: 'insensitive' as const } }, { content: { contains: t, mode: 'insensitive' as const } }]) }
-    : undefined;
   const firstTerm = terms[0] ?? q;
   const simpleContains = { contains: firstTerm, mode: 'insensitive' as const };
 
   const [documents, servers, assets] = await Promise.all([
-    prisma.document.findMany({
-      where: { AND: [documentReadWhere(user.id, scope), { isArchived: false,
-        ...(organizationId ? { organizationId } : {}), ...docContains }] },
-      select: { id: true, title: true, category: true, content: true },
-      take: 8,
-    }),
+    discoverDocuments(user.id, { terms, organizationId, excludeArchived: true, page: 0, limit: 8 }).then(result => result.items),
     prisma.server.findMany({
       where: { ...orgWhere, OR: [{ name: simpleContains }, { hostname: simpleContains }] },
       select: { id: true, name: true, hostname: true, ipAddress: true },
@@ -103,7 +96,7 @@ async function toolOrgPulse(user: { id: string; role: string }, args: Record<str
     prisma.domain.count({ where: { organizationId } }),
     prisma.server.count({ where: { organizationId } }),
     prisma.ticket.count({ where: { organizationId, status: { in: ['open', 'pending'] } } }),
-    prisma.document.count({ where: { ...documentReadWhere(user.id, scope), organizationId, isArchived: false } }),
+    discoverDocuments(user.id, { organizationId, excludeArchived: true, page: 0, limit: 1 }).then(result => result.total),
   ]);
   return { organizationId, domains, servers, openTickets: tickets, documents: docs };
 }
