@@ -12,6 +12,23 @@ Administrative portable exports include Trash and preserve `deletedAt` on import
 
 The local preview on port 3101 was verified against the disposable `flexdocs-features-db` PostgreSQL database at `127.0.0.1:55432`, with Redis at port 56379. The repository `.env` defaults to database port 5432, which may be a historical tunnel. Do not assume an unqualified `npm run dev` uses the disposable database; pass the intended connection explicitly. Production database identity and backups require separate verification.
 
+## Team working attachments
+
+Explicitly team-owned documents use document-scoped working-file routes. Current contributors/reviewers/documentation administrators with global write permission can maintain files across uploaders; published readers cannot list or download working bytes. Legacy personal/unattached routes remain unchanged and cannot bypass team permissions through uploader identity.
+
+| Route | Contract |
+| --- | --- |
+| `GET /api/documents/[id]/files?page=0` | Current working-copy access, non-trashed team document; archived maintainers retain read-only access. 25 metadata records per page, no bytes or paths. |
+| `POST /api/documents/[id]/files` | Bounded multipart `file`, optional matching `documentId`; required ISO `X-Document-Version` header. Maximum 10 MiB. Current edit capability is rechecked under the shared permission lock and document row lock. Returns safe attachment metadata and new `updatedAt`. |
+| `GET /api/documents/[id]/files/[attachmentId]` | Exact working bytes, matching parent and current working access; rechecks permission and record after I/O. Private/no-store/nosniff download; unavailable/corrupt storage returns 503. |
+| `DELETE /api/documents/[id]/files/[attachmentId]` | Strict bounded JSON `{ expectedUpdatedAt }`; current edit capability and exact version. Preserves bytes in immutable storage before removing the working reference. Returns `bytesRetained` and new `updatedAt`. |
+
+Upload/removal advances the document version, returns it to draft and withdraws pending reviews with an audit event. Approved old reviews cannot publish the new working version. Current publication pointers and frozen review/publication bytes remain intact. Files are stored with the immutable local adapter; legacy filesystem/base64 bytes use the same bounded root/symlink/size checks when reviewed or downloaded. Content-addressed objects also have SHA-256 integrity checks.
+
+The editor locks during a change while the separate working-files panel keeps upload cancellation reachable. Archived working-copy details expose downloads without upload/removal controls; published readers never receive that panel. Unsaved document edits and review feedback block file mutations. Failures/cancellation warn about uncertain outcomes and require saved-document reload before another mutation. Refreshing the file list alone does not clear this guard. Failed reads show an error instead of a successful empty list; switching documents aborts/ignores old requests. Download failures can be retried independently.
+
+Repeated writes with the same stale version are rejected, but durable upload retry keys remain pending; a manual re-upload after refreshing can still create another attachment. Physical bytes are retained, including unreferenced objects after rollback/removal; there is no automatic purge. Use the read-only storage audit and a separately authorized reference-aware cleanup policy. Working file changes are not a complete per-version attachment history or portable backup format.
+
 ## MCP authorization
 
 Generic API throttling uses separate read (GET/HEAD: 400) and write (other methods: 60) counters per IP/path over the existing 15-minute window. Reading a list no longer consumes its write budget. Redis keys use `ratelimit:api:read:<IP>:<PATH>` and `ratelimit:api:write:<IP>:<PATH>`. Existing mixed counters expire naturally; deploying this change starts fresh generic budgets once. Dedicated authentication counters are unchanged. This does not change how the deployment establishes trusted client IPs.

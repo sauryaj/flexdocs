@@ -32,6 +32,7 @@ import { discoverDocumentTrash } from '@/lib/document-trash';
 import { readDocumentReviews, readReviewedFile } from '@/lib/document-review-read';
 import { discoverDocumentReviewers } from '@/lib/document-reviewers';
 import { discoverReviewFiles } from '@/lib/document-review-files';
+import { listTeamDocumentFiles, readTeamDocumentFile, uploadTeamDocumentFile, deleteTeamDocumentFile } from '@/lib/team-document-files';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -359,7 +360,47 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await expect(readPublishedDocument(ids[2], privateDraft.id)).rejects.toMatchObject({ status: 404 });
     await expect(readDocumentDetail(ids[2], privateDraft.id)).rejects.toMatchObject({ status: 404 });
     expect((await discoverDocuments(ids[2], { query: 'Changed after approval', page: 0, limit: 10 })).items.some(item => item.id === privateDraft.id)).toBe(false);
+    const fileDocument = await prisma.document.create({ data: { userId: ids[2], organizationId: orgs[1], ownershipKind: 'organization', lifecycleState: 'draft', title: 'Team working files' } });
+    await expect(uploadTeamDocumentFile(ids[0], fileDocument.id, undefined, { bytes: originalBytes, filename: 'team.bin', mimeType: 'application/octet-stream' }, { uploadRoot })).rejects.toMatchObject({ status: 428 });
+    await expect(uploadTeamDocumentFile(ids[2], fileDocument.id, fileDocument.updatedAt.toISOString(), { bytes: originalBytes, filename: 'denied.bin', mimeType: 'application/octet-stream' }, { uploadRoot })).rejects.toMatchObject({ status: 404 });
+    const fileAttempts = await Promise.allSettled([0, 1].map(() => uploadTeamDocumentFile(ids[0], fileDocument.id, fileDocument.updatedAt.toISOString(), { bytes: originalBytes, filename: 'team.bin', mimeType: 'application/octet-stream' }, { uploadRoot })));
+    expect(fileAttempts.filter(result => result.status === 'fulfilled')).toHaveLength(1);
+    expect(fileAttempts.filter(result => result.status === 'rejected').map(result => result.status === 'rejected' && result.reason.status)).toEqual([409]);
+    const teamWorking = (await listTeamDocumentFiles(ids[1], fileDocument.id)).items[0];
+    expect(teamWorking).not.toHaveProperty('filePath'); expect(teamWorking).not.toHaveProperty('data');
+    expect((await listTeamDocumentFiles(ids[1], fileDocument.id, 1)).items).toEqual([]);
+    await expect(listTeamDocumentFiles(ids[2], fileDocument.id)).rejects.toMatchObject({ status: 404 });
+    expect((await readTeamDocumentFile(ids[1], fileDocument.id, teamWorking.id, { uploadRoot })).bytes).toEqual(originalBytes);
+    await expect(readTeamDocumentFile(ids[1], teamDraft.id, teamWorking.id, { uploadRoot })).rejects.toMatchObject({ status: 404 });
+    const fileVersion = (await prisma.document.findUniqueOrThrow({ where: { id: fileDocument.id } })).updatedAt.toISOString();
+    await expect(uploadTeamDocumentFile(ids[0], fileDocument.id, fileVersion, { bytes: originalBytes, filename: 'failed.bin', mimeType: 'application/octet-stream' }, { uploadRoot,
+      storage: { read: reference => storage.read(reference), put: async () => { throw new Error('Synthetic storage failure'); } },
+    })).rejects.toMatchObject({ status: 503 });
+    expect((await prisma.document.findUniqueOrThrow({ where: { id: fileDocument.id } })).updatedAt.toISOString()).toBe(fileVersion);
+    expect(await prisma.attachment.count({ where: { documentId: fileDocument.id } })).toBe(1);
+    const fileReview = await submitDocumentReview(ids[0], fileDocument.id, fileVersion, [ids[1]], { attachmentIds: [teamWorking.id], uploadRoot, storage });
+    const changedFile = await uploadTeamDocumentFile(ids[1], fileDocument.id, fileReview.submittedAt.toISOString(), { bytes: Buffer.from('new'), filename: 'new.bin', mimeType: 'application/octet-stream' }, { uploadRoot });
+    expect((await prisma.documentReview.findUniqueOrThrow({ where: { id: fileReview.id } })).decision).toBe('withdrawn');
+    expect((await readReviewedFile(ids[0], fileDocument.id, fileReview.id, teamWorking.id, storage)).bytes).toEqual(originalBytes);
+    await expect(deleteTeamDocumentFile(ids[1], fileDocument.id, teamWorking.id, changedFile.updatedAt.toISOString(), { uploadRoot,
+      storage: { read: reference => storage.read(reference), put: async () => { throw new Error('Synthetic retention failure'); } },
+    })).rejects.toMatchObject({ status: 503 });
+    expect(await prisma.attachment.findUnique({ where: { id: teamWorking.id } })).not.toBeNull();
+    expect((await prisma.document.findUniqueOrThrow({ where: { id: fileDocument.id } })).updatedAt).toEqual(changedFile.updatedAt);
+    await deleteTeamDocumentFile(ids[1], fileDocument.id, teamWorking.id, changedFile.updatedAt.toISOString());
+    await expect(readTeamDocumentFile(ids[0], fileDocument.id, teamWorking.id, { uploadRoot })).rejects.toMatchObject({ status: 404 });
+    expect((await readReviewedFile(ids[0], fileDocument.id, fileReview.id, teamWorking.id, storage)).bytes).toEqual(originalBytes);
+    await expect(readTeamDocumentFile(ids[1], fileDocument.id, changedFile.attachment.id, { uploadRoot, readBytes: async attachment => {
+      await prisma.organizationMember.delete({ where: { organizationId_userId: { organizationId: orgs[1], userId: ids[1] } } });
+      return Buffer.from('new');
+    } })).rejects.toMatchObject({ status: 404 });
+    await prisma.organizationMember.create({ data: { userId: ids[1], organizationId: orgs[1] } });
     const historyDocument = await prisma.document.create({ data: { userId: ids[2], organizationId: orgs[1], ownershipKind: 'organization', lifecycleState: 'draft', title: 'Current team working history', content: 'Current internal working content' } });
+    const archivedFiles = await prisma.document.update({ where: { id: fileDocument.id }, data: { isArchived: true, lifecycleState: 'archived' } });
+    expect((await listTeamDocumentFiles(ids[1], fileDocument.id)).items).toHaveLength(1);
+    expect((await readTeamDocumentFile(ids[1], fileDocument.id, changedFile.attachment.id, { uploadRoot })).bytes).toEqual(Buffer.from('new'));
+    await expect(listTeamDocumentFiles(ids[2], fileDocument.id)).rejects.toMatchObject({ status: 404 });
+    await expect(deleteTeamDocumentFile(ids[1], fileDocument.id, changedFile.attachment.id, archivedFiles.updatedAt.toISOString())).rejects.toMatchObject({ status: 404 });
     const oldInternal = await prisma.documentRevision.create({ data: { documentId: historyDocument.id, userId: ids[1], version: 1, title: 'Old internal title', content: 'Old internal history content', category: 'general' } });
     const publishedRevision = await prisma.documentRevision.create({ data: { documentId: historyDocument.id, userId: ids[1], version: 2, title: 'History publication', content: 'Frozen history reader content', category: 'general' } });
     const historyPublication = await prisma.documentPublication.create({ data: { documentId: historyDocument.id, sourceRevisionId: publishedRevision.id, publisherId: ids[1], title: publishedRevision.title, content: publishedRevision.content, category: 'general', tags: [] } });
@@ -467,4 +508,4 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.$disconnect();
     rmSync(uploadRoot, { recursive: true });
   }
-});
+}, 30_000);

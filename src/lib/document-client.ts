@@ -1,5 +1,5 @@
 export async function uploadDocumentAttachment(documentId: string, file: File, options: {
-  signal?: AbortSignal; onProgress?: (percent: number) => void;
+  signal?: AbortSignal; onProgress?: (percent: number) => void; teamVersion?: string;
 } = {}): Promise<void> {
   if (file.size > 10 * 1024 * 1024) throw new Error('Maximum file size is 10 MiB. Select a smaller file.');
   if (options.signal?.aborted) throw new Error('Upload cancelled before sending.');
@@ -11,7 +11,8 @@ export async function uploadDocumentAttachment(documentId: string, file: File, o
       options.signal?.removeEventListener('abort', abort);
       if (error) reject(error); else resolve();
     };
-    xhr.open('POST', '/api/attachments');
+    xhr.open('POST', options.teamVersion ? `/api/documents/${encodeURIComponent(documentId)}/files` : '/api/attachments');
+    if (options.teamVersion) xhr.setRequestHeader('X-Document-Version', options.teamVersion);
     xhr.timeout = 120_000;
     xhr.upload.onprogress = event => {
       if (event.lengthComputable) options.onProgress?.(Math.min(100, Math.round(event.loaded / event.total * 100)));

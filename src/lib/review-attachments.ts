@@ -1,10 +1,9 @@
 import { Prisma } from '@prisma/client';
-import { constants } from 'node:fs';
-import { lstat, open, realpath } from 'node:fs/promises';
-import { isAbsolute, relative, sep } from 'node:path';
+import { isAbsolute } from 'node:path';
 import { MAX_ATTACHMENT_BYTES } from '@/lib/attachment-upload';
 import { type ImmutableFileStore } from '@/lib/immutable-file-store';
 import { DocumentWriteError } from '@/lib/document-write';
+import { readWorkingAttachmentBytes } from '@/lib/working-attachment-bytes';
 
 export interface ReviewAttachmentSelection { attachmentIds: string[]; storage: ImmutableFileStore; uploadRoot: string }
 
@@ -19,31 +18,7 @@ export async function freezeReviewAttachments(tx: Prisma.TransactionClient, docu
   const manifest = [];
   for (const attachment of attachments) {
     if (attachment.size < 0 || attachment.size > MAX_ATTACHMENT_BYTES) throw new DocumentWriteError(413, 'Maximum review file size is 10 MiB');
-    let bytes: Buffer;
-    if (attachment.storageType === 'base64' && attachment.data !== null) {
-      if (attachment.data.length > 14_000_000 || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(attachment.data)) throw new DocumentWriteError(409, 'Invalid stored attachment encoding');
-      bytes = Buffer.from(attachment.data, 'base64');
-    } else if (attachment.storageType === 'filesystem' && attachment.filePath) {
-      const root = await realpath(selection.uploadRoot);
-      if ((await lstat(attachment.filePath)).isSymbolicLink()) throw new DocumentWriteError(409, 'Attachment symlinks cannot be published');
-      const path = await realpath(attachment.filePath);
-      const rel = relative(root, path);
-      if (rel === '..' || rel.startsWith(`..${sep}`) || isAbsolute(rel)) throw new DocumentWriteError(409, 'Attachment is outside the upload root');
-      const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-      try {
-        const stat = await file.stat();
-        if (!stat.isFile() || stat.size !== attachment.size) throw new DocumentWriteError(409, 'Attachment size mismatch');
-        const buffer = Buffer.alloc(attachment.size + 1);
-        let length = 0;
-        while (length < buffer.length) {
-          const result = await file.read(buffer, length, buffer.length - length, null);
-          if (!result.bytesRead) break;
-          length += result.bytesRead;
-        }
-        bytes = buffer.subarray(0, length);
-      } finally { await file.close(); }
-    } else throw new DocumentWriteError(409, 'Attachment storage is unavailable');
-    if (bytes.length !== attachment.size) throw new DocumentWriteError(409, 'Attachment size mismatch');
+    const bytes = await readWorkingAttachmentBytes(attachment, selection.uploadRoot);
     let reference;
     try { reference = await selection.storage.put(bytes); }
     catch { throw new DocumentWriteError(503, 'Unable to preserve reviewed attachment bytes; review was not submitted'); }

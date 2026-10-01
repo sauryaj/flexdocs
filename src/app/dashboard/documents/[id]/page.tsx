@@ -25,6 +25,7 @@ import { formatDate } from '@/lib/utils';
 import { ConfirmDialog } from '@/components/UIComponents';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { PublishedAttachments } from '@/components/PublishedAttachments';
+import { TeamDocumentFiles } from '@/components/TeamDocumentFiles';
 import { DocumentLifecycleControls } from '@/components/DocumentLifecycleControls';
 import { DocumentReviewPanel } from '@/components/DocumentReviewPanel';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
@@ -51,6 +52,7 @@ interface Document {
   canManageLifecycle?: boolean;
   canDuplicate?: boolean;
   ownershipKind?: 'personal' | 'organization';
+  representation?: 'working' | 'published';
   lifecycleState?: string | null;
   title: string;
   content: string;
@@ -505,12 +507,14 @@ function DocumentEditor({ documentId }: { documentId: string }) {
         onBusyChange={setWorkflowBusy}
         onChanged={action => action === 'trash' ? router.push('/dashboard/documents') : setLoadAttempt(value => value + 1)} />}
       <MarkdownPreview content={doc.content} />
+      {doc.ownershipKind === 'organization' && doc.representation === 'working' && <TeamDocumentFiles key={`${doc.id}:${doc.updatedAt}`} documentId={doc.id} updatedAt={doc.updatedAt}
+        readOnly blocked={workflowBusy} onBusyChange={setWorkflowBusy} onChanged={() => setLoadAttempt(value => value + 1)} />}
       {doc.snapshotId && <PublishedAttachments key={`${doc.id}:${doc.snapshotId}`} documentId={doc.id} snapshotId={doc.snapshotId} files={doc.attachments || []} />}
     </fieldset>
   );
 
   return (
-    <fieldset disabled={workflowBusy} className="max-w-7xl mx-auto space-y-6 min-w-0 w-full">
+    <><fieldset disabled={workflowBusy} className="max-w-7xl mx-auto space-y-6 min-w-0 w-full">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-4">
@@ -904,5 +908,8 @@ function DocumentEditor({ documentId }: { documentId: string }) {
         message="This document will be hidden from normal views. You can restore it, including its history and attachments, from Trash."
       />
     </fieldset>
+    {doc.ownershipKind === 'organization' && <TeamDocumentFiles key={`${doc.id}:${doc.updatedAt}`} documentId={doc.id} updatedAt={doc.updatedAt}
+      blocked={saving || workflowBusy || hasUnsavedChanges || reviewFeedbackDirty || !!conflict || !!draft.revoked || !!recoveryPreview}
+      onBusyChange={setWorkflowBusy} onChanged={() => setLoadAttempt(value => value + 1)} />}</>
   );
 }

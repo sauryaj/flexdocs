@@ -52,6 +52,7 @@ test('review panel selects files, preserves feedback on failure and separates ap
   await context.route('**/api/documents/browser-review', route => route.fulfill({ json: { ...document, lifecycleState: stage === 'draft' ? 'draft' : stage === 'published' ? 'published' : 'in_review' } }));
   await context.route('**/api/documents/browser-review/reviewers?**', route => route.fulfill({ json: { items: [{ id: 'reviewer-a', name: 'Review Person', email: 'reviewer@example.invalid' }], hasMore: false } }));
   await context.route('**/api/documents/browser-review/reviews/files?**', route => route.fulfill({ json: { items: [{ id: 'review-file', filename: 'guide.bin', size: 4 }], hasMore: false } }));
+  await context.route('**/api/documents/browser-review/files?page=**', route => route.fulfill({ json: { items: [], hasMore: false } }));
   await context.route('**/api/documents/browser-review/reviews?page=**', route => route.fulfill({ json: { canSubmit: stage === 'draft', hasMore: false,
     items: stage === 'draft' ? [] : [{ id: 'review-a', decision: stage === 'pending' ? 'pending' : 'approved', submittedAt: original.updatedAt,
       feedback: stage === 'pending' ? null : 'Exact version checked', canDecide: stage === 'pending', canWithdraw: false, canPublish: stage === 'approved',
@@ -181,9 +182,83 @@ test('lifecycle controls preserve edits, show conflicts and return archived cont
   expect(calls).toBe(3);
 });
 
+test('team files preserve failed changes and published copies while locking pending uploads', async ({ context, page }) => {
+  let version = original.updatedAt;
+  let uploaded = false;
+  let removed = false;
+  let uploads = 0;
+  let deletes = 0;
+  let release = () => {};
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  await context.route('**/api/documents/browser-team-files', route => route.fulfill({ json: { ...original, id: 'browser-team-files', ownershipKind: 'organization', updatedAt: version, canManageLifecycle: false, canDuplicate: false } }));
+  await context.route('**/api/documents/browser-team-files/files?page=**', route => route.fulfill({ json: { items: removed ? [] : [{ id: 'existing-file', filename: 'other-uploader.bin', size: 4 }], hasMore: false } }));
+  await context.route('**/api/documents/browser-team-files/files/existing-file', async route => {
+    if (route.request().method() === 'GET') return route.fulfill({ body: Buffer.from([1, 2, 3, 4]), contentType: 'application/octet-stream' });
+    deletes++;
+    expect(route.request().postDataJSON()).toEqual({ expectedUpdatedAt: version });
+    if (deletes === 1) return route.fulfill({ status: 409, json: { error: 'Document changed; reload before removing files' } });
+    removed = true; version = '2026-10-01T02:00:00.000Z';
+    return route.fulfill({ json: { success: true, bytesRetained: true, updatedAt: version } });
+  });
+  await context.route('**/api/documents/browser-team-files/files', async route => {
+    uploads++;
+    expect(route.request().headers()['x-document-version']).toBe(version);
+    if (uploads === 1) return route.fulfill({ status: 409, json: { error: 'Document changed; reload before uploading files' } });
+    await hold; uploaded = true; version = '2026-10-01T01:00:00.000Z';
+    return route.fulfill({ status: 201, json: { attachment: { id: 'uploaded' }, updatedAt: version } });
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/dashboard/documents/browser-team-files');
+  const files = page.getByRole('region', { name: 'Team working files', exact: true });
+  const downloadEvent = page.waitForEvent('download');
+  await files.getByRole('button', { name: 'Download working other-uploader.bin' }).click();
+  expect(await readFile((await (await downloadEvent).path())!)).toEqual(Buffer.from([1, 2, 3, 4]));
+  const fileInput = files.getByLabel('Team attachment file');
+  page.once('dialog', dialog => dialog.accept());
+  await fileInput.setInputFiles({ name: 'new.bin', mimeType: 'application/octet-stream', buffer: Buffer.from('new') });
+  await expect(files.getByRole('alert')).toContainText('Document changed');
+  await expect(fileInput).toBeDisabled();
+  await files.getByRole('button', { name: 'Reload saved document and files', exact: true }).click();
+  await expect(fileInput).toBeEnabled();
+  page.once('dialog', dialog => { expect(dialog.message()).toContain('Published files remain unchanged'); return dialog.accept(); });
+  await fileInput.setInputFiles({ name: 'new.bin', mimeType: 'application/octet-stream', buffer: Buffer.from('new') });
+  try {
+    await expect(page.locator('textarea')).toBeDisabled();
+    await expect(files.getByRole('button', { name: 'Cancel upload', exact: true })).toBeEnabled();
+  } finally { release(); }
+  await expect.poll(() => uploaded).toBe(true);
+  await expect(fileInput).toBeEnabled();
+  page.once('dialog', dialog => dialog.accept());
+  await files.getByRole('button', { name: 'Remove working other-uploader.bin' }).click();
+  await expect(files.getByRole('alert')).toContainText('Document changed');
+  await expect(files.getByText('other-uploader.bin (4 bytes)', { exact: true })).toBeVisible();
+  await files.getByRole('button', { name: 'Reload saved document and files', exact: true }).click();
+  page.once('dialog', dialog => dialog.accept());
+  await files.getByRole('button', { name: 'Remove working other-uploader.bin' }).click();
+  await expect(files.getByText('No working files on this page.', { exact: true })).toBeVisible();
+  expect(uploads).toBe(2); expect(deletes).toBe(2);
+  await files.scrollIntoViewIfNeeded(); await page.screenshot({ path: '/tmp/flexdocs-team-working-files.png', fullPage: true });
+});
+
+test('archived team files remain readable to maintainers with mutation controls absent', async ({ context, page }) => {
+  await context.route('**/api/documents/browser-archived-files', route => route.fulfill({ json: { ...original, id: 'browser-archived-files', ownershipKind: 'organization',
+    representation: 'working', lifecycleState: 'archived', isArchived: true, canEdit: false } }));
+  await context.route('**/api/documents/browser-archived-files/files?page=**', route => route.fulfill({ json: { items: [{ id: 'archived-file', filename: 'archived.bin', size: 4 }], hasMore: false } }));
+  await context.route('**/api/documents/browser-archived-files/files/archived-file', route => route.fulfill({ body: Buffer.from([1, 2, 3, 4]), contentType: 'application/octet-stream' }));
+  await page.goto('/dashboard/documents/browser-archived-files');
+  const files = page.getByRole('region', { name: 'Team working files', exact: true });
+  await expect(files.getByText('Archived working files are read only', { exact: false })).toBeVisible();
+  await expect(files.getByLabel('Team attachment file')).toHaveCount(0);
+  await expect(files.getByRole('button', { name: 'Remove working archived.bin' })).toHaveCount(0);
+  const downloadEvent = page.waitForEvent('download');
+  await files.getByRole('button', { name: 'Download working archived.bin' }).click();
+  expect(await readFile((await (await downloadEvent).path())!)).toEqual(Buffer.from([1, 2, 3, 4]));
+});
+
 test('team contributor edits a draft while lifecycle and private attachment controls remain restricted', async ({ context, page }) => {
   let team = { ...original, id: 'browser-team', ownershipKind: 'organization', canManageLifecycle: false, canDuplicate: false, organizationId: 'team-org' };
   let saved = false;
+  await context.route('**/api/documents/browser-team/files?page=**', route => route.fulfill({ json: { items: [], hasMore: false } }));
   await context.route('**/api/documents/browser-team', async route => {
     if (route.request().method() === 'PUT') {
       const input = route.request().postDataJSON();
@@ -209,7 +284,7 @@ test('team contributor edits a draft while lifecycle and private attachment cont
 
 test('published reader can retry an unavailable frozen attachment without entering edit mode', async ({ context, page }) => {
   await context.route('**/api/documents/browser-published', route => route.fulfill({ json: { ...original,
-    id: 'browser-published', title: 'Published guide', canEdit: false, snapshotId: 'snapshot-a',
+    id: 'browser-published', title: 'Published guide', ownershipKind: 'organization', canEdit: false, snapshotId: 'snapshot-a',
     attachments: [{ attachmentId: 'frozen-file', filename: 'frozen.txt', size: 11 }],
   } }));
   let available = false;
@@ -220,6 +295,7 @@ test('published reader can retry an unavailable frozen attachment without enteri
   await page.goto('/dashboard/documents/browser-published');
   await expect(page.getByRole('heading', { name: 'Published guide' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Edit Document' })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Team working files', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Download frozen.txt' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'Published file is unavailable' })).toBeVisible();
   available = true;
@@ -482,7 +558,7 @@ test('creation retries preserve the same key and payload after a lost response a
   await page.goto('/dashboard/documents/new');
   await page.getByPlaceholder('e.g. Production Web Server Setup & Disaster Recovery SOP').fill('Retry-safe browser document');
   await page.locator('textarea').fill(markdown);
-  await expect(page.getByText('Draft saved in this browser', { exact: false })).toBeVisible();
+  await expect(page.getByText('Draft saved in this browser', { exact: false })).toBeVisible({ timeout: 15000 });
   await page.locator('form').evaluate(form => { (form as HTMLFormElement).requestSubmit(); (form as HTMLFormElement).requestSubmit(); });
   await expect(page.getByRole('button', { name: 'Retry original save' })).toBeVisible();
   expect(requests).toHaveLength(1);

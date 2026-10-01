@@ -222,6 +222,35 @@ try {
   check(publishedReviewList.body.items[0].isCurrentPublication === true && publishedReviewList.body.items[0].canPublish === false, 'review UI marks current publication and disables republishing completed outcome');
   const publishedReader = await call(`/documents/${team.id}`, sessions.viewer);
   check(publishedReader.status === 200 && publishedReader.body.content === teamRestore.body.document.content && publishedReader.body.canEdit === false, 'reader receives approved published content');
+  const workingFilesPath = `/documents/${team.id}/files`;
+  check((await call(workingFilesPath, null)).status === 401, 'anonymous working team files blocked');
+  check((await call(workingFilesPath, sessions.viewer)).status === 404, 'published reader cannot list working files');
+  const workingList = await call(workingFilesPath, sessions.admin);
+  check(workingList.status === 200 && workingList.body.items.some(item => item.id === privateWorkingFile.id) && !('filePath' in workingList.body.items[0]), 'maintainer lists working files across uploaders without storage paths');
+  const workingDownload = await fetch(`${base}/api${workingFilesPath}/${privateWorkingFile.id}`, { headers: { Cookie: sessions.admin } });
+  check(workingDownload.status === 200 && Buffer.from(await workingDownload.arrayBuffer()).equals(frozenBytes), 'maintainer downloads exact working bytes from another uploader');
+  check((await call(`${workingFilesPath}/${privateWorkingFile.id}`, sessions.viewer)).status === 404, 'reader cannot download unpublished working bytes');
+  check((await call(`${workingFilesPath}/${privateWorkingFile.id}`, sessions.viewer, 'DELETE', { expectedUpdatedAt: publishedReader.body.updatedAt })).status === 403, 'read-only global role cannot remove team files');
+  const workingVersion = (await db.document.findUniqueOrThrow({ where: { id: team.id } })).updatedAt.toISOString();
+  const workingBytes = randomBytes(23);
+  const uploadedObjectPath = join(publicationDirectory, createHash('sha256').update(workingBytes).digest('hex'));
+  publicationFiles.push(uploadedObjectPath);
+  async function workingUpload(cookie, version) {
+    const form = new FormData(); form.set('file', new Blob([workingBytes]), 'working.bin');
+    const response = await fetch(`${base}/api${workingFilesPath}`, { method: 'POST', headers: { ...(cookie ? { Cookie: cookie } : {}), ...(version ? { 'X-Document-Version': version } : {}) }, body: form });
+    return { status: response.status, body: await response.json() };
+  }
+  check((await workingUpload(null, workingVersion)).status === 401, 'anonymous working upload blocked');
+  check((await workingUpload(sessions.viewer, workingVersion)).status === 403, 'reader working upload blocked');
+  check((await workingUpload(sessions.editor)).status === 428, 'working upload requires exact version');
+  const workingUploadResult = await workingUpload(sessions.editor, workingVersion);
+  check(workingUploadResult.status === 201 && !('filePath' in workingUploadResult.body.attachment), 'team working upload commits safe metadata');
+  check((await workingUpload(sessions.editor, workingVersion)).status === 409, 'stale upload retry cannot duplicate committed file');
+  check((await call(`/documents/${team.id}`, sessions.viewer)).body.content === publishedReader.body.content, 'working upload preserves reader publication');
+  const workingRemoval = await call(`${workingFilesPath}/${privateWorkingFile.id}`, sessions.admin, 'DELETE', { expectedUpdatedAt: workingUploadResult.body.updatedAt });
+  check(workingRemoval.status === 200 && workingRemoval.body.bytesRetained === true, 'maintainer removes another uploader working file while retaining reviewed bytes');
+  const frozenAfterRemoval = await fetch(`${base}/api${reviewedFilePath}`, { headers: { Cookie: sessions.admin } });
+  check(frozenAfterRemoval.status === 200 && Buffer.from(await frozenAfterRemoval.arrayBuffer()).equals(frozenBytes), 'frozen reviewed bytes survive working removal');
   await db.organizationMember.delete({ where: { organizationId_userId: { organizationId: orgs[0], userId: users[0] } } });
   await db.organizationDocumentationGrant.deleteMany({ where: { organizationId: orgs[0] } });
   check((await call(`/documents/${team.id}`, sessions.editor, 'PUT', { content: 'denied after revocation', expectedUpdatedAt: teamEdit.body.updatedAt })).status === 404, 'revoked contributor cannot update team copy');
