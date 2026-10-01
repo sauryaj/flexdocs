@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/rbac';
 import { prisma } from '@/lib/prisma';
+import { auditLog } from '@/lib/audit';
 
 type BulkAction = 'archive' | 'unarchive' | 'pin' | 'unpin' | 'delete' | 'tag';
 
@@ -17,7 +18,7 @@ export async function POST(req: Request) {
   if (!valid.includes(action)) {
     return NextResponse.json({ error: `action must be one of: ${valid.join(', ')}` }, { status: 400 });
   }
-  if (!Array.isArray(ids) || ids.length === 0) {
+  if (!Array.isArray(ids) || ids.length === 0 || ids.some(id => typeof id !== 'string' || !id)) {
     return NextResponse.json({ error: 'ids array required' }, { status: 400 });
   }
   if (ids.length > 200) {
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
   }
 
   const owned = await prisma.document.findMany({
-    where: { id: { in: ids }, userId: user.id },
+    where: { deletedAt: null, id: { in: ids }, userId: user.id, ownershipKind: 'personal', lifecycleState: null },
     select: { id: true },
   });
   const ownedIds = owned.map((d) => d.id);
@@ -33,10 +34,10 @@ export async function POST(req: Request) {
   let updated = 0;
 
   if (action === 'delete') {
-    // Revisions & attachments cascade by FK design; clean join table explicitly
-    await prisma.$executeRaw`DELETE FROM "_DocumentToTag" WHERE "A" IN (${ownedIds.length ? ownedIds : ['']})`;
-    const res = await prisma.document.deleteMany({ where: { id: { in: ownedIds }, userId: user.id } });
+    if (!hasPermission(user.role, 'document.delete')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    const res = await prisma.document.updateMany({ where: { id: { in: ownedIds }, userId: user.id, deletedAt: null, ownershipKind: 'personal', lifecycleState: null }, data: { deletedAt: new Date() } });
     updated = res.count;
+    auditLog({ userId: user.id, action: 'document.trash.bulk', resourceType: 'document', details: { ids: ownedIds, updated } }).catch(() => {});
   } else if (action === 'tag') {
     if (!tag || typeof tag !== 'string') {
       return NextResponse.json({ error: 'tag string required for tag action' }, { status: 400 });
@@ -47,13 +48,14 @@ export async function POST(req: Request) {
       create: { name: tag, userId: user.id },
     });
     for (const id of ownedIds) {
-      await prisma.$executeRaw`
+      const affected = await prisma.$executeRaw`
         INSERT INTO "_DocumentToTag" ("A", "B")
-        SELECT ${id}, ${t.id}
-        WHERE NOT EXISTS (
+        SELECT d.id, ${t.id} FROM "Document" d
+        WHERE d.id = ${id} AND d."userId" = ${user.id} AND d."deletedAt" IS NULL
+          AND d."ownershipKind" = 'personal' AND d."lifecycleState" IS NULL AND NOT EXISTS (
           SELECT 1 FROM "_DocumentToTag" WHERE "A" = ${id} AND "B" = ${t.id}
         )`;
-      updated++;
+      updated += affected;
     }
   } else {
     const data =
@@ -61,7 +63,7 @@ export async function POST(req: Request) {
       : action === 'unarchive' ? { isArchived: false }
       : action === 'pin' ? { isPinned: true }
       : { isPinned: false };
-    const res = await prisma.document.updateMany({ where: { id: { in: ownedIds }, userId: user.id }, data });
+    const res = await prisma.document.updateMany({ where: { id: { in: ownedIds }, userId: user.id, deletedAt: null, ownershipKind: 'personal', lifecycleState: null }, data });
     updated = res.count;
   }
 

@@ -18,7 +18,7 @@ export async function GET(
   const organization = await prisma.organization.findUnique({
     where: { id },
     include: {
-      documents: true,
+      documents: { where: { deletedAt: null } },
       passwords: true,
       domains: true,
       assets: true,

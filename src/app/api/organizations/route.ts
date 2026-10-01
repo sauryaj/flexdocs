@@ -14,7 +14,7 @@ export async function GET() {
     include: {
       _count: {
         select: {
-          documents: true,
+          documents: { where: { deletedAt: null } },
           passwords: true,
           domains: true,
           assets: true,
@@ -56,7 +56,7 @@ export async function POST(req: Request) {
     include: {
       _count: {
         select: {
-          documents: true,
+          documents: { where: { deletedAt: null } },
           passwords: true,
           domains: true,
           assets: true,

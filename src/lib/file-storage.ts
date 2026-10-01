@@ -18,7 +18,7 @@ function getFilePath(filename: string, userId: string): string {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
-  const ext = filename.includes('.') ? filename.split('.').pop() : 'bin';
+  const ext = filename.match(/\.([a-zA-Z0-9]{1,16})$/)?.[1] || 'bin';
   const uniqueName = `${randomBytes(8).toString('hex')}.${ext}`;
   return join(dir, uniqueName);
 }
@@ -27,41 +27,50 @@ export async function storeFile(
   data: string, // base64
   filename: string,
   mimeType: string,
-  size: number,
+  _size: number,
   userId: string,
   documentId?: string
 ) {
+  return storeFileBytes(Buffer.from(data, 'base64'), filename, mimeType, userId, documentId);
+}
+
+export async function storeFileBytes(buffer: Buffer, filename: string, mimeType: string, userId: string, documentId?: string) {
   ensureUploadDir();
   const filePath = getFilePath(filename, userId);
-  const buffer = Buffer.from(data, 'base64');
-  writeFileSync(filePath, buffer);
-
-  return prisma.attachment.create({
-    data: {
-      filename,
-      mimeType,
-      size,
-      filePath,
-      storageType: 'filesystem',
-      documentId: documentId || null,
-      userId,
-    },
-  });
+  try {
+    writeFileSync(filePath, buffer);
+    return await prisma.attachment.create({
+      data: {
+        filename,
+        mimeType,
+        size: buffer.length,
+        filePath,
+        storageType: 'filesystem',
+        documentId: documentId || null,
+        userId,
+      },
+    });
+  } catch (error) {
+    try { unlinkSync(filePath); } catch { /* Preserve the original database error if cleanup fails. */ }
+    throw error;
+  }
 }
 
 export async function getAttachmentData(attachmentId: string, userId: string) {
   const attachment = await prisma.attachment.findFirst({
-    where: { id: attachmentId, userId },
+    where: { id: attachmentId, userId, OR: [{ documentId: null }, { document: { deletedAt: null, ownershipKind: 'personal' } }] },
   });
 
   if (!attachment) return null;
 
   if (attachment.storageType === 'filesystem' && attachment.filePath) {
-    const buffer = readFileSync(attachment.filePath);
-    return {
-      ...attachment,
-      data: buffer.toString('base64'),
-    };
+    try {
+      const buffer = readFileSync(attachment.filePath);
+      return { ...attachment, data: buffer.toString('base64') };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
   }
 
   return attachment;
@@ -69,23 +78,30 @@ export async function getAttachmentData(attachmentId: string, userId: string) {
 
 export async function deleteFile(attachmentId: string, userId: string) {
   const attachment = await prisma.attachment.findFirst({
-    where: { id: attachmentId, userId },
+    where: { id: attachmentId, userId, OR: [{ documentId: null }, { document: { deletedAt: null, ownershipKind: 'personal' } }] },
   });
 
   if (!attachment) return null;
 
+  const removed = await prisma.attachment.deleteMany({
+    where: { id: attachmentId, userId, OR: [{ documentId: null }, { document: { deletedAt: null, ownershipKind: 'personal' } }] },
+  });
+  if (removed.count !== 1) return null;
+
+  let cleanupPending = false;
   if (attachment.storageType === 'filesystem' && attachment.filePath) {
     try {
-      if (existsSync(attachment.filePath)) {
-        unlinkSync(attachment.filePath);
+      unlinkSync(attachment.filePath);
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'ENOENT') {
+        cleanupPending = true;
+        logger.warn('Attachment removed; storage cleanup pending', { attachmentId, code });
       }
-    } catch {
-      // File might already be deleted
     }
   }
 
-  await prisma.attachment.delete({ where: { id: attachmentId } });
-  return attachment;
+  return { ...attachment, cleanupPending };
 }
 
 export async function migrateBase64Attachments() {

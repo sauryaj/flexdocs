@@ -1,0 +1,8 @@
+# Opt in only when local Docker discovery is needed. The socket grants host-level control.
+# docker-compose -f docker-compose.yml -f docker-compose.discovery.yml up -d --build
+services:
+  app:
+    group_add:
+      - "${DOCKER_GROUP_GID:-991}"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro

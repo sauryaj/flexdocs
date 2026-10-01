@@ -13,7 +13,7 @@ export async function GET(
 
   const { id } = await params;
   const attachment = await getAttachmentData(id, user.id);
-  if (!attachment || !attachment.data) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (!attachment || attachment.data === null) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const buffer = Buffer.from(attachment.data, 'base64');
   const safeName = attachment.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -22,6 +22,8 @@ export async function GET(
       'Content-Type': attachment.mimeType,
       'Content-Disposition': `attachment; filename="${safeName}"`,
       'Content-Length': String(buffer.length),
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
     },
   });
 }
@@ -40,5 +42,5 @@ export async function DELETE(
   const deleted = await deleteFile(id, user.id);
   if (!deleted) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
-  return NextResponse.json({ success: true });
+  return NextResponse.json({ success: true, cleanupPending: deleted.cleanupPending });
 }

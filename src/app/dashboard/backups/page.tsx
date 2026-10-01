@@ -10,7 +10,7 @@ interface Backup {
   size: string;
   createdAt: string;
   status: 'completed' | 'failed' | 'running';
-  type: 'full' | 'incremental';
+  type: 'database';
 }
 
 export default function BackupsPage() {
@@ -180,7 +180,7 @@ export default function BackupsPage() {
       <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
         <h3 className="font-medium text-yellow-900 dark:text-yellow-200">Backup Schedule</h3>
         <p className="mt-1 text-sm text-yellow-800 dark:text-yellow-300">
-          Backups are stored locally. For production, configure offsite backups to S3 or GCS via environment variables.
+          These backups contain the database only. Back up uploaded files and encryption keys separately, copy backups off this machine, and test restoration regularly.
         </p>
       </div>
     </div>

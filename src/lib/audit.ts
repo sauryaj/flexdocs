@@ -2,6 +2,12 @@ import { prisma } from '@/lib/prisma';
 import logger from '@/lib/logger';
 
 export type AuditAction =
+  | 'relationship.create'
+  | 'relationship.delete'
+  | 'invitation.create'
+  | 'invitation.resend'
+  | 'invitation.revoke'
+  | 'invitation.accept'
   | 'user.login'
   | 'user.logout'
   | 'user.register'
@@ -9,6 +15,8 @@ export type AuditAction =
   | 'document.create'
   | 'document.update'
   | 'document.delete'
+  | 'document.restore'
+  | 'document.trash.bulk'
   | 'document.view'
   | 'document.move'
   | 'password.create'

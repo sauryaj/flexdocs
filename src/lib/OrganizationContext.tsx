@@ -29,14 +29,10 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
 
     async function init() {
       let storedOrg: Organization | null = null;
-      const stored = localStorage.getItem('selectedOrg');
-      if (stored) {
-        try {
-          storedOrg = JSON.parse(stored);
-        } catch {
-          localStorage.removeItem('selectedOrg');
-        }
-      }
+      try {
+        const stored = localStorage.getItem('selectedOrg');
+        if (stored) storedOrg = JSON.parse(stored);
+      } catch { /* Browsing remains available when browser storage is blocked. */ }
 
       try {
         const res = await fetch('/api/organizations');
@@ -44,7 +40,7 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
           const orgs = (await res.json()) as Organization[];
           const valid = storedOrg ? orgs.some((o) => o.id === storedOrg?.id) : true;
           if (storedOrg && !valid) {
-            localStorage.removeItem('selectedOrg');
+            try { localStorage.removeItem('selectedOrg'); } catch { /* Optional preference persistence. */ }
             storedOrg = null;
           }
         }
@@ -67,11 +63,10 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
 
   const setSelectedOrg = useCallback((org: Organization | null) => {
     setSelectedOrgState(org);
-    if (org) {
-      localStorage.setItem('selectedOrg', JSON.stringify(org));
-    } else {
-      localStorage.removeItem('selectedOrg');
-    }
+    try {
+      if (org) localStorage.setItem('selectedOrg', JSON.stringify(org));
+      else localStorage.removeItem('selectedOrg');
+    } catch { /* Organization selection must work without browser storage. */ }
   }, []);
 
   return (

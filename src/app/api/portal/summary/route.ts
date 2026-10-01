@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { getOrgScope } from '@/lib/org-scope';
+import { discoverDocuments } from '@/lib/document-discovery';
 
 const HORIZON = 90 * 86400000;
 
@@ -28,12 +29,8 @@ export async function GET() {
       where: scope.mode === 'limited' ? { id: { in: scope.orgIds } } : undefined,
       select: { id: true, name: true },
     }),
-    prisma.document.findMany({
-      where: { ...orgWhere, visibility: 'org', isArchived: false },
-      select: { id: true, title: true, updatedAt: true },
-      orderBy: { updatedAt: 'desc' },
-      take: 50,
-    }),
+    discoverDocuments(user.id, { knowledgeBase: true, excludeArchived: true, page: 0, limit: 50 })
+      .then(result => result.items.map(({ id, title, updatedAt }) => ({ id, title, updatedAt }))),
     prisma.domain.findMany({
       where: { ...orgWhere, expiresAt: { not: null, lte: horizon } },
       select: { name: true, expiresAt: true },

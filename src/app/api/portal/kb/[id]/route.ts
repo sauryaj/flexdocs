@@ -10,7 +10,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const { id } = await params;
   const doc = await prisma.document.findUnique({
-    where: { id },
+    where: { deletedAt: null, id },
     select: {
       title: true,
       content: true,

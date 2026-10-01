@@ -156,7 +156,7 @@ async function runStalenessDigest(): Promise<number> {
  */
 async function runDocReviewSweep(): Promise<number> {
   const due = await prisma.document.findMany({
-    where: {
+    where: { deletedAt: null,
       reviewDate: { lte: new Date() },
       isArchived: false,
     },

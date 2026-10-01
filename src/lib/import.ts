@@ -2,6 +2,7 @@ import { prisma } from '@/lib/prisma';
 import { encrypt } from '@/lib/encryption';
 import { storeFile } from '@/lib/file-storage';
 import { type BackupBundle } from '@/lib/export';
+import { previewBackup } from '@/lib/import-preview';
 
 export interface RestoreReport {
   success: boolean;
@@ -23,24 +24,26 @@ async function tryCreate(model: keyof typeof prisma | any, data: Record<string, 
     await prisma[model as 'document'].create({ data } as any);
     return { created: true, error: null };
   } catch (e: any) {
-    if (e?.code === 'P2002' || e?.code === 'P2003') return { created: false, error: null };
+    if (e?.code === 'P2002') return { created: false, error: null };
     return { created: false, error: String(e?.message || e) };
   }
 }
 
-interface TagIndex {
-  [name: string]: { id: string };
-}
+type TagIndex = Map<string, { id: string }>;
 
-async function ensureTags(tagNames: string[], adminId: string): Promise<TagIndex> {
-  const out: TagIndex = {};
+async function ensureTags(tagNames: string[], adminId: string, errors: string[]): Promise<TagIndex> {
+  const out: TagIndex = new Map();
   for (const name of tagNames) {
-    const tag = await prisma.tag.upsert({
-      where: { name_userId: { name, userId: adminId } },
-      update: {},
-      create: { name, userId: adminId },
-    });
-    out[name] = { id: tag.id };
+    try {
+      const tag = await prisma.tag.upsert({
+        where: { name_userId: { name, userId: adminId } },
+        update: {},
+        create: { name, userId: adminId },
+      });
+      out.set(name, { id: tag.id });
+    } catch {
+      errors.push(`tag ${name}: could not create or resolve tag`);
+    }
   }
   return out;
 }
@@ -49,16 +52,21 @@ async function attachTags(
   model: 'document' | 'password' | 'domain' | 'checklist',
   recordId: string,
   tagIndex: TagIndex,
-  tagNames: string[]
+  tagNames: string[],
+  errors: string[]
 ) {
   if (!tagNames?.length) return;
+  if (!Array.isArray(tagNames) || tagNames.some(name => typeof name !== 'string' || !tagIndex.has(name))) {
+    errors.push(`${model} ${recordId}: tags were not restored because one or more names are unavailable`);
+    return;
+  }
   try {
     await (prisma[model] as any).update({
       where: { id: recordId },
-      data: { tags: { connect: tagNames.map((n) => ({ id: tagIndex[n]?.id })).filter((x) => x.id) } },
+      data: { tags: { connect: [...new Set(tagNames)].map(name => tagIndex.get(name)!) } },
     });
   } catch {
-    // non-fatal
+    errors.push(`${model} ${recordId}: tag links could not be restored`);
   }
 }
 
@@ -69,11 +77,9 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
     report.imported[k] = (report.imported[k] || 0) + n;
   };
 
-  if (bundle.schema !== 'flexdocs-backup' || bundle.version !== 1) {
-    report.errors.push('Unsupported backup format');
-    return report;
-  }
-
+  const preview = previewBackup(bundle);
+  report.errors.push(...preview.errors);
+  if (!preview.valid) return report;
   const createdFolderIds = new Set<string>();
 
   // 1. Organizations + members
@@ -100,7 +106,7 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
   // 2. Folders
   for (const f of bundle.folders as Record<string, unknown>[]) {
     const parent = f.parentId ? createdFolderIds.has(String(f.parentId)) ? String(f.parentId) : null : null;
-    const data: any = pick(f, ['id', 'name', 'createdAt', 'updatedAt']);
+    const data: any = pick(f, ['id', 'name', 'color', 'icon', 'organizationId', 'createdAt', 'updatedAt']);
     data.userId = adminId;
     if (parent) data.parentId = parent;
     const r = await tryCreate('folder', data);
@@ -110,13 +116,31 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
     else report.skipped++;
   }
 
+  for (const f of bundle.folders as Record<string, unknown>[]) {
+    if (f.parentId && createdFolderIds.has(String(f.id))) {
+      if (!createdFolderIds.has(String(f.parentId))) {
+        report.errors.push(`folder ${f.id}: parent was not imported; folder remains at root`);
+        continue;
+      }
+      try {
+        await prisma.folder.update({ where: { id: String(f.id) }, data: { parentId: String(f.parentId) } });
+      } catch {
+        report.errors.push(`folder ${f.id}: parent link could not be restored`);
+      }
+    }
+  }
+
   // 3. Tags used across docs/passwords/domains
   const tagNames = [...new Set((bundle.tags as string[]) || [])];
-  const tagIndex = await ensureTags(tagNames, adminId);
+  const tagIndex = await ensureTags(tagNames, adminId, report.errors);
 
   // 4. Documents + attachments
-  for (const doc of bundle.documents as (Record<string, unknown> & { attachments?: Record<string, unknown>[]; tagNames?: string[] })[]) {
-    const data: any = pick(doc, ['id', 'title', 'content', 'type', 'category', 'isPinned', 'isArchived', 'reviewDate', 'lastReviewedAt', 'visibility', 'organizationId', 'createdAt', 'updatedAt']);
+  for (const doc of bundle.documents as (Record<string, unknown> & { attachments?: Record<string, unknown>[]; revisions?: Record<string, unknown>[]; tagNames?: string[] })[]) {
+    if (doc.folderId && !createdFolderIds.has(String(doc.folderId))) {
+      report.errors.push(`document ${doc.id}: folder was not imported; document was not created`);
+      continue;
+    }
+    const data: any = pick(doc, ['id', 'title', 'content', 'type', 'category', 'isPinned', 'isArchived', 'deletedAt', 'reviewDate', 'lastReviewedAt', 'visibility', 'organizationId', 'createdAt', 'updatedAt']);
     data.userId = adminId;
     if (doc.folderId && createdFolderIds.has(String(doc.folderId))) data.folderId = doc.folderId;
     const r = await tryCreate('document', data);
@@ -124,22 +148,33 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
       report.errors.push(`document ${doc.title}: ${r.error}`);
       continue;
     }
+    if (!r.created) { report.skipped++; continue; }
     if (r.created) {
       inc('documents');
+      for (const revision of doc.revisions || []) {
+        const result = await tryCreate('documentRevision', {
+          ...pick(revision, ['id', 'title', 'content', 'category', 'version', 'message', 'createdAt']),
+          documentId: String(doc.id), userId: adminId,
+        });
+        if (result.created) inc('revisions');
+        else report.errors.push(`revision ${revision.id}: could not restore`);
+      }
       const atts = doc.attachments || [];
       for (const a of atts) {
         try {
           const dataUrl = a.data as string | undefined;
-          if (dataUrl) {
+          if (typeof dataUrl === 'string') {
             await storeFile(dataUrl, String(a.filename), String(a.mimeType || 'application/octet-stream'), Number(a.size || 0), adminId, String(doc.id));
+            inc('attachments');
+          } else {
+            report.errors.push(`attachment ${a.filename}: content missing from backup`);
           }
-          inc('attachments');
         } catch {
           report.errors.push(`attachment ${a.filename}: write failed`);
         }
       }
     }
-    if (doc.tagNames?.length) await attachTags('document', String(doc.id), tagIndex, doc.tagNames);
+    if (doc.tagNames?.length) await attachTags('document', String(doc.id), tagIndex, doc.tagNames, report.errors);
   }
 
   // 5. Passwords (plaintext → re-encrypted at rest)
@@ -153,8 +188,9 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
       report.errors.push(`password ${pw.name}: ${r.error}`);
       continue;
     }
+    if (!r.created) { report.skipped++; continue; }
     if (r.created) inc('passwords');
-    if (pw.tagNames?.length) await attachTags('password', String(pw.id), tagIndex, pw.tagNames);
+    if (pw.tagNames?.length) await attachTags('password', String(pw.id), tagIndex, pw.tagNames, report.errors);
   }
 
   // 6. Domains (globally-unique name: skip dups)
@@ -166,14 +202,15 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
       report.errors.push(`domain ${d.name}: ${r.error}`);
       continue;
     }
+    if (!r.created) { report.skipped++; continue; }
     if (r.created) inc('domains');
-    if (d.tagNames?.length) await attachTags('domain', String(d.id), tagIndex, d.tagNames);
+    if (d.tagNames?.length) await attachTags('domain', String(d.id), tagIndex, d.tagNames, report.errors);
   }
 
   // 7. SSL certificates
   for (const c of bundle.sslCertificates as Record<string, unknown>[]) {
     const data: any = pick(c, ['id', 'hostname', 'issuer', 'subject', 'serialNumber', 'validFrom', 'validTo', 'organizationId', 'userId', 'createdAt', 'updatedAt', 'isExpired']);
-    if (!data.userId) data.userId = adminId;
+    data.userId = adminId;
     const r = await tryCreate('sslCertificate', data);
     if (r.error) report.errors.push(`ssl ${c.hostname}: ${r.error}`);
     else if (r.created) inc('sslCertificates');
@@ -264,7 +301,7 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
   }
 
   // 12. Relationships (only when both endpoints exist)
-  const sourceOf = (type: unknown) => (['document', 'password', 'domain', 'asset', 'checklist', 'server', 'organization'].includes(String(type)) ? String(type) : null);
+  const sourceOf = (type: unknown) => ({ document: 'document', password: 'password', domain: 'domain', asset: 'flexibleAsset', checklist: 'checklist', server: 'server', organization: 'organization', ssl: 'sslCertificate' }[String(type)] ?? null);
   for (const rel of bundle.relationships as Record<string, unknown>[]) {
     try {
       const sModel = sourceOf(rel.sourceType);
@@ -288,6 +325,6 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
     }
   }
 
-  report.success = true;
+  report.success = report.errors.length === 0;
   return report;
 }

@@ -15,7 +15,7 @@ export async function POST(req: Request) {
 
   // Verify document ownership
   const doc = await prisma.document.findFirst({
-    where: { id: documentId, userId: user.id },
+    where: { deletedAt: null, id: documentId, userId: user.id },
   });
   if (!doc) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
