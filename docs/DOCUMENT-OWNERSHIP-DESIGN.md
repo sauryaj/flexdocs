@@ -1,8 +1,8 @@
 # Document ownership and publication migration design
 
-Status: staged implementation contract. Migration `20260930065322_documentation_ownership_foundation` adds document/folder ownership kinds defaulting to personal, a nullable document maintainer reference and an explicit organization documentation grant table. Database checks require an organization for organization ownership. No existing record is converted and no grants are created. Conversion, grant management, capability enforcement and publication remain pending; do not manually enable team rows or grants as a substitute for those services.
+Status as of 2026-10-01: partially implemented contract. Additive ownership/publication migrations, explicit grant API/UI, current-capability services, team editing/history, published reader surfaces, review/publication API/UI and lifecycle/Trash controls are implemented. Existing records are not automatically converted and migrations create no grants. Conversion, ownership/maintainer transfer, departing-user handling, working team file management and the review queue remain incomplete. Do not manually enable team rows as a substitute for the missing conversion workflow. Detailed milestone evidence and limitations follow below.
 
-## Verified starting point
+## Historical starting point before these milestones
 
 `Document.userId` and `Folder.userId` are required user relations; both resources can also have an organization. `visibility` is a string (`private` or `org`), not an ownership type. `DocumentRevision.userId` records the revision actor. Attachments have their own uploader and an optional document relation.
 
@@ -26,7 +26,7 @@ Personal owner or organization owner
        authorized reader surfaces
 ```
 
-Fields/tables below describe the target contract; ownership kinds, maintainer references and documentation grants exist in the schema foundation. The remaining publication fields are proposed, and these names are not public API parameters:
+Fields/tables below describe the target contract. Ownership kinds, maintainer references, documentation grants, lifecycle state, reviews and publication snapshots now exist in the schema. Conceptual names below are not necessarily public API parameters; the implemented lifecycle field is `lifecycleState`, and exact route contracts are in `FEATURE-WORKFLOWS.md`.
 
 - Document and folder `ownershipKind`: `personal` or `organization`, default `personal`. Keep existing `userId` for compatibility and provenance; do not repurpose it as the last editor.
 - Organization ownership requires a non-null `organizationId`. Personal documents may retain their existing organization association and sharing audience without becoming team-owned.
