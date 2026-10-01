@@ -26,6 +26,7 @@ import { ConfirmDialog } from '@/components/UIComponents';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { PublishedAttachments } from '@/components/PublishedAttachments';
 import { DocumentLifecycleControls } from '@/components/DocumentLifecycleControls';
+import { DocumentReviewPanel } from '@/components/DocumentReviewPanel';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { Eye, Edit3, Columns } from 'lucide-react';
 import { RelatedItems } from '@/components/RelatedItems';
@@ -115,6 +116,7 @@ function DocumentEditor({ documentId }: { documentId: string }) {
   const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, setSaving] = useState(false);
   const [workflowBusy, setWorkflowBusy] = useState(false);
+  const [reviewFeedbackDirty, setReviewFeedbackDirty] = useState(false);
   const [showDelete, setShowDelete] = useState(false);
   const [viewMode, setViewMode] = useState<'write' | 'preview' | 'split'>('write');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -556,9 +558,12 @@ function DocumentEditor({ documentId }: { documentId: string }) {
 
       {/* Two-column layout */}
       {doc.ownershipKind === 'organization' && <p className="rounded-lg bg-blue-50 p-3 text-sm text-blue-900">Team draft · Saved edits do not change the published version.</p>}
+      {doc.lifecycleState && <DocumentReviewPanel key={doc.id} documentId={doc.id} updatedAt={doc.updatedAt} current={doc}
+        blocked={saving || hasUnsavedChanges || !!conflict || !!draft.revoked || !!recoveryPreview}
+        onFeedbackDirty={setReviewFeedbackDirty} onBusyChange={setWorkflowBusy} onChanged={() => setLoadAttempt(value => value + 1)} />}
       {doc.lifecycleState && doc.canManageLifecycle && <DocumentLifecycleControls documentId={doc.id} updatedAt={doc.updatedAt} archived={doc.isArchived}
         onBusyChange={setWorkflowBusy}
-        blocked={saving || hasUnsavedChanges || !!conflict || !!draft.revoked || !!recoveryPreview}
+        blocked={saving || hasUnsavedChanges || reviewFeedbackDirty || !!conflict || !!draft.revoked || !!recoveryPreview}
         onChanged={action => action === 'trash' ? router.push('/dashboard/documents') : setLoadAttempt(value => value + 1)} />}
       {conflict && <section className="card p-4 space-y-3" aria-label="Save conflict comparison">
         <h2 className="font-semibold">Resolve conflicting edits</h2>

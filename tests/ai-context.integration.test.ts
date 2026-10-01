@@ -31,6 +31,7 @@ import { changeDocumentLifecycle } from '@/lib/document-lifecycle';
 import { discoverDocumentTrash } from '@/lib/document-trash';
 import { readDocumentReviews, readReviewedFile } from '@/lib/document-review-read';
 import { discoverDocumentReviewers } from '@/lib/document-reviewers';
+import { discoverReviewFiles } from '@/lib/document-review-files';
 
 it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_URL)('keeps foreign and private data out of actual provider context', async () => {
   const token = randomUUID();
@@ -139,6 +140,11 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     const workingAttachment = await prisma.attachment.create({ data: { documentId: reviewDraft.id, userId: ids[0], filename: 'review.bin', mimeType: 'application/octet-stream', size: 3, storageType: 'filesystem', filePath: workingPath } });
     const privateUploaderAttachment = await prisma.attachment.create({ data: { documentId: reviewDraft.id, userId: ids[1], filename: 'private.bin', mimeType: 'application/octet-stream', size: 0, storageType: 'base64', data: '' } });
     const storage = new LocalImmutableFileStore(uploadRoot);
+    const personalFiles = await discoverReviewFiles(ids[0], reviewDraft.id);
+    expect(personalFiles.items.map(file => file.id)).toEqual([workingAttachment.id]);
+    expect(personalFiles.items[0]).not.toHaveProperty('filePath');
+    expect(personalFiles.items[0]).not.toHaveProperty('data');
+    await expect(discoverReviewFiles(ids[1], reviewDraft.id)).rejects.toMatchObject({ status: 404 });
     expect((await discoverDocumentReviewers(ids[0], reviewDraft.id)).items.map(user => user.id)).toEqual([ids[0]]);
     await expect(discoverDocumentReviewers(ids[1], reviewDraft.id)).rejects.toMatchObject({ status: 404 });
     await expect(submitDocumentReview(ids[0], reviewDraft.id, reviewDraft.updatedAt.toISOString(), [ids[0]], { attachmentIds: [privateUploaderAttachment.id], uploadRoot, storage })).rejects.toMatchObject({ status: 404 });
@@ -190,6 +196,8 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     const teamDraft = await prisma.document.create({ data: { userId: ids[2], organizationId: orgs[1], ownershipKind: 'organization', lifecycleState: 'draft', title: 'Team review', content: 'Frozen team version' } });
     const teamFile = await prisma.attachment.create({ data: { documentId: teamDraft.id, userId: ids[0], filename: 'legacy.bin', mimeType: 'application/octet-stream', size: originalBytes.length, storageType: 'base64', data: originalBytes.toString('base64') } });
     const teamReview = await submitDocumentReview(ids[0], teamDraft.id, teamDraft.updatedAt.toISOString(), [ids[1]], { attachmentIds: [teamFile.id], uploadRoot, storage });
+    expect((await discoverReviewFiles(ids[1], teamDraft.id)).items.map(file => file.id)).toEqual([teamFile.id]);
+    expect((await discoverReviewFiles(ids[0], teamDraft.id, 1)).items).toEqual([]);
     const candidates = await discoverDocumentReviewers(ids[0], teamDraft.id);
     expect(candidates.items.map(user => user.id)).toEqual([ids[1]]);
     expect(candidates.total).toBe(1);
@@ -213,6 +221,7 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     await prisma.organizationMember.deleteMany({ where: { organizationId: orgs[1], userId: ids[1] } });
     await expect(decideDocumentReview(ids[1], teamReview.id, 'approved')).rejects.toMatchObject({ status: 404 });
     expect((await discoverDocumentReviewers(ids[0], teamDraft.id)).total).toBe(0);
+    await expect(discoverReviewFiles(ids[1], teamDraft.id)).rejects.toMatchObject({ status: 404 });
     await prisma.organizationMember.create({ data: { organizationId: orgs[1], userId: ids[1] } });
     expect((await decideDocumentReview(ids[1], teamReview.id, 'approved')).decision).toBe('approved');
     await expect(publishDocumentReview(ids[0], teamReview.id, storage)).rejects.toMatchObject({ status: 404 });

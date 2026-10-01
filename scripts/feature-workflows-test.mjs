@@ -154,6 +154,13 @@ try {
   check(teamRestore.status === 200 && teamRestore.body.document.lifecycleState === 'draft' && teamRestore.body.document.publishedSnapshotId === null, 'team Trash restore remains an unpublished draft');
   const reviewsPath = `/documents/${team.id}/reviews`;
   const reviewersPath = `/documents/${team.id}/reviewers`;
+  const reviewFilesPath = `${reviewsPath}/files`;
+  check((await call(reviewFilesPath, null)).status === 401, 'anonymous review file discovery blocked');
+  check((await call(reviewFilesPath, sessions.viewer)).status === 403, 'reader review file discovery blocked');
+  check((await call(reviewFilesPath, sessions.admin)).status === 404, 'ungranted admin review file discovery blocked');
+  const reviewFiles = await call(reviewFilesPath, sessions.editor);
+  check(reviewFiles.status === 200 && reviewFiles.body.items[0].id === privateWorkingFile.id && !('data' in reviewFiles.body.items[0]) && !('filePath' in reviewFiles.body.items[0]), 'current team maintainer chooses files through metadata only');
+  check((await call(`${reviewFilesPath}?page=1`, sessions.editor)).body.items.length === 0, 'review file picker pages without repeating files');
   check((await call(reviewersPath, null)).status === 401, 'anonymous reviewer discovery blocked');
   check((await call(reviewersPath, sessions.viewer)).status === 403, 'viewer reviewer discovery blocked');
   check((await call(reviewersPath, sessions.admin)).status === 404, 'ungranted admin reviewer discovery blocked');
@@ -179,6 +186,7 @@ try {
   check((await call(reviewsPath, sessions.viewer)).status === 404, 'reader cannot see internal review content');
   const reviewListing = await call(reviewsPath, sessions.admin);
   check(reviewListing.status === 200 && reviewListing.body.items[0].canDecide === true && reviewListing.body.items[0].sourceRevision.content === teamRestore.body.document.content, 'assigned reviewer reads frozen version with decision capability');
+  check(reviewListing.body.canSubmit === false, 'pending review disables another submission');
   const decisionPath = `${reviewsPath}/${submittedReview.body.id}`;
   const reviewedFilePath = `${decisionPath}/attachments/${privateWorkingFile.id}`;
   const reviewedFile = await fetch(`${base}/api${reviewedFilePath}`, { headers: { Cookie: sessions.admin } });
@@ -210,6 +218,8 @@ try {
   check(publishedReview.status === 201 && publishedReview.body.replayed === false && !('attachmentManifest' in publishedReview.body), 'approved review publishes without exposing storage keys');
   const publicationReplay = await call(`${decisionPath}/publish`, sessions.editor, 'POST');
   check(publicationReplay.status === 200 && publicationReplay.body.snapshotId === publishedReview.body.snapshotId && publicationReplay.body.replayed === true, 'publication replay returns one immutable snapshot');
+  const publishedReviewList = await call(reviewsPath, sessions.editor);
+  check(publishedReviewList.body.items[0].isCurrentPublication === true && publishedReviewList.body.items[0].canPublish === false, 'review UI marks current publication and disables republishing completed outcome');
   const publishedReader = await call(`/documents/${team.id}`, sessions.viewer);
   check(publishedReader.status === 200 && publishedReader.body.content === teamRestore.body.document.content && publishedReader.body.canEdit === false, 'reader receives approved published content');
   await db.organizationMember.delete({ where: { organizationId_userId: { organizationId: orgs[0], userId: users[0] } } });

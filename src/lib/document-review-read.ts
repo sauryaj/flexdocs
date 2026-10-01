@@ -27,12 +27,17 @@ export async function readDocumentReviews(actorId: string, documentId: string, r
       select: { title: true, content: true, category: true, version: true },
     } }, orderBy: [{ submittedAt: 'desc' }, { id: 'asc' }], skip: page * limit, take: limit });
     const total = await tx.documentReview.count({ where: { documentId } });
+    const pending = await tx.documentReview.count({ where: { documentId, decision: 'pending' } });
+    const publications = await tx.documentPublication.findMany({ where: { documentId, sourceRevisionId: { in: reviews.map(review => review.sourceRevisionId) } }, select: { id: true, sourceRevisionId: true } });
     return { items: reviews.map(review => ({ ...documentReviewDto(review), sourceRevision: review.sourceRevision,
       canDecide: !document.isArchived && review.decision === 'pending' && capabilities.publish && review.reviewerIds.includes(actorId),
       canWithdraw: !document.isArchived && review.decision === 'pending' && capabilities.submitReview && review.submittedById === actorId,
-      canPublish: !document.isArchived && review.decision === 'approved' && capabilities.publish,
+      isPublished: publications.some(publication => publication.sourceRevisionId === review.sourceRevisionId),
+      isCurrentPublication: publications.some(publication => publication.sourceRevisionId === review.sourceRevisionId && publication.id === document.publishedSnapshotId),
+      canPublish: !document.isArchived && review.decision === 'approved' && capabilities.publish && document.lifecycleState === 'in_review'
+        && document.updatedAt.getTime() === review.submittedAt.getTime() && !publications.some(publication => publication.sourceRevisionId === review.sourceRevisionId),
     })), page, limit, total, hasMore: (page + 1) * limit < total,
-      canSubmit: !!document.lifecycleState && ['draft', 'in_review'].includes(document.lifecycleState) && !document.isArchived && capabilities.submitReview };
+      canSubmit: pending === 0 && !!document.lifecycleState && ['draft', 'in_review'].includes(document.lifecycleState) && !document.isArchived && capabilities.submitReview };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }
 

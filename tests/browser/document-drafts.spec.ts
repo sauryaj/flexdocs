@@ -42,6 +42,74 @@ test.beforeAll(async ({ request, baseURL }) => {
 test.beforeEach(async ({ context }) => { await context.addCookies(cookies); });
 test.afterAll(async ({ request, baseURL }) => { await request.post(`${baseURL}/api/logout`); });
 
+test('review panel selects files, preserves feedback on failure and separates approval from publication', async ({ context, page }) => {
+  let stage: 'draft' | 'pending' | 'approved' | 'published' = 'draft';
+  let approvalCalls = 0;
+  let publicationCalls = 0;
+  let release = () => {};
+  const hold = new Promise<void>(resolve => { release = resolve; });
+  const document = { ...original, id: 'browser-review', ownershipKind: 'organization', lifecycleState: 'draft', canManageLifecycle: false, canDuplicate: false };
+  await context.route('**/api/documents/browser-review', route => route.fulfill({ json: { ...document, lifecycleState: stage === 'draft' ? 'draft' : stage === 'published' ? 'published' : 'in_review' } }));
+  await context.route('**/api/documents/browser-review/reviewers?**', route => route.fulfill({ json: { items: [{ id: 'reviewer-a', name: 'Review Person', email: 'reviewer@example.invalid' }], hasMore: false } }));
+  await context.route('**/api/documents/browser-review/reviews/files?**', route => route.fulfill({ json: { items: [{ id: 'review-file', filename: 'guide.bin', size: 4 }], hasMore: false } }));
+  await context.route('**/api/documents/browser-review/reviews?page=**', route => route.fulfill({ json: { canSubmit: stage === 'draft', hasMore: false,
+    items: stage === 'draft' ? [] : [{ id: 'review-a', decision: stage === 'pending' ? 'pending' : 'approved', submittedAt: original.updatedAt,
+      feedback: stage === 'pending' ? null : 'Exact version checked', canDecide: stage === 'pending', canWithdraw: false, canPublish: stage === 'approved',
+      isPublished: stage === 'published', isCurrentPublication: stage === 'published', tags: [], sourceRevision: { title: original.title, content: original.content, category: 'general', version: 1 },
+      attachments: [{ attachmentId: 'review-file', filename: 'guide.bin', size: 4 }] }],
+  } }));
+  await context.route('**/api/documents/browser-review/reviews', async route => {
+    expect(route.request().postDataJSON()).toEqual({ expectedUpdatedAt: original.updatedAt, reviewerIds: ['reviewer-a'], attachmentIds: ['review-file'] });
+    await hold; stage = 'pending'; return route.fulfill({ status: 201, json: { id: 'review-a' } });
+  });
+  await context.route('**/api/documents/browser-review/reviews/review-a', async route => {
+    approvalCalls++;
+    expect(route.request().postDataJSON()).toEqual({ decision: 'approved', feedback: 'Exact version checked' });
+    if (approvalCalls === 1) return route.fulfill({ status: 409, json: { error: 'Review changed; refresh first' } });
+    stage = 'approved'; return route.fulfill({ json: { decision: 'approved' } });
+  });
+  await context.route('**/api/documents/browser-review/reviews/review-a/publish', route => { publicationCalls++; stage = 'published'; return route.fulfill({ status: 201, json: { snapshotId: 'published-a' } }); });
+  await context.route('**/api/documents/browser-review/reviews/review-a/attachments/review-file', route => route.fulfill({ body: Buffer.from([1, 2, 3, 4]), contentType: 'application/octet-stream' }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/dashboard/documents/browser-review');
+  await page.getByRole('checkbox', { name: /Review Person/ }).check();
+  await page.getByRole('checkbox', { name: /guide.bin/ }).check();
+  page.once('dialog', dialog => { expect(dialog.message()).toContain('does not publish'); return dialog.accept(); });
+  await page.getByRole('button', { name: 'Submit for review', exact: true }).click();
+  try { await expect(page.locator('textarea').last()).toBeDisabled(); } finally { release(); }
+  await expect(page.getByRole('button', { name: 'Approve review', exact: true })).toBeVisible();
+  const comparison = page.getByText('Compare reviewed version with saved working version', { exact: true });
+  await comparison.focus(); await comparison.press('Enter');
+  await expect(page.getByRole('heading', { name: 'Reviewed version: Saved document', exact: true })).toBeVisible();
+  await expect(page.getByText('Category: general · Tags: None', { exact: true })).toHaveCount(2);
+  const downloadEvent = page.waitForEvent('download');
+  await page.getByRole('button', { name: 'Download guide.bin' }).click();
+  expect(await readFile((await (await downloadEvent).path())!)).toEqual(Buffer.from([1, 2, 3, 4]));
+  await page.getByLabel('Feedback for version 1', { exact: true }).fill('Exact version checked');
+  page.once('dialog', dialog => dialog.dismiss());
+  await page.locator('a[href="/dashboard/documents"]').last().click();
+  await expect(page).toHaveURL(/browser-review$/);
+  await expect(page.getByLabel('Feedback for version 1', { exact: true })).toHaveValue('Exact version checked');
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Approve review', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Review changed' })).toBeVisible();
+  await expect(page.getByLabel('Feedback for version 1', { exact: true })).toHaveValue('Exact version checked');
+  await page.getByRole('button', { name: 'Refresh reviews', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Approve review', exact: true })).toBeEnabled();
+  await expect(page.getByLabel('Feedback for version 1', { exact: true })).toHaveValue('Exact version checked');
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Approve review', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Publish approved version', exact: true })).toBeVisible();
+  expect(publicationCalls).toBe(0);
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Publish approved version', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Version 1 · approved · Current publication', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Publish approved version', exact: true })).toHaveCount(0);
+  expect(publicationCalls).toBe(1);
+  await page.getByRole('heading', { name: 'Review and publication', exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: '/tmp/flexdocs-review-workflow.png', fullPage: true });
+});
+
 test('team Trash preserves failed restoration and refreshes its version before retry', async ({ context, page }) => {
   let restored = false;
   let calls = 0;

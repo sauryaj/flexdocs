@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Download } from 'lucide-react';
 
-export function PublishedAttachments({ documentId, snapshotId, files }: {
-  documentId: string; snapshotId: string;
+export function PublishedAttachments({ documentId, snapshotId, reviewId, files }: {
+  documentId: string;
   files: { attachmentId: string; filename: string; size: number }[];
-}) {
+} & ({ snapshotId: string; reviewId?: never } | { reviewId: string; snapshotId?: never })) {
+  const headingId = useId();
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState('');
   const request = useRef<AbortController | null>(null);
@@ -19,10 +20,11 @@ export function PublishedAttachments({ documentId, snapshotId, files }: {
     setPending(file.attachmentId);
     setError('');
     try {
-      const path = `/api/documents/${encodeURIComponent(documentId)}/publications/${encodeURIComponent(snapshotId)}/attachments/${encodeURIComponent(file.attachmentId)}`;
+      const version = reviewId ? `reviews/${encodeURIComponent(reviewId)}` : `publications/${encodeURIComponent(snapshotId!)}`;
+      const path = `/api/documents/${encodeURIComponent(documentId)}/${version}/attachments/${encodeURIComponent(file.attachmentId)}`;
       const response = await fetch(path, { signal: controller.signal });
       if (!response.ok) {
-        setError(response.status === 503 ? 'Published file is unavailable. Try again or ask an administrator to check storage.' : 'Download unavailable. Refresh this document and try again.');
+        setError(response.status === 503 ? `${reviewId ? 'Reviewed' : 'Published'} file is unavailable. Try again or ask an administrator to check storage.` : 'Download unavailable. Refresh this document and try again.');
         return;
       }
       const blob = await response.blob();
@@ -44,8 +46,8 @@ export function PublishedAttachments({ documentId, snapshotId, files }: {
   }
 
   if (!files.length) return null;
-  return <section className="card p-4 space-y-3" aria-labelledby="published-attachments-title">
-    <h2 id="published-attachments-title" className="font-semibold">Published attachments</h2>
+  return <section className="card p-4 space-y-3" aria-labelledby={headingId}>
+    <h2 id={headingId} className="font-semibold">{reviewId ? 'Reviewed attachments' : 'Published attachments'}</h2>
     {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
     <ul className="space-y-2">{files.map(file => <li key={file.attachmentId} className="flex flex-wrap items-center justify-between gap-2">
       <span className="min-w-0 break-all text-sm">{file.filename}</span>
