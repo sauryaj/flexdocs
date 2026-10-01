@@ -30,6 +30,8 @@ Review/publication UI integration was pushed as `de9d06e` to [PR #1](https://git
 
 Delivery audit on 2026-10-01: [CI run 36795289888](https://github.com/sauryaj/flexdocs/actions/runs/36795289888) targets the exact `de9d06e26bb7e5e857180446609b1855847f4648` head. Lint/types/unit, build/API/browser and isolated full recovery jobs passed. Fresh installation/populated upgrade was still running at this observation; complete CI success is not claimed. This register correction changes documentation only. Required local unit/type/lint checks passed again without changing the warning count.
 
+Completion recheck: that same run subsequently completed successfully with all four jobs passing, including fresh installation/populated upgrade. This proves CI for `de9d06e`, not any later documentation commit or the full expanded platform goal. No application source changed in the register corrections.
+
 ### Next ownership milestone acceptance criteria
 
 1. Current authorized team maintainers can list/read working attachments across uploaders; readers remain limited to the published selected bytes. Current permission must be checked on every read and after file I/O.
