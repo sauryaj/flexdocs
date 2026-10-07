@@ -22,6 +22,12 @@ Milestone order: data safety/deployment; access/ownership; lifecycle/usability; 
 
 ## Findings register
 
+### Pilot-release navigation prerequisite (2026-10-07)
+
+The bounded redesign sequence starts with recovery and editing safety. `requestNavigation()` now lets active document drafts veto application-controlled navigation before global search, Quick Add or organization selection changes state. Failed browser persistence triggers explicit confirmation; cancellation leaves current text and controls available. A protected local copy continues to permit navigation without claiming a server save. This increment does not close browser history/back-forward coverage, all other navigation sites, feedback/pending-operation guards, complete backup custody or versioned rollback requirements. The broad goal remains paused and incomplete; no deployment or merge occurs through this increment.
+
+Local evidence: 320 unit tests, clean TypeScript, zero lint errors/168 unchanged warnings, isolated production build, all 28 browser scenarios in the first full run plus one additional protected-copy navigation/recovery scenario. The additional test initially timed out because it requested the new-document recovery button instead of the existing-document comparison button; the corrected selector passed without application changes. Browser regressions use intercepted document responses and a real authenticated production server, not production data. Exact-head CI must still be verified after delivery.
+
 ### Ownership confirmation UI and scoped destination discovery (2026-10-07)
 
 Document-detail controls now require current source transfer capability and discover only teams with the caller's current membership/administration authority. Discovery returns paginated names/IDs without resource counts. All audience pages must be visited before explicit acknowledgement; unsaved edits/feedback block new requests. Account/document-scoped tab session storage records only the original retry key, version/fingerprint, destination, request ID and acknowledgement before writes. Uncertain operations lock editing and expose status/retry/cancel controls, including recovery when source access or document loading is lost. Every action revalidates identity; unavailable storage blocks new changes. Same-tab reload recovery does not imply closed-tab recovery.

@@ -10,6 +10,7 @@ import { useOrganization } from '@/lib/OrganizationContext';
 import { NotificationBell } from '@/components/NotificationBell';
 import { CommandPalette } from '@/components/CommandPalette';
 import { clearBrowserDocumentDrafts } from '@/lib/document-drafts';
+import { requestNavigation } from '@/lib/navigation-request';
 
 export function Header() {
   const { selectedOrg } = useOrganization();
@@ -37,6 +38,11 @@ export function Header() {
 
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const quickAddRef = useRef<HTMLDivElement>(null);
+  const quickAdd = (url: string) => {
+    if (!requestNavigation()) return;
+    setQuickAddOpen(false);
+    router.push(url);
+  };
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -111,8 +117,7 @@ export function Header() {
             >
               <button
                 onClick={() => {
-                  setQuickAddOpen(false);
-                  router.push('/dashboard/passwords/new');
+                  quickAdd('/dashboard/passwords/new');
                 }}
                 className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-[var(--surface-2)] font-medium"
                 style={{ color: 'var(--foreground)' }}
@@ -122,8 +127,7 @@ export function Header() {
               </button>
               <button
                 onClick={() => {
-                  setQuickAddOpen(false);
-                  router.push(`/dashboard/documents/new${selectedOrg?.id ? `?organizationId=${selectedOrg.id}` : ''}`);
+                  quickAdd(`/dashboard/documents/new${selectedOrg?.id ? `?organizationId=${selectedOrg.id}` : ''}`);
                 }}
                 className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-[var(--surface-2)] font-medium"
                 style={{ color: 'var(--foreground)' }}
@@ -133,8 +137,7 @@ export function Header() {
               </button>
               <button
                 onClick={() => {
-                  setQuickAddOpen(false);
-                  router.push('/dashboard/assets/new');
+                  quickAdd('/dashboard/assets/new');
                 }}
                 className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-[var(--surface-2)] font-medium"
                 style={{ color: 'var(--foreground)' }}
@@ -144,8 +147,7 @@ export function Header() {
               </button>
               <button
                 onClick={() => {
-                  setQuickAddOpen(false);
-                  router.push('/dashboard/domains/new');
+                  quickAdd('/dashboard/domains/new');
                 }}
                 className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-[var(--surface-2)] font-medium"
                 style={{ color: 'var(--foreground)' }}
@@ -155,8 +157,7 @@ export function Header() {
               </button>
               <button
                 onClick={() => {
-                  setQuickAddOpen(false);
-                  router.push('/dashboard/checklists/new');
+                  quickAdd('/dashboard/checklists/new');
                 }}
                 className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-[var(--surface-2)] font-medium"
                 style={{ color: 'var(--foreground)' }}

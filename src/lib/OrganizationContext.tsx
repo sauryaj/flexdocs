@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { requestNavigation } from './navigation-request';
 
 export interface Organization {
   id: string;
@@ -62,12 +63,13 @@ export function OrganizationProvider({ children }: { children: React.ReactNode }
   }, []);
 
   const setSelectedOrg = useCallback((org: Organization | null) => {
+    if (org?.id === selectedOrg?.id || !requestNavigation()) return;
     setSelectedOrgState(org);
     try {
       if (org) localStorage.setItem('selectedOrg', JSON.stringify(org));
       else localStorage.removeItem('selectedOrg');
     } catch { /* Organization selection must work without browser storage. */ }
-  }, []);
+  }, [selectedOrg?.id]);
 
   return (
     <OrganizationContext.Provider value={{ selectedOrg, setSelectedOrg, isLoading }}>

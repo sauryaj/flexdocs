@@ -607,6 +607,70 @@ test('blocked storage shows an honest warning and protects link navigation', asy
   await expect(page.locator('textarea')).toHaveValue(markdown);
 });
 
+test('blocked drafts protect Quick Add and search-result routing before the editor unmounts', async ({ context, page }) => {
+  await fixture(context);
+  await context.route('**/api/search?**', route => route.fulfill({ json: { groups: [{ type: 'documents', label: 'Documents', items: [{ id: 'browser-draft-b', title: 'Second document', url: '/dashboard/documents/browser-draft-b' }] }] } }));
+  await page.addInitScript(() => { Storage.prototype.setItem = () => { throw new DOMException('Blocked', 'QuotaExceededError'); }; });
+  await openEditor(page);
+  await page.locator('textarea').fill(markdown);
+  await expect(page.getByText('Your latest changes could not be saved in this browser.', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: '+ Quick Add', exact: true }).click();
+  page.once('dialog', dialog => dialog.dismiss());
+  await page.getByRole('button', { name: 'New Document', exact: true }).click();
+  await expect(page).toHaveURL(/browser-draft-a$/);
+  await expect(page.locator('textarea')).toHaveValue(markdown);
+  await expect(page.getByRole('button', { name: 'New Document', exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '+ Quick Add', exact: true }).click();
+  await page.getByRole('button', { name: 'Open global search' }).click();
+  await page.getByRole('textbox', { name: 'Search query' }).fill('Second');
+  await expect(page.getByRole('button', { name: /Second document/ })).toBeVisible();
+  page.once('dialog', dialog => dialog.dismiss());
+  await page.getByRole('textbox', { name: 'Search query' }).press('Enter');
+  await expect(page).toHaveURL(/browser-draft-a$/);
+  await expect(page.getByRole('textbox', { name: 'Search query' })).toHaveValue('Second');
+  await expect(page.locator('textarea')).toHaveValue(markdown);
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('textbox', { name: 'Search query' }).press('Enter');
+  await expect(page).toHaveURL(/browser-draft-b$/);
+  await expect(page.locator('textarea')).toHaveValue('# Second');
+});
+
+test('blocked drafts keep the current organization when a switch is cancelled', async ({ context, page }) => {
+  await fixture(context);
+  await context.route('**/api/organizations', route => route.fulfill({ json: [{ id: 'navigation-org', name: 'Navigation organization' }] }));
+  await page.addInitScript(() => { Storage.prototype.setItem = () => { throw new DOMException('Blocked', 'QuotaExceededError'); }; });
+  await openEditor(page);
+  await page.locator('textarea').fill(markdown);
+  await expect(page.getByText('Your latest changes could not be saved in this browser.', { exact: false })).toBeVisible();
+  await page.getByRole('button', { name: 'All Organizations', exact: true }).first().click();
+  page.once('dialog', dialog => dialog.dismiss());
+  await page.getByRole('button', { name: 'Navigation organization', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'All Organizations', exact: true }).first()).toBeVisible();
+  await expect(page.locator('textarea')).toHaveValue(markdown);
+  await page.getByRole('button', { name: 'All Organizations', exact: true }).first().click();
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Navigation organization', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Navigation organization', exact: true })).toBeVisible();
+  await expect(page.locator('textarea')).toHaveValue(markdown);
+});
+
+test('a protected browser copy survives Quick Add navigation and offers recovery on return', async ({ context, page }) => {
+  await fixture(context);
+  await openEditor(page);
+  await page.locator('textarea').fill(markdown);
+  await expect.poll(() => page.evaluate(() => Object.keys(localStorage).some(key => key.startsWith('flexdocs:draft:v1:') && localStorage.getItem(key)?.includes('Recovered Markdown')))).toBe(true);
+  const dialogs: string[] = [];
+  page.on('dialog', async dialog => { dialogs.push(dialog.message()); await dialog.dismiss(); });
+  await page.getByRole('button', { name: '+ Quick Add', exact: true }).click();
+  await page.getByRole('button', { name: 'New Document', exact: true }).click();
+  await expect(page).toHaveURL(/\/documents\/new$/);
+  expect(dialogs).toEqual([]);
+  await page.goto('/dashboard/documents/browser-draft-a');
+  await page.getByRole('button', { name: 'Compare draft', exact: true }).click();
+  await page.getByRole('button', { name: 'Restore a copy into editor', exact: true }).click();
+  await expect(page.locator('textarea')).toHaveValue(markdown);
+});
+
 test('logout epoch closes other editors and stops recreating browser copies', async ({ context, page }) => {
   await fixture(context);
   await openEditor(page);
@@ -731,6 +795,12 @@ test('storage failure still protects navigation while a creation request is in f
     await expect(page.getByText('Your latest changes could not be saved in this browser.', { exact: false })).toBeVisible();
     await page.getByRole('button', { name: 'Save Document', exact: true }).click();
     await expect.poll(() => started).toBe(true);
+    await page.getByRole('button', { name: '+ Quick Add', exact: true }).click();
+    page.once('dialog', dialog => dialog.dismiss());
+    await page.getByRole('button', { name: 'New Document', exact: true }).click();
+    await expect(page).toHaveURL(/\/documents\/new$/);
+    await expect(page.locator('textarea')).toHaveValue(markdown);
+    await page.getByRole('button', { name: '+ Quick Add', exact: true }).click();
     page.once('dialog', dialog => dialog.dismiss());
     await page.locator('a[href="/dashboard/documents"]').first().click();
     await expect(page).toHaveURL(/\/documents\/new$/);

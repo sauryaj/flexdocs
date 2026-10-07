@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DRAFT_CLEARED_EVENT, DRAFT_EPOCH_KEY, DRAFT_SESSION_CHANNEL, draftKey, listDrafts, saveDraft, type DocumentDraft, type DraftFields } from './document-drafts';
+import { NAVIGATION_REQUEST_EVENT } from './navigation-request';
 
 export function useDocumentDraft(fields: DraftFields, enabled: boolean, documentId = 'new', recoveryEnabled = true, protectNavigation = enabled) {
   const [userId, setUserId] = useState<string | null>(null);
@@ -133,6 +134,10 @@ export function useDocumentDraft(fields: DraftFields, enabled: boolean, document
   useEffect(() => {
     if (!protectNavigation) return;
     const beforeUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    const request = (event: Event) => {
+      if (event.defaultPrevented || (savedAt && !error)) return;
+      if (!confirm('Your latest draft is not protected in this browser. Leave and risk losing your changes?')) event.preventDefault();
+    };
     const onClick = (event: MouseEvent) => {
       if (savedAt && !error) return;
       const anchor = event.target instanceof Element ? event.target.closest('a') : null;
@@ -143,9 +148,11 @@ export function useDocumentDraft(fields: DraftFields, enabled: boolean, document
       }
     };
     window.addEventListener('beforeunload', beforeUnload);
+    window.addEventListener(NAVIGATION_REQUEST_EVENT, request);
     document.addEventListener('click', onClick, true);
     return () => {
       window.removeEventListener('beforeunload', beforeUnload);
+      window.removeEventListener(NAVIGATION_REQUEST_EVENT, request);
       document.removeEventListener('click', onClick, true);
     };
   }, [protectNavigation, savedAt, error]);
