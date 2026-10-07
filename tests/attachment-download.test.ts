@@ -32,3 +32,10 @@ it('does not misreport other storage failures as missing files', async () => {
   record(join(path, '..'));
   await expect(getAttachmentData('attachment', 'owner')).rejects.toMatchObject({ code: 'EISDIR' });
 });
+it('does not return bytes after access or storage changed during the read', async () => {
+  const path = fixture(); writeFileSync(path, 'private bytes');
+  record(path);
+  vi.mocked(prisma.attachment.findFirst).mockResolvedValueOnce({ id: 'attachment', storageType: 'filesystem', filePath: path, data: null } as never)
+    .mockResolvedValueOnce(null);
+  expect(await getAttachmentData('attachment', 'owner')).toBeNull();
+});

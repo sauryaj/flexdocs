@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { getAttachmentData, deleteFile } from '@/lib/file-storage';
 import { hasPermission } from '@/lib/rbac';
 import { type UserRole } from '@prisma/client';
+import { DocumentWriteError } from '@/lib/document-write';
 
 export async function GET(
   req: Request,
@@ -39,8 +40,12 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  const deleted = await deleteFile(id, user.id);
-  if (!deleted) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-  return NextResponse.json({ success: true, cleanupPending: deleted.cleanupPending });
+  try {
+    const deleted = await deleteFile(id, user.id);
+    if (!deleted) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    return NextResponse.json({ success: true, cleanupPending: deleted.cleanupPending, bytesRetained: deleted.bytesRetained });
+  } catch (error) {
+    if (error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json({ error: 'Removal could not be confirmed. Refresh attachments before retrying.' }, { status: 500 });
+  }
 }

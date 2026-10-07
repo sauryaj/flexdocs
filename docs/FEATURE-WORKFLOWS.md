@@ -2,6 +2,8 @@
 
 ## Personal upload concurrency
 
+Personal removal also uses administration/document/attachment locks and current permissions. It preserves validated bytes in immutable storage before deleting the working record. Original and immutable copies remain for explicit reference-aware cleanup; success returns `bytesRetained: true` and `cleanupPending: true`, not a claim that disk space was reclaimed. Missing/corrupt bytes return 503 and retain the working record. Legacy base64 migration uses the same lock order and supports empty files, verified immutable references and per-run migrated/failed/skipped results; it is an internal maintenance helper, not a public endpoint.
+
 Multipart and legacy upload APIs recheck the current actor role and personal document ownership while holding the shared administration and document locks through byte storage and attachment creation. Ownership changes therefore include completed uploads or cause queued uploads to be denied before storage. Admin imports explicitly permit restoring attachments to personal documents in Trash. Both HTTP upload formats return metadata only. Storage failure before the database write cleans partial bytes; once a database write starts, an uncertain failure retains bytes for reference-aware inspection. Duplicate-safe retries and automated orphan removal remain incomplete; refresh attachments before retrying an uncertain upload.
 
 ## Document Trash

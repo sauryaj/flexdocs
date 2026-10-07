@@ -22,7 +22,17 @@ Milestone order: data safety/deployment; access/ownership; lifecycle/usability; 
 
 ## Findings register
 
+### Attachment removal and legacy storage migration (2026-10-07)
+
+Personal attachment removal now acquires administration, parent-document and attachment locks, rechecks the actor's current deletion permission and personal-file visibility, validates the stored bytes and preserves an immutable copy before deleting the working record and recording its audit event atomically. Original/immutable objects are retained for explicit reference-aware cleanup; HTTP responses report `bytesRetained: true` and `cleanupPending: true`. Missing, invalid or unavailable storage prevents removal. Filesystem downloads recheck access and storage metadata after reading.
+
+Legacy base64 migration re-reads each locked attachment, validates size/encoding, stores a verified immutable object and updates the reference atomically. Empty files migrate correctly; corrupt records retain their data and count as failures. It can be restricted to explicit attachment IDs and reports migrated/failed/skipped counts. This internal maintenance helper is not exposed as a new HTTP operation.
+
+Evidence: PostgreSQL tests cover both removal/ownership orderings, migration serialization with ownership changes, unchanged document content and published attachment manifests/bytes, team denial, empty-file migration and corrupt-record preservation. Unit checks cover missing storage, database deletion failure, uncertain writes and post-read access loss. Local checks: 317 unit tests, clean types, zero lint errors/168 existing warnings, isolated production build and 295 live role-aware API/import checks. Conversion execution and explicit consent/recipient acceptance remain unfinished; these locks alone do not authorize or execute a transfer.
+
 ### Personal upload serialization (2026-10-07)
+
+Exact-head GitHub verification for `758f15519dbd75411324c849238ac88ef95038fd` passed all four jobs in run [37583080901](https://github.com/sauryaj/flexdocs/actions/runs/37583080901), including fresh installation/populated upgrade, isolated recovery and build/API/browser checks. This provides fresh-runner verification for the request migrations and upload increment despite the local Docker disk limit. It does not verify later commits or complete the full platform goal.
 
 Multipart and legacy personal uploads now share a service that acquires the documentation-administration lock and the parent-document row lock before storage or record creation. It rechecks the actor's current role and personal ownership under those locks. An ownership change cannot finish ahead of an in-flight authorized upload; a queued upload rechecks changed ownership before writing bytes. Admin imports explicitly retain support for attachments on personal documents in Trash. Legacy upload responses now return metadata without filesystem paths or encoded bytes. Partial storage failures clean up incomplete files; uncertain database outcomes retain bytes for later reference-aware inspection rather than risking removal of a committed file.
 

@@ -389,7 +389,7 @@ try {
   check((await call(`/attachments/${multipartFile.id}`, sessions.viewer, 'DELETE')).status === 403, 'viewer cannot delete attachment');
   check((await call(`/attachments/${multipartFile.id}`, null, 'DELETE')).status === 401, 'anonymous cannot delete attachment');
   const removedUpload = await call(`/attachments/${multipartFile.id}`, sessions.admin, 'DELETE');
-  check(removedUpload.status === 200 && removedUpload.body.cleanupPending === false, 'owner deletion confirms storage cleanup');
+  check(removedUpload.status === 200 && removedUpload.body.cleanupPending === true && removedUpload.body.bytesRetained === true, 'owner removes working attachment while retaining bytes for explicit cleanup');
   await call(`/documents/${shared.id}`, sessions.admin, 'PUT', { content: 'updated portable body', expectedUpdatedAt: shared.updatedAt });
   for (const role of ['editor', 'viewer', null]) {
     check((await call(`/organizations/${orgs[0]}/export`, role ? sessions[role] : null)).status === (role ? 403 : 401), `${role || 'anonymous'} cannot export decrypted organization snapshot`);
