@@ -36,7 +36,7 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     expect(pair[0].request.id).toBe(pair[1].request.id);
     expect(pair.map(result => result.replayed).sort()).toEqual([false, true]);
     const pending = pair[0].request;
-    expect(pending).toMatchObject({ status: 'pending', expired: false, consentedAt: null, executionAvailable: false });
+    expect(pending).toMatchObject({ status: 'pending', expired: false, consentedAt: null, executionAvailable: true });
     expect(await prisma.document.findUniqueOrThrow({ where: { id: document.id } })).toEqual(document);
     expect(await prisma.activityLog.count({ where: { resourceId: document.id, action: 'document.ownership.request' } })).toBe(1);
     const associated = await prisma.document.create({ data: { userId: ids[0], organizationId, title: 'Preserve association on failed deletion', content: 'EXACT ASSOCIATED BODY', visibility: 'org' } });

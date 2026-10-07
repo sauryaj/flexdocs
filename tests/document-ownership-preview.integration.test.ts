@@ -40,7 +40,7 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('private, no-store');
     const preview = await response.json();
-    expect(preview).toMatchObject({ kind: 'personal_to_team', requiresExplicitConsent: true, executionAvailable: false,
+    expect(preview).toMatchObject({ kind: 'personal_to_team', requiresExplicitConsent: true, executionAvailable: true,
       source: { audiencePolicy: 'personal_owner' }, audience: { total: 3, workingCount: 2, publishedOnlyCount: 1 }, blockers: [],
       effects: { destinationState: 'draft' }, exposure: { historicalCopiesVisibleToMaintainers: true, readersRequireNewPublication: true } });
     expect(JSON.stringify(preview)).not.toContain('PRIVATE TITLE');

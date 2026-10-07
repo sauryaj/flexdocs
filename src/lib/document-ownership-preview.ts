@@ -35,11 +35,11 @@ export async function previewDocumentOwnershipInTransaction(tx: Prisma.Transacti
     if (document.ownershipKind === 'organization' && document.organizationId === destinationOrganizationId) throw new DocumentWriteError(400, 'Document already belongs to this team');
     const audience = await teamAudience(tx, destinationOrganizationId);
     const sourceAudience = document.ownershipKind === 'organization' && document.organizationId ? await teamAudience(tx, document.organizationId) : [];
-    const files = await tx.attachment.findMany({ where: { documentId }, select: { id: true, userId: true, storageType: true, size: true, filePath: true }, orderBy: { id: 'asc' } });
+    const files = await tx.attachment.findMany({ where: { documentId }, select: { id: true, userId: true, filename: true, mimeType: true, storageType: true, size: true, filePath: true }, orderBy: { id: 'asc' } });
     const foreignFiles = document.ownershipKind === 'personal' ? files.filter(file => file.userId !== document.userId).length : 0;
     const revisions = await tx.documentRevision.findMany({ where: { documentId }, select: { id: true, version: true, createdAt: true }, orderBy: { id: 'asc' } });
-    const reviews = await tx.documentReview.findMany({ where: { documentId }, select: { id: true, sourceRevisionId: true, decision: true, decidedAt: true }, orderBy: { id: 'asc' } });
-    const publications = await tx.documentPublication.findMany({ where: { documentId }, select: { id: true, sourceRevisionId: true, publishedAt: true }, orderBy: { id: 'asc' } });
+    const reviews = await tx.documentReview.findMany({ where: { documentId }, select: { id: true, sourceRevisionId: true, decision: true, decidedAt: true, attachmentManifest: true }, orderBy: { id: 'asc' } });
+    const publications = await tx.documentPublication.findMany({ where: { documentId }, select: { id: true, sourceRevisionId: true, publishedAt: true, attachmentManifest: true }, orderBy: { id: 'asc' } });
     const workingCount = audience.filter(member => member.working).length;
     const fingerprint = createHash('sha256').update(JSON.stringify({ actorId, actorRole: actor.role, documentId, updatedAt: expectedUpdatedAt,
       source: { ownershipKind: document.ownershipKind, organizationId: document.organizationId, userId: document.userId,
@@ -62,6 +62,6 @@ export async function previewDocumentOwnershipInTransaction(tx: Prisma.Transacti
       blockers: foreignFiles ? [{ code: 'foreign_personal_attachments', count: foreignFiles,
         message: 'Other uploaders own files on this personal document. Resolve their authorization before conversion.' }] : [],
       requiresExplicitConsent: true,
-      executionAvailable: false,
+      executionAvailable: foreignFiles === 0,
     };
 }

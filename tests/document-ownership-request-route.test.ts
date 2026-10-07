@@ -3,15 +3,37 @@ const auth = vi.hoisted(() => vi.fn());
 const prepare = vi.hoisted(() => vi.fn());
 const read = vi.hoisted(() => vi.fn());
 const cancel = vi.hoisted(() => vi.fn());
+const confirm = vi.hoisted(() => vi.fn());
+vi.mock('@/lib/document-ownership-execution', () => ({ confirmDocumentOwnershipRequest: confirm }));
 vi.mock('@/lib/auth', () => ({ auth }));
 vi.mock('@/lib/document-ownership-requests', () => ({ prepareDocumentOwnershipRequest: prepare, readDocumentOwnershipRequest: read, cancelDocumentOwnershipRequest: cancel }));
 import { POST } from '@/app/api/documents/[id]/ownership/requests/route';
 import { GET, DELETE } from '@/app/api/ownership-requests/[requestId]/route';
+import { POST as CONFIRM } from '@/app/api/ownership-requests/[requestId]/confirm/route';
 import { DocumentWriteError } from '@/lib/document-write';
 const documentContext = { params: Promise.resolve({ id: 'document' }) };
 const requestContext = { params: Promise.resolve({ requestId: 'request' }) };
 const request = (body: unknown) => new Request('http://localhost/ownership/requests', { method: 'POST', body: JSON.stringify(body) });
 beforeEach(() => { vi.clearAllMocks(); auth.mockResolvedValue({ id: 'actor', role: 'editor' }); });
+it.each([null, { id: 'actor', role: 'viewer' }])('requires write permission for confirmation %j', async actor => {
+  auth.mockResolvedValue(actor);
+  expect((await CONFIRM(request({}), requestContext)).status).toBe(actor ? 403 : 401);
+  expect(confirm).not.toHaveBeenCalled();
+});
+it('bounds confirmation bodies and returns safe durable replay results', async () => {
+  expect((await CONFIRM(request({ large: 'x'.repeat(5000) }), requestContext)).status).toBe(413);
+  for (const replayed of [false, true]) {
+    confirm.mockResolvedValue({ request: { id: 'request', status: 'completed' }, replayed });
+    const response = await CONFIRM(request({ acknowledgeWorkingHistoryAndFilesExposure: true }), requestContext);
+    expect(response.status).toBe(200); expect(response.headers.get('idempotency-replayed')).toBe(String(replayed));
+    expect(response.headers.get('cache-control')).toBe('private, no-store');
+  }
+  confirm.mockRejectedValue(new DocumentWriteError(409, 'Expired'));
+  expect((await CONFIRM(request({}), requestContext)).status).toBe(409);
+  confirm.mockRejectedValue(new Error('PRIVATE STORAGE DETAILS'));
+  const failed = await CONFIRM(request({}), requestContext);
+  expect(failed.status).toBe(500); expect(await failed.text()).not.toContain('PRIVATE STORAGE DETAILS');
+});
 it.each([null, { id: 'actor', role: 'viewer' }])('requires write permission to prepare %j', async actor => {
   auth.mockResolvedValue(actor);
   expect((await POST(request({}), documentContext)).status).toBe(actor ? 403 : 401);

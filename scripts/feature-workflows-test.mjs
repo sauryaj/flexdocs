@@ -47,7 +47,7 @@ try {
   await db.organizationMember.create({ data: { userId: users[1], organizationId: orgs[1] } });
   await db.organizationDocumentationGrant.create({ data: { userId: users[1], organizationId: orgs[1], role: 'administrator' } });
   const ownershipPreview = await call(ownershipPreviewPath, sessions.editor);
-  check(ownershipPreview.status === 200 && ownershipPreview.body.kind === 'personal_to_team' && ownershipPreview.body.executionAvailable === false,
+  check(ownershipPreview.status === 200 && ownershipPreview.body.kind === 'personal_to_team' && ownershipPreview.body.executionAvailable === true,
     'authorized personal owner receives a preview without executing conversion');
   check(ownershipPreview.body.audience.total === 1 && ownershipPreview.body.exposure.readersRequireNewPublication && ownershipPreview.body.requiresExplicitConsent,
     'ownership preview explains maintainer exposure and new publication requirement');
@@ -62,7 +62,7 @@ try {
   const ownershipRequests = await Promise.all([call(ownershipRequestPath, sessions.editor, 'POST', ownershipRequestInput), call(ownershipRequestPath, sessions.editor, 'POST', ownershipRequestInput)]);
   check(ownershipRequests.map(result => result.status).sort().join() === '200,201' && ownershipRequests[0].body.id === ownershipRequests[1].body.id, 'concurrent keyed preparations return one durable request');
   const requestStatusPath = `/ownership-requests/${ownershipRequests[0].body.id}`;
-  check(ownershipRequests[0].body.status === 'pending' && ownershipRequests[0].body.consentedAt === null && ownershipRequests[0].body.executionAvailable === false,
+  check(ownershipRequests[0].body.status === 'pending' && ownershipRequests[0].body.consentedAt === null && ownershipRequests[0].body.executionAvailable === true,
     'preparing a request never records confirmation or executes conversion');
   check((await call(requestStatusPath, sessions.admin)).status === 404 && (await call(requestStatusPath, sessions.viewer)).status === 404, 'ownership request status is requester-scoped');
   check((await call(requestStatusPath, sessions.admin, 'DELETE')).status === 404, 'another administrator cannot cancel a personal ownership request');
@@ -76,6 +76,24 @@ try {
     check((await call(`/organizations/${orgs[1]}`, cookie, 'DELETE')).status === status, `organization deletion enforces caller access (${status})`);
   }
   check((await db.document.findUniqueOrThrow({ where: { id: outside.id } })).organizationId === orgs[1], 'failed organization deletion preserves document associations');
+  const conversionSource = await document(sessions.editor, 'consented-conversion');
+  const conversionPreview = await call(`/documents/${conversionSource.id}/ownership/preview?destinationOrganizationId=${orgs[1]}&expectedUpdatedAt=${encodeURIComponent(conversionSource.updatedAt)}`, sessions.editor);
+  const conversionRequest = await call(`/documents/${conversionSource.id}/ownership/requests`, sessions.editor, 'POST', {
+    key: randomUUID(), destinationOrganizationId: orgs[1], expectedUpdatedAt: conversionSource.updatedAt, previewFingerprint: conversionPreview.body.fingerprint,
+  });
+  check(conversionRequest.status === 201, 'owner prepares a conversion without sharing the document');
+  const confirmationPath = `/ownership-requests/${conversionRequest.body.id}/confirm`;
+  const confirmation = { expectedUpdatedAt: conversionSource.updatedAt, previewFingerprint: conversionPreview.body.fingerprint, acknowledgeWorkingHistoryAndFilesExposure: true };
+  for (const [cookie, status] of [[null, 401], [sessions.viewer, 403], [sessions.admin, 404]]) {
+    check((await call(confirmationPath, cookie, 'POST', confirmation)).status === status, `ownership confirmation enforces current caller access (${status})`);
+  }
+  check((await call(confirmationPath, sessions.editor, 'POST', { ...confirmation, acknowledgeWorkingHistoryAndFilesExposure: false })).status === 400, 'ownership change requires explicit history/file exposure acknowledgement');
+  const conversionResults = await Promise.all([call(confirmationPath, sessions.editor, 'POST', confirmation), call(confirmationPath, sessions.editor, 'POST', confirmation)]);
+  check(conversionResults.every(result => result.status === 200 && result.body.status === 'completed') && conversionResults[0].body.id === conversionResults[1].body.id, 'simultaneous confirmations return the same durable completion');
+  const convertedDocument = await db.document.findUniqueOrThrow({ where: { id: conversionSource.id } });
+  check(convertedDocument.ownershipKind === 'organization' && convertedDocument.organizationId === orgs[1] && convertedDocument.lifecycleState === 'draft' && convertedDocument.content === conversionSource.content && convertedDocument.publishedSnapshotId === null, 'confirmed conversion preserves content and requires a new team publication');
+  check((await call(`/ownership-requests/${conversionRequest.body.id}`, sessions.editor)).body.consentedAt !== null, 'confirmation persists explicit consent with its outcome');
+  check((await call(`/ownership-requests/${conversionRequest.body.id}`, sessions.editor, 'DELETE')).status === 409, 'completed conversions cannot be cancelled');
   await db.organizationDocumentationGrant.delete({ where: { organizationId_userId: { organizationId: orgs[1], userId: users[1] } } });
   check((await call(ownershipPreviewPath, sessions.editor)).status === 404, 'ownership preview rechecks a revoked destination grant');
   await db.organizationMember.delete({ where: { organizationId_userId: { organizationId: orgs[1], userId: users[1] } } });
