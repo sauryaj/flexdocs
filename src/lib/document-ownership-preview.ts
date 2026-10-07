@@ -16,8 +16,12 @@ async function teamAudience(tx: Prisma.TransactionClient, organizationId: string
 }
 
 export async function previewDocumentOwnership(actorId: string, documentId: string, destinationOrganizationId: string, expectedUpdatedAt?: string, page = 0) {
+  return prisma.$transaction(tx => previewDocumentOwnershipInTransaction(tx, actorId, documentId, destinationOrganizationId, expectedUpdatedAt, page),
+    { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+}
+
+export async function previewDocumentOwnershipInTransaction(tx: Prisma.TransactionClient, actorId: string, documentId: string, destinationOrganizationId: string, expectedUpdatedAt?: string, page = 0) {
   if (!Number.isSafeInteger(page) || page < 0 || page > 1_000_000) throw new DocumentWriteError(400, 'Invalid audience page');
-  return prisma.$transaction(async tx => {
     const document = await tx.document.findFirst({ where: { id: documentId, deletedAt: null } });
     const actor = await tx.user.findUnique({ where: { id: actorId }, select: { id: true, role: true } });
     if (!document || !actor || !(await resolveDocumentCapabilities(document, actor, tx)).requestTransfer) throw new DocumentWriteError(404, 'Not found');
@@ -60,5 +64,4 @@ export async function previewDocumentOwnership(actorId: string, documentId: stri
       requiresExplicitConsent: true,
       executionAvailable: false,
     };
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }

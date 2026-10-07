@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import { randomBytes, createHash } from 'node:crypto';
+import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { mkdir, writeFile, unlink } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 
@@ -54,6 +54,28 @@ try {
   check(!(JSON.stringify(ownershipPreview.body).includes(own.title)) && !(Object.hasOwn(ownershipPreview.body, 'content')),
     'ownership preview omits the document body and title');
   check((await db.document.findUniqueOrThrow({ where: { id: own.id } })).ownershipKind === 'personal', 'preview leaves ownership unchanged');
+  const ownershipRequestPath = `/documents/${own.id}/ownership/requests`;
+  const ownershipRequestInput = { key: randomUUID(), destinationOrganizationId: orgs[1], expectedUpdatedAt: own.updatedAt, previewFingerprint: ownershipPreview.body.fingerprint };
+  for (const [cookie, status] of [[null, 401], [sessions.viewer, 403], [sessions.admin, 404]]) {
+    check((await call(ownershipRequestPath, cookie, 'POST', ownershipRequestInput)).status === status, `ownership request preparation enforces caller access (${status})`);
+  }
+  const ownershipRequests = await Promise.all([call(ownershipRequestPath, sessions.editor, 'POST', ownershipRequestInput), call(ownershipRequestPath, sessions.editor, 'POST', ownershipRequestInput)]);
+  check(ownershipRequests.map(result => result.status).sort().join() === '200,201' && ownershipRequests[0].body.id === ownershipRequests[1].body.id, 'concurrent keyed preparations return one durable request');
+  const requestStatusPath = `/ownership-requests/${ownershipRequests[0].body.id}`;
+  check(ownershipRequests[0].body.status === 'pending' && ownershipRequests[0].body.consentedAt === null && ownershipRequests[0].body.executionAvailable === false,
+    'preparing a request never records confirmation or executes conversion');
+  check((await call(requestStatusPath, sessions.admin)).status === 404 && (await call(requestStatusPath, sessions.viewer)).status === 404, 'ownership request status is requester-scoped');
+  check((await call(requestStatusPath, sessions.admin, 'DELETE')).status === 404, 'another administrator cannot cancel a personal ownership request');
+  check((await call(ownershipRequestPath, sessions.editor, 'POST', { ...ownershipRequestInput, previewFingerprint: '0'.repeat(64) })).status === 409, 'ownership retry keys reject changed previews');
+  check((await call(requestStatusPath, sessions.editor, 'DELETE')).body.status === 'cancelled', 'requester can cancel a pending ownership request');
+  check((await call(requestStatusPath, sessions.editor, 'DELETE')).body.status === 'cancelled', 'cancellation retries preserve the terminal result');
+  check((await call(ownershipRequestPath, sessions.editor, 'POST', ownershipRequestInput)).body.status === 'cancelled', 'original-key replay cannot reactivate a cancelled request');
+  check((await db.document.findUniqueOrThrow({ where: { id: own.id } })).updatedAt.toISOString() === own.updatedAt, 'request preparation and cancellation preserve document content and version');
+  check((await call(`/organizations/${orgs[1]}`, sessions.admin, 'DELETE')).status === 409, 'retained ownership requests prevent organization deletion with a clear conflict');
+  for (const [cookie, status] of [[null, 401], [sessions.editor, 403], [sessions.viewer, 403]]) {
+    check((await call(`/organizations/${orgs[1]}`, cookie, 'DELETE')).status === status, `organization deletion enforces caller access (${status})`);
+  }
+  check((await db.document.findUniqueOrThrow({ where: { id: outside.id } })).organizationId === orgs[1], 'failed organization deletion preserves document associations');
   await db.organizationDocumentationGrant.delete({ where: { organizationId_userId: { organizationId: orgs[1], userId: users[1] } } });
   check((await call(ownershipPreviewPath, sessions.editor)).status === 404, 'ownership preview rechecks a revoked destination grant');
   await db.organizationMember.delete({ where: { organizationId_userId: { organizationId: orgs[1], userId: users[1] } } });
@@ -480,6 +502,7 @@ try {
   await db.documentPublication.deleteMany({ where: { publisherId: { in: users } } });
   await db.documentReview.deleteMany({ where: { submittedById: { in: users } } });
   await db.organizationDocumentationGrant.deleteMany({ where: { organizationId: { in: orgs } } });
+  await db.documentOwnershipRequest.deleteMany({ where: { actorId: { in: users } } });
   await db.document.deleteMany({ where: { userId: { in: users } } });
   await db.password.deleteMany({ where: { userId: { in: users } } });
   await db.folder.deleteMany({ where: { userId: { in: users } } });

@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { deleteOrganization } from '@/lib/organization-administration';
+import { DocumentationGrantError } from '@/lib/documentation-grants';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/rbac';
@@ -107,24 +109,9 @@ export async function DELETE(
 
   const { id } = await params;
 
-  const organization = await prisma.organization.findUnique({
-    where: { id },
-  });
-
-  if (!organization) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try { return NextResponse.json(await deleteOrganization(user.id, id)); }
+  catch (error) {
+    if (error instanceof DocumentationGrantError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json({ error: 'Organization deletion could not be confirmed. Reload before retrying.' }, { status: 500 });
   }
-
-  await prisma.$transaction([
-    prisma.document.updateMany({ where: { organizationId: id }, data: { organizationId: null } }),
-    prisma.password.updateMany({ where: { organizationId: id }, data: { organizationId: null } }),
-    prisma.domain.updateMany({ where: { organizationId: id }, data: { organizationId: null } }),
-    prisma.flexibleAsset.updateMany({ where: { organizationId: id }, data: { organizationId: null } }),
-    prisma.checklist.updateMany({ where: { organizationId: id }, data: { organizationId: null } }),
-    prisma.folder.updateMany({ where: { organizationId: id }, data: { organizationId: null } }),
-  ]);
-
-  await prisma.organization.delete({ where: { id } });
-
-  return NextResponse.json({ message: 'Deleted' });
 }

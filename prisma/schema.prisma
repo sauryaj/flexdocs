@@ -25,6 +25,12 @@ enum DocumentationRole {
   administrator
 }
 
+enum DocumentOwnershipRequestStatus {
+  pending
+  cancelled
+  completed
+}
+
 model User {
   id            String    @id @default(cuid())
   email         String    @unique
@@ -46,6 +52,7 @@ model User {
   responsibleDocuments Document[] @relation("DocumentResponsibility")
   documentationGrants OrganizationDocumentationGrant[]
   documentCreations DocumentCreationRequest[]
+  documentOwnershipRequests DocumentOwnershipRequest[]
   passwords     Password[]
   domains       Domain[]
   folders       Folder[]
@@ -144,6 +151,7 @@ model Document {
   revisions      DocumentRevision[]
   attachments    Attachment[]
   creationRequest DocumentCreationRequest?
+  ownershipRequests DocumentOwnershipRequest[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -235,6 +243,36 @@ model DocumentCreationRequest {
   createdAt   DateTime @default(now())
 
   @@unique([userId, key])
+}
+
+model DocumentOwnershipRequest {
+  id String @id @default(cuid())
+  actorId String
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  key String
+  payloadHash String
+  sourceDocumentId String
+  documentId String?
+  document Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  sourceOwnershipKind DocumentOwnership
+  sourceOrganizationId String?
+  sourceOwnerId String
+  destinationOrganizationId String
+  destinationOrganization Organization @relation(fields: [destinationOrganizationId], references: [id], onDelete: Restrict)
+  expectedUpdatedAt DateTime
+  previewFingerprint String
+  status DocumentOwnershipRequestStatus @default(pending)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  cancelledAt DateTime?
+  consentedAt DateTime?
+  completedAt DateTime?
+  resultUpdatedAt DateTime?
+
+  @@unique([actorId, key])
+  @@index([documentId, status])
+  @@index([actorId, createdAt])
+  @@index([status, expiresAt])
 }
 
 model Password {
@@ -510,6 +548,7 @@ model Organization {
   invitations Invitation[]
   members     OrganizationMember[]
   documentationGrants OrganizationDocumentationGrant[]
+  documentOwnershipRequests DocumentOwnershipRequest[]
   tickets     Ticket[]
   renewalItems RenewalItem[]
 
