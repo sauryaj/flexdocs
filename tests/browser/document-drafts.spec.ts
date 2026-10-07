@@ -42,6 +42,57 @@ test.beforeAll(async ({ request, baseURL }) => {
 test.beforeEach(async ({ context }) => { await context.addCookies(cookies); });
 test.afterAll(async ({ request, baseURL }) => { await request.post(`${baseURL}/api/logout`); });
 
+test('maintainer changes protect edits, require saved-state reload after failure and preserve version checks', async ({ context, page }) => {
+  let version = original.updatedAt;
+  let responsibleUserId: string | null = 'maintainer-a';
+  let fail = true;
+  const requests: unknown[] = [];
+  await context.route('**/api/documents/browser-responsibility', route => route.fulfill({ json: { ...original, id: 'browser-responsibility',
+    ownershipKind: 'organization', representation: 'working', lifecycleState: 'draft', canManageLifecycle: true, updatedAt: version } }));
+  await context.route('**/api/documents/browser-responsibility/files?**', route => route.fulfill({ json: { items: [], hasMore: false } }));
+  await context.route('**/api/documents/browser-responsibility/reviews?**', route => route.fulfill({ json: { items: [], hasMore: false, canSubmit: false } }));
+  await context.route('**/api/documents/browser-responsibility/responsibility**', async route => {
+    if (route.request().method() === 'PUT') {
+      const input = route.request().postDataJSON(); requests.push(input);
+      if (fail) return route.fulfill({ status: 409, json: { error: 'Document changed' } });
+      expect(input.expectedUpdatedAt).toBe(version);
+      responsibleUserId = input.responsibleUserId; version = '2026-10-07T00:00:00.000Z';
+      return route.fulfill({ json: { responsibleUserId, updatedAt: version, changed: true, audienceChanges: false } });
+    }
+    return route.fulfill({ json: { items: [{ id: 'maintainer-a', name: 'Original Maintainer', email: 'original@example.invalid' },
+      { id: 'maintainer-b', name: 'New Maintainer', email: 'new@example.invalid' }], hasMore: false, responsibleUserId, updatedAt: version, audienceChanges: false } });
+  });
+  await page.goto('/dashboard/documents/browser-responsibility');
+  const panel = page.getByRole('region', { name: 'Document responsibility', exact: true });
+  await expect(panel.getByText('Assigned: Original Maintainer', { exact: true })).toBeVisible();
+  await panel.getByLabel('Eligible team maintainer', { exact: true }).selectOption('maintainer-b');
+  await page.getByRole('textbox', { name: 'Document title' }).fill('Unsaved responsibility title');
+  await expect(panel.getByRole('button', { name: 'Assign maintainer', exact: true })).toBeDisabled();
+  await page.getByRole('textbox', { name: 'Document title' }).fill(original.title);
+  await expect(panel.getByRole('button', { name: 'Assign maintainer', exact: true })).toBeEnabled();
+  page.once('dialog', dialog => dialog.dismiss());
+  await panel.getByRole('button', { name: 'Assign maintainer', exact: true }).click(); expect(requests).toHaveLength(0);
+  page.once('dialog', dialog => dialog.accept());
+  await panel.getByRole('button', { name: 'Assign maintainer', exact: true }).click();
+  await expect(panel.getByRole('alert')).toContainText('Reload the saved document before retrying');
+  await expect(panel.getByRole('button', { name: 'Assign maintainer', exact: true })).toBeDisabled();
+  fail = false;
+  await panel.getByRole('button', { name: 'Reload saved document', exact: true }).click();
+  await expect(panel.getByText('Assigned: Original Maintainer', { exact: true })).toBeVisible();
+  await panel.getByLabel('Eligible team maintainer', { exact: true }).selectOption('maintainer-b');
+  page.once('dialog', dialog => dialog.accept());
+  await panel.getByRole('button', { name: 'Assign maintainer', exact: true }).click();
+  await expect(panel.getByText('Assigned: New Maintainer', { exact: true })).toBeVisible();
+  page.once('dialog', dialog => dialog.accept());
+  await panel.getByRole('button', { name: 'Clear maintainer', exact: true }).click();
+  await expect(panel.getByText('No maintainer assigned', { exact: true })).toBeVisible();
+  expect(requests).toHaveLength(3);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await panel.scrollIntoViewIfNeeded();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: '/tmp/flexdocs-responsibility-ui.png', fullPage: true });
+});
+
 test('review panel selects files, preserves feedback on failure and separates approval from publication', async ({ context, page }) => {
   let stage: 'draft' | 'pending' | 'approved' | 'published' = 'draft';
   let approvalCalls = 0;
@@ -272,6 +323,7 @@ test('team contributor edits a draft while lifecycle and private attachment cont
   await expect(page.getByText('Team draft · Saved edits do not change the published version.')).toBeVisible();
   for (const name of ['Archive', 'Delete', 'Duplicate']) await expect(page.getByTitle(name, { exact: true })).toHaveCount(0);
   await expect(page.getByLabel('Visibility')).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Document responsibility', exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Attachments', exact: true })).toHaveCount(0);
   await page.locator('textarea').fill('# Team draft changes');
   await page.getByRole('button', { name: 'Save Now', exact: true }).click();
@@ -296,6 +348,7 @@ test('published reader can retry an unavailable frozen attachment without enteri
   await expect(page.getByRole('heading', { name: 'Published guide' })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Edit Document' })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Team working files', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('region', { name: 'Document responsibility', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Download frozen.txt' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'Published file is unavailable' })).toBeVisible();
   available = true;

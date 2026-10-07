@@ -26,6 +26,7 @@ import { ConfirmDialog } from '@/components/UIComponents';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { PublishedAttachments } from '@/components/PublishedAttachments';
 import { TeamDocumentFiles } from '@/components/TeamDocumentFiles';
+import { DocumentResponsibility } from '@/components/DocumentResponsibility';
 import { DocumentLifecycleControls } from '@/components/DocumentLifecycleControls';
 import { DocumentReviewPanel } from '@/components/DocumentReviewPanel';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
@@ -509,6 +510,8 @@ function DocumentEditor({ documentId }: { documentId: string }) {
       <MarkdownPreview content={doc.content} />
       {doc.ownershipKind === 'organization' && doc.representation === 'working' && <TeamDocumentFiles key={`${doc.id}:${doc.updatedAt}`} documentId={doc.id} updatedAt={doc.updatedAt}
         readOnly blocked={workflowBusy} onBusyChange={setWorkflowBusy} onChanged={() => setLoadAttempt(value => value + 1)} />}
+      {doc.ownershipKind === 'organization' && doc.representation === 'working' && doc.canManageLifecycle && <DocumentResponsibility key={`responsibility:${doc.id}:${doc.updatedAt}`}
+        documentId={doc.id} updatedAt={doc.updatedAt} blocked={workflowBusy} onBusyChange={setWorkflowBusy} onChanged={() => setLoadAttempt(value => value + 1)} />}
       {doc.snapshotId && <PublishedAttachments key={`${doc.id}:${doc.snapshotId}`} documentId={doc.id} snapshotId={doc.snapshotId} files={doc.attachments || []} />}
     </fieldset>
   );
@@ -617,8 +620,8 @@ function DocumentEditor({ documentId }: { documentId: string }) {
         {/* Left: Editor */}
         <div className="w-full flex-1 min-w-0 card p-4 sm:p-6 space-y-6">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Title</label>
-            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="input-field text-lg" />
+            <label htmlFor="document-title" className="block text-sm font-medium text-slate-700 mb-1">Document title</label>
+            <input id="document-title" type="text" value={title} onChange={(e) => setTitle(e.target.value)} className="input-field text-lg" />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -908,6 +911,10 @@ function DocumentEditor({ documentId }: { documentId: string }) {
         message="This document will be hidden from normal views. You can restore it, including its history and attachments, from Trash."
       />
     </fieldset>
+    {doc.ownershipKind === 'organization' && doc.canManageLifecycle && <DocumentResponsibility key={`responsibility:${doc.id}:${doc.updatedAt}`}
+      documentId={doc.id} updatedAt={doc.updatedAt}
+      blocked={saving || workflowBusy || hasUnsavedChanges || reviewFeedbackDirty || !!conflict || !!draft.revoked || !!recoveryPreview}
+      onBusyChange={setWorkflowBusy} onChanged={() => setLoadAttempt(value => value + 1)} />}
     {doc.ownershipKind === 'organization' && <TeamDocumentFiles key={`${doc.id}:${doc.updatedAt}`} documentId={doc.id} updatedAt={doc.updatedAt}
       blocked={saving || workflowBusy || hasUnsavedChanges || reviewFeedbackDirty || !!conflict || !!draft.revoked || !!recoveryPreview}
       onBusyChange={setWorkflowBusy} onChanged={() => setLoadAttempt(value => value + 1)} />}</>

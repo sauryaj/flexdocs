@@ -1,6 +1,6 @@
 # Document ownership and publication migration design
 
-Status as of 2026-10-01: partially implemented contract. Additive ownership/publication migrations, explicit grant API/UI, current-capability services, team editing/history/working files, published reader surfaces, review/publication API/UI and lifecycle/Trash controls are implemented. Existing records are not automatically converted and migrations create no grants. Conversion, ownership/maintainer transfer, departing-user handling and the review queue remain incomplete. Do not manually enable team rows as a substitute for the missing conversion workflow. Detailed milestone evidence and limitations follow below.
+Status as of 2026-10-07: partially implemented contract. Additive ownership/publication migrations, explicit grant API/UI, current-capability services, team editing/history/working files, published reader surfaces, review/publication API/UI, lifecycle/Trash controls and responsible-maintainer reassignment API/detail UI are implemented. Existing records are not automatically converted and migrations create no grants. Conversion, ownership transfer, departing-user handling and the review queue remain incomplete. Do not manually enable team rows as a substitute for the missing conversion workflow. Detailed milestone evidence and limitations follow below.
 
 ## Historical starting point before these milestones
 

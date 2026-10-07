@@ -83,7 +83,7 @@ jobs:
       - name: AI context and documentation grant access boundaries
         env:
           DOCUMENT_TEST_ISOLATED: '1'
-        run: npx vitest run tests/ai-context.integration.test.ts
+        run: npx vitest run tests/ai-context.integration.test.ts tests/document-responsibility.integration.test.ts
 
       - name: Concurrent Redis request limits and account lockout
         env:
