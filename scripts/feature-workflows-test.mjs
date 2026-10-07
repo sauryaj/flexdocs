@@ -39,6 +39,24 @@ try {
   const outside = await document(sessions.admin, 'outside', orgs[1], 'org');
   await document(sessions.admin, 'unassigned');
   const own = await document(sessions.editor, 'own-private');
+  const ownershipPreviewPath = `/documents/${own.id}/ownership/preview?destinationOrganizationId=${orgs[1]}&expectedUpdatedAt=${encodeURIComponent(own.updatedAt)}`;
+  check((await call(ownershipPreviewPath, null)).status === 401, 'ownership preview rejects anonymous callers');
+  check((await call(ownershipPreviewPath, sessions.viewer)).status === 403, 'ownership preview rejects read-only accounts');
+  check((await call(ownershipPreviewPath, sessions.admin)).status === 404, 'ownership preview never lets an administrator convert another personal owner');
+  check((await call(ownershipPreviewPath, sessions.editor)).status === 404, 'ownership preview requires destination documentation administration');
+  await db.organizationMember.create({ data: { userId: users[1], organizationId: orgs[1] } });
+  await db.organizationDocumentationGrant.create({ data: { userId: users[1], organizationId: orgs[1], role: 'administrator' } });
+  const ownershipPreview = await call(ownershipPreviewPath, sessions.editor);
+  check(ownershipPreview.status === 200 && ownershipPreview.body.kind === 'personal_to_team' && ownershipPreview.body.executionAvailable === false,
+    'authorized personal owner receives a preview without executing conversion');
+  check(ownershipPreview.body.audience.total === 1 && ownershipPreview.body.exposure.readersRequireNewPublication && ownershipPreview.body.requiresExplicitConsent,
+    'ownership preview explains maintainer exposure and new publication requirement');
+  check(!(JSON.stringify(ownershipPreview.body).includes(own.title)) && !(Object.hasOwn(ownershipPreview.body, 'content')),
+    'ownership preview omits the document body and title');
+  check((await db.document.findUniqueOrThrow({ where: { id: own.id } })).ownershipKind === 'personal', 'preview leaves ownership unchanged');
+  await db.organizationDocumentationGrant.delete({ where: { organizationId_userId: { organizationId: orgs[1], userId: users[1] } } });
+  check((await call(ownershipPreviewPath, sessions.editor)).status === 404, 'ownership preview rechecks a revoked destination grant');
+  await db.organizationMember.delete({ where: { organizationId_userId: { organizationId: orgs[1], userId: users[1] } } });
   async function mcp(cookie, name, args) {
     const result = await call('/mcp', cookie, 'POST', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } });
     check(result.status === 200, `MCP ${name} responds successfully`);

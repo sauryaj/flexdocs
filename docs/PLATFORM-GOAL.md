@@ -22,6 +22,14 @@ Milestone order: data safety/deployment; access/ownership; lifecycle/usability; 
 
 ## Findings register
 
+### Ownership audience preflight (2026-10-07)
+
+The read-only ownership preview service/API now checks source transfer authority and destination documentation administration before returning audience identities or counts. A repeatable-read snapshot returns bounded destination audience pages, the full historical/file exposure warning, publication/folder/draft consequences and a blocker for foreign-uploader personal files. A page-independent fingerprint includes current grants/membership eligibility, file references, historical references and review decisions. Previewing never changes ownership or creates an audit event. The fingerprint is not a substitute for commit-time authorization.
+
+Execution remains disabled. Consent persistence/confirmation UI, atomic conversion/transfer, complete file and historical provenance preservation, personal recipient acceptance, durable retry results and departure handling are still required. This is an implementation checkpoint within the full ownership goal, not a complete transfer workflow.
+
+Local evidence: PostgreSQL integration covers personal/team authority, multiple organizations, version preconditions, anonymous/viewer denials, safe metadata, foreign-file blockers, read-only state, changed grants/membership/reviews, historical publications, folder consequences, archive/Trash refusal, pagination and stable fingerprints across pages. Live HTTP role/revocation probes are included in the 278 passing feature checks. Unit checks passed (305 tests, three explicitly gated integration tests skipped in that run); types are clean, lint has zero errors/168 existing warnings and the isolated production build passed. The new integration test is explicitly enabled in CI. No schema or production environment was changed.
+
 ### Responsible-maintainer workflow (2026-10-07)
 
 Commit `c9d288f` delivered current-capability maintainer discovery and reassignment services/API. CI run [36800765160](https://github.com/sauryaj/flexdocs/actions/runs/36800765160) passed all four jobs, including populated upgrade/fresh installation and isolated recovery. The document detail UI now provides searchable, bounded choices, assignment/clearing confirmations and saved-state reload after failed or uncertain changes. Unsaved edits, review feedback and conflicts block reassignment. Readers and contributors have no administration panel. Archived team documents can be reassigned without unarchiving. The title control now has an associated label for keyboard/accessibility use.

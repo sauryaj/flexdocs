@@ -1,5 +1,7 @@
 # Document ownership and publication migration design
 
+The ownership audience preflight now has a read-only service and API; see `FEATURE-WORKFLOWS.md` for its contract. It validates both sides before returning bounded destination audience metadata, explains complete history/file exposure and blocks foreign-uploader personal files. Its fingerprint will support commit-time comparison, but no conversion or transfer execution is enabled. Durable consent/acceptance/execution and browser confirmation remain required.
+
 Status as of 2026-10-07: partially implemented contract. Additive ownership/publication migrations, explicit grant API/UI, current-capability services, team editing/history/working files, published reader surfaces, review/publication API/UI, lifecycle/Trash controls and responsible-maintainer reassignment API/detail UI are implemented. Existing records are not automatically converted and migrations create no grants. Conversion, ownership transfer, departing-user handling and the review queue remain incomplete. Do not manually enable team rows as a substitute for the missing conversion workflow. Detailed milestone evidence and limitations follow below.
 
 ## Historical starting point before these milestones
