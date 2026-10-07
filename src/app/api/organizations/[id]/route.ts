@@ -4,7 +4,8 @@ import { DocumentationGrantError } from '@/lib/documentation-grants';
 import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/rbac';
-import { getOrgScope } from '@/lib/org-scope';
+import { readVisibleOrganization } from '@/lib/organization-read';
+import { DocumentWriteError } from '@/lib/document-write';
 import { type UserRole } from '@prisma/client';
 
 export async function GET(
@@ -17,43 +18,12 @@ export async function GET(
   }
 
   const { id } = await params;
-  const organization = await prisma.organization.findUnique({
-    where: { id },
-    include: {
-      documents: { where: { deletedAt: null } },
-      passwords: true,
-      domains: true,
-      assets: true,
-      checklists: {
-        include: { items: true },
-      },
-      contacts: true,
-      locations: true,
-    },
-  });
-
-  if (!organization) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    return NextResponse.json(await readVisibleOrganization(user.id, id), { headers: { 'Cache-Control': 'private, no-store' } });
+  } catch (error) {
+    if (error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json({ error: 'Unable to load organization' }, { status: 500 });
   }
-
-  // Limited (client) users get a filtered view: org-visible docs, client-visible
-  // password metadata only (no encrypted secrets), and no staff-only fields.
-  const scope = await getOrgScope(user.id, user.role);
-  if (scope.mode === 'limited') {
-    const allowed = scope.orgIds.includes(id);
-    if (!allowed) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-    const { passwords, documents, ...rest } = organization;
-    return NextResponse.json({
-      ...rest,
-      passwords: passwords
-        .filter((p) => p.clientVisible)
-        .map(({ password: _pw, totpSecret: _totp, notes: _notes, ...pub }) => pub),
-      documents: documents.filter((d) => d.visibility === 'org' && !d.isArchived),
-    });
-  }
-
-  return NextResponse.json(organization);
 }
 
 export async function PUT(

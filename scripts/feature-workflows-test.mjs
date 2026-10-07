@@ -39,6 +39,15 @@ try {
   const outside = await document(sessions.admin, 'outside', orgs[1], 'org');
   await document(sessions.admin, 'unassigned');
   const own = await document(sessions.editor, 'own-private');
+  check((await call('/organizations', null)).status === 401, 'anonymous organization listing blocked');
+  check((await call(`/organizations/${orgs[0]}`, null)).status === 401, 'anonymous organization detail blocked');
+  for (const role of ['editor', 'viewer']) {
+    const organizations = await call('/organizations', sessions[role]);
+    check(organizations.status === 200 && organizations.body.length === 1 && organizations.body[0].id === orgs[0], `${role} organization listing excludes unrelated names and contact metadata`);
+    check((await call(`/organizations/${orgs[1]}`, sessions[role])).status === 404, `${role} outside organization detail blocked`);
+  }
+  const adminOrganizations = await call('/organizations', sessions.admin);
+  check(adminOrganizations.status === 200 && orgs.every(id => adminOrganizations.body.some(item => item.id === id)), 'admin organization listing preserves global organization discovery');
   check((await call(`/documents/${own.id}`, sessions.editor)).body.canRequestTransfer === true && (await call(`/documents/${shared.id}`, sessions.viewer)).body.canRequestTransfer === false, 'document detail exposes ownership controls only to current source authority');
   const ownershipPreviewPath = `/documents/${own.id}/ownership/preview?destinationOrganizationId=${orgs[1]}&expectedUpdatedAt=${encodeURIComponent(own.updatedAt)}`;
   const destinationsPath = `/documents/${own.id}/ownership/destinations?expectedUpdatedAt=${encodeURIComponent(own.updatedAt)}`;
@@ -158,6 +167,16 @@ try {
   check((await mcp(sessions.viewer, 'flexdocs_search', { query: 'published' })).documents.some(item => item.id === team.id && item.excerpt === 'published team body'), 'MCP search returns frozen excerpt');
   check((await mcp(sessions.viewer, 'flexdocs_org_pulse', { organizationId: orgs[0] })).documents === 2, 'MCP counts include authorized publication');
   await db.document.update({ where: { id: team.id }, data: { title: 'unpublished title only' } });
+  for (const role of ['admin', 'editor', 'viewer']) {
+    const organizations = await call('/organizations', sessions[role]);
+    const organization = await call(`/organizations/${orgs[0]}`, sessions[role]);
+    const discovery = await call(`/documents?organizationId=${orgs[0]}&limit=100`, sessions[role]);
+    check(organization.status === 200 && organization.body.documents.length === discovery.body.total && organizations.body.find(item => item.id === orgs[0])._count.documents === discovery.body.total, `${role} organization counts and detail agree with authorized document discovery`);
+    check(organization.body.documents.every(item => !('content' in item) && !('publishedSnapshot' in item)), `${role} organization document summaries omit bodies and historical records`);
+    const summary = organization.body.documents.find(item => item.id === team.id);
+    check(role === 'admin' ? !summary : summary?.title === (role === 'viewer' ? suffix : 'unpublished title only'), `${role} organization summary uses the authorized published or working title`);
+    check(organization.body.passwords.every(item => !('password' in item) && !('totpSecret' in item) && !('customFields' in item) && !('notes' in item)), `${role} organization vault summaries exclude secret fields`);
+  }
   for (const role of ['viewer', 'editor']) {
     const portal = await call('/portal/summary', sessions[role]);
     check(portal.status === 200 && portal.body.kb.find(item => item.id === team.id)?.title === suffix, `${role} portal shows frozen title rather than working draft`);

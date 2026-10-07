@@ -1,6 +1,6 @@
-import { Prisma } from '@prisma/client';
+import { Prisma, type UserRole } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { getOrgScope } from '@/lib/org-scope';
+import { getOrgScope, type OrgScope } from '@/lib/org-scope';
 import { hasPermission } from '@/lib/rbac';
 import { DocumentWriteError } from '@/lib/document-write';
 import { publicationTagsSchema } from '@/lib/publication-manifest';
@@ -17,6 +17,50 @@ export interface DocumentDiscoveryOptions {
   limit: number;
 }
 
+export function documentDiscoverySql(actor: { id: string; role: UserRole }, scope: OrgScope,
+  options: DocumentDiscoveryOptions, terms: string[] = []) {
+  const scoped = scope.mode === 'all' ? Prisma.sql`d."organizationId" IS NOT NULL`
+    : scope.orgIds.length ? Prisma.sql`d."organizationId" IN (${Prisma.join(scope.orgIds)})` : Prisma.sql`FALSE`;
+  const membership = Prisma.sql`EXISTS (SELECT 1 FROM "OrganizationMember" m
+    JOIN "OrganizationDocumentationGrant" g ON g."organizationId" = m."organizationId" AND g."userId" = m."userId"
+    WHERE m."userId" = ${actor.id} AND m."organizationId" = d."organizationId"
+    AND g.role::text IN ('reader', 'contributor', 'reviewer', 'administrator'))`;
+  const maintenance = hasPermission(actor.role, 'document.update') ? Prisma.sql`EXISTS (SELECT 1 FROM "OrganizationMember" m
+    JOIN "OrganizationDocumentationGrant" g ON g."organizationId" = m."organizationId" AND g."userId" = m."userId"
+    WHERE m."userId" = ${actor.id} AND m."organizationId" = d."organizationId"
+    AND g.role::text IN ('contributor', 'reviewer', 'administrator'))` : Prisma.sql`FALSE`;
+  const shared = Prisma.sql`d.visibility = 'org' AND NOT d."isArchived" AND ${scoped}`;
+  const working = options.knowledgeBase
+    ? Prisma.sql`d."ownershipKind" = 'personal' AND d."lifecycleState" IS NULL AND ${shared}`
+    : Prisma.sql`(d."ownershipKind" = 'personal' AND (d."userId" = ${actor.id} OR (d."lifecycleState" IS NULL AND ${shared})))
+      OR (d."ownershipKind" = 'organization' AND ${maintenance})`;
+  // Choose the visible version before matching, sorting or counting; working fields must not influence reader results.
+  return Prisma.sql`WITH access AS (
+    SELECT d.*, (${working}) AS working
+    FROM "Document" d WHERE d."deletedAt" IS NULL
+    ${options.organizationId ? Prisma.sql`AND d."organizationId" = ${options.organizationId}` : Prisma.empty}
+  ), visible AS (
+    SELECT d.id, d."organizationId", d.working,
+      CASE WHEN d.working THEN d.title ELSE p.title END AS title,
+      CASE WHEN d.working THEN d.content ELSE p.content END AS content,
+      CASE WHEN d.working THEN d.category ELSE p.category END AS category,
+      CASE WHEN d.working THEN d."folderId" ELSE NULL END AS "folderId",
+      CASE WHEN d.working THEN d."isPinned" ELSE FALSE END AS "isPinned",
+      CASE WHEN d.working THEN d."updatedAt" ELSE p."publishedAt" END AS "updatedAt",
+      d."isArchived"
+    FROM access d LEFT JOIN "DocumentPublication" p ON p.id = d."publishedSnapshotId" AND p."documentId" = d.id
+    WHERE d.working OR (p.id IS NOT NULL AND NOT d."isArchived" AND
+      ((d."ownershipKind" = 'organization' AND ${membership}) OR
+       (d."ownershipKind" = 'personal' AND d."lifecycleState" IS NOT NULL AND ${shared})))
+  ), filtered AS (
+    SELECT * FROM visible WHERE TRUE
+    ${terms.length ? Prisma.sql`AND (${Prisma.join(terms.map(term => Prisma.sql`(position(lower(${term}) in lower(title)) > 0 OR position(lower(${term}) in lower(content)) > 0)`), ' OR ')})` : Prisma.empty}
+    ${options.category ? Prisma.sql`AND category = ${options.category}` : Prisma.empty}
+    ${options.folderId ? Prisma.sql`AND "folderId" = ${options.folderId}` : Prisma.empty}
+    ${options.excludeArchived ? Prisma.sql`AND NOT "isArchived"` : Prisma.empty}
+  )`;
+}
+
 export async function discoverDocuments(actorId: string, options: DocumentDiscoveryOptions) {
   const page = Math.min(1_000_000, Math.max(0, Math.floor(options.page) || 0));
   const limit = Math.min(100, Math.max(1, Math.floor(options.limit) || 50));
@@ -28,46 +72,7 @@ export async function discoverDocuments(actorId: string, options: DocumentDiscov
     const actor = await tx.user.findUnique({ where: { id: actorId }, select: { id: true, role: true } });
     if (!actor || !hasPermission(actor.role, 'document.read')) throw new DocumentWriteError(404, 'Not found');
     const scope = await getOrgScope(actor.id, actor.role, tx);
-    const scoped = scope.mode === 'all' ? Prisma.sql`d."organizationId" IS NOT NULL`
-      : scope.orgIds.length ? Prisma.sql`d."organizationId" IN (${Prisma.join(scope.orgIds)})` : Prisma.sql`FALSE`;
-    const membership = Prisma.sql`EXISTS (SELECT 1 FROM "OrganizationMember" m
-      JOIN "OrganizationDocumentationGrant" g ON g."organizationId" = m."organizationId" AND g."userId" = m."userId"
-      WHERE m."userId" = ${actor.id} AND m."organizationId" = d."organizationId"
-      AND g.role::text IN ('reader', 'contributor', 'reviewer', 'administrator'))`;
-    const maintenance = hasPermission(actor.role, 'document.update') ? Prisma.sql`EXISTS (SELECT 1 FROM "OrganizationMember" m
-      JOIN "OrganizationDocumentationGrant" g ON g."organizationId" = m."organizationId" AND g."userId" = m."userId"
-      WHERE m."userId" = ${actor.id} AND m."organizationId" = d."organizationId"
-      AND g.role::text IN ('contributor', 'reviewer', 'administrator'))` : Prisma.sql`FALSE`;
-    const shared = Prisma.sql`d.visibility = 'org' AND NOT d."isArchived" AND ${scoped}`;
-    const working = options.knowledgeBase
-      ? Prisma.sql`d."ownershipKind" = 'personal' AND d."lifecycleState" IS NULL AND ${shared}`
-      : Prisma.sql`(d."ownershipKind" = 'personal' AND (d."userId" = ${actor.id} OR (d."lifecycleState" IS NULL AND ${shared})))
-        OR (d."ownershipKind" = 'organization' AND ${maintenance})`;
-    // Choose the visible version before matching, sorting or counting; working fields must not influence reader results.
-    const representations = Prisma.sql`WITH access AS (
-      SELECT d.*, (${working}) AS working
-      FROM "Document" d WHERE d."deletedAt" IS NULL
-      ${options.organizationId ? Prisma.sql`AND d."organizationId" = ${options.organizationId}` : Prisma.empty}
-    ), visible AS (
-      SELECT d.id, d.working,
-        CASE WHEN d.working THEN d.title ELSE p.title END AS title,
-        CASE WHEN d.working THEN d.content ELSE p.content END AS content,
-        CASE WHEN d.working THEN d.category ELSE p.category END AS category,
-        CASE WHEN d.working THEN d."folderId" ELSE NULL END AS "folderId",
-        CASE WHEN d.working THEN d."isPinned" ELSE FALSE END AS "isPinned",
-        CASE WHEN d.working THEN d."updatedAt" ELSE p."publishedAt" END AS "updatedAt",
-        d."isArchived"
-      FROM access d LEFT JOIN "DocumentPublication" p ON p.id = d."publishedSnapshotId" AND p."documentId" = d.id
-      WHERE d.working OR (p.id IS NOT NULL AND NOT d."isArchived" AND
-        ((d."ownershipKind" = 'organization' AND ${membership}) OR
-         (d."ownershipKind" = 'personal' AND d."lifecycleState" IS NOT NULL AND ${shared})))
-    ), filtered AS (
-      SELECT * FROM visible WHERE TRUE
-      ${terms.length ? Prisma.sql`AND (${Prisma.join(terms.map(term => Prisma.sql`(position(lower(${term}) in lower(title)) > 0 OR position(lower(${term}) in lower(content)) > 0)`), ' OR ')})` : Prisma.empty}
-      ${options.category ? Prisma.sql`AND category = ${options.category}` : Prisma.empty}
-      ${options.folderId ? Prisma.sql`AND "folderId" = ${options.folderId}` : Prisma.empty}
-      ${options.excludeArchived ? Prisma.sql`AND NOT "isArchived"` : Prisma.empty}
-    )`;
+    const representations = documentDiscoverySql(actor, scope, options, terms);
     const counts = await tx.$queryRaw<{ total: bigint; available: bigint }[]>(Prisma.sql`${representations}
       SELECT (SELECT count(*) FROM filtered) AS total, (SELECT count(*) FROM visible) AS available`);
     const selected = await tx.$queryRaw<{ id: string; working: boolean }[]>(Prisma.sql`${representations}
