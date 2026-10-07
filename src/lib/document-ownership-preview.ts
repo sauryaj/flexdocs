@@ -20,6 +20,25 @@ export async function previewDocumentOwnership(actorId: string, documentId: stri
     { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
 }
 
+export async function discoverOwnershipDestinations(actorId: string, documentId: string, expectedUpdatedAt?: string, page = 0, query = '') {
+  if (!Number.isSafeInteger(page) || page < 0 || page > 1_000_000 || query.length > 200) throw new DocumentWriteError(400, 'Invalid destination query');
+  return prisma.$transaction(async tx => {
+    const document = await tx.document.findFirst({ where: { id: documentId, deletedAt: null } });
+    const actor = await tx.user.findUnique({ where: { id: actorId }, select: { id: true, role: true } });
+    if (!document || !actor || !(await resolveDocumentCapabilities(document, actor, tx)).requestTransfer) throw new DocumentWriteError(404, 'Not found');
+    if (!hasPermission(actor.role, 'document.delete')) throw new DocumentWriteError(404, 'Not found');
+    if (!expectedUpdatedAt) throw new DocumentWriteError(428, 'Provide the current document version');
+    if (document.updatedAt.toISOString() !== expectedUpdatedAt) throw new DocumentWriteError(409, 'Document changed; reload before choosing a team');
+    if (document.isArchived) throw new DocumentWriteError(409, 'Return the document to draft before changing ownership');
+    const where = { ...(document.ownershipKind === 'organization' ? { id: { not: document.organizationId || '__none__' } } : {}),
+      members: { some: { userId: actorId } }, documentationGrants: { some: { userId: actorId, role: 'administrator' as const } },
+      ...(query.trim() ? { name: { contains: query.trim(), mode: Prisma.QueryMode.insensitive } } : {}) };
+    const items = await tx.organization.findMany({ where, select: { id: true, name: true }, orderBy: [{ name: 'asc' }, { id: 'asc' }], skip: page * 25, take: 25 });
+    const total = await tx.organization.count({ where });
+    return { items, total, page, hasMore: (page + 1) * 25 < total, updatedAt: document.updatedAt.toISOString() };
+  }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
+}
+
 export async function previewDocumentOwnershipInTransaction(tx: Prisma.TransactionClient, actorId: string, documentId: string, destinationOrganizationId: string, expectedUpdatedAt?: string, page = 0) {
   if (!Number.isSafeInteger(page) || page < 0 || page > 1_000_000) throw new DocumentWriteError(400, 'Invalid audience page');
     const document = await tx.document.findFirst({ where: { id: documentId, deletedAt: null } });

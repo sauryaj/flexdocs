@@ -15,6 +15,7 @@ export async function readDocumentDetail(actorId: string, documentId: string) {
     const capabilities = await resolveDocumentCapabilities({ ...document, hasPublishedSnapshot: !!publishedSnapshot }, actor, tx);
     if (capabilities.readWorking) return { document, published: false,
       canEdit: capabilities.edit && !(document.lifecycleState !== null && document.isArchived) && !(document.ownershipKind === 'organization' && document.lifecycleState === null),
+      canRequestTransfer: capabilities.requestTransfer && !document.isArchived,
       canManageLifecycle: capabilities.manageLifecycle && !(document.ownershipKind === 'organization' && document.lifecycleState === null) };
     if (document.ownershipKind === 'organization') {
       if (!capabilities.readPublished) throw new DocumentWriteError(404, 'Not found');
@@ -30,6 +31,7 @@ export async function readDocumentDetail(actorId: string, documentId: string) {
     return { document, published: false, canEdit: false };
   }, { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead });
   if (!selection.published && selection.document) return { ...selection.document, canEdit: selection.canEdit,
+    canRequestTransfer: selection.canRequestTransfer ?? false,
     canManageLifecycle: selection.canManageLifecycle ?? false, canDuplicate: selection.document.ownershipKind === 'personal' && selection.document.lifecycleState === null && selection.canEdit,
     representation: 'working' as const };
   const snapshot = await readPublishedDocument(actorId, documentId);

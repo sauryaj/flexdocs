@@ -39,13 +39,20 @@ try {
   const outside = await document(sessions.admin, 'outside', orgs[1], 'org');
   await document(sessions.admin, 'unassigned');
   const own = await document(sessions.editor, 'own-private');
+  check((await call(`/documents/${own.id}`, sessions.editor)).body.canRequestTransfer === true && (await call(`/documents/${shared.id}`, sessions.viewer)).body.canRequestTransfer === false, 'document detail exposes ownership controls only to current source authority');
   const ownershipPreviewPath = `/documents/${own.id}/ownership/preview?destinationOrganizationId=${orgs[1]}&expectedUpdatedAt=${encodeURIComponent(own.updatedAt)}`;
+  const destinationsPath = `/documents/${own.id}/ownership/destinations?expectedUpdatedAt=${encodeURIComponent(own.updatedAt)}`;
+  for (const [cookie, status] of [[null, 401], [sessions.viewer, 403], [sessions.admin, 404]]) {
+    check((await call(destinationsPath, cookie)).status === status, `ownership destination discovery protects source access (${status})`);
+  }
   check((await call(ownershipPreviewPath, null)).status === 401, 'ownership preview rejects anonymous callers');
   check((await call(ownershipPreviewPath, sessions.viewer)).status === 403, 'ownership preview rejects read-only accounts');
   check((await call(ownershipPreviewPath, sessions.admin)).status === 404, 'ownership preview never lets an administrator convert another personal owner');
   check((await call(ownershipPreviewPath, sessions.editor)).status === 404, 'ownership preview requires destination documentation administration');
   await db.organizationMember.create({ data: { userId: users[1], organizationId: orgs[1] } });
   await db.organizationDocumentationGrant.create({ data: { userId: users[1], organizationId: orgs[1], role: 'administrator' } });
+  const eligibleDestinations = await call(destinationsPath, sessions.editor);
+  check(eligibleDestinations.status === 200 && eligibleDestinations.body.items.length === 1 && eligibleDestinations.body.items[0].id === orgs[1] && !('_count' in eligibleDestinations.body.items[0]), 'destination discovery returns only eligible team names without resource counts');
   const ownershipPreview = await call(ownershipPreviewPath, sessions.editor);
   check(ownershipPreview.status === 200 && ownershipPreview.body.kind === 'personal_to_team' && ownershipPreview.body.executionAvailable === true,
     'authorized personal owner receives a preview without executing conversion');

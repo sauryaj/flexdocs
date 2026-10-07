@@ -27,6 +27,7 @@ import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { PublishedAttachments } from '@/components/PublishedAttachments';
 import { TeamDocumentFiles } from '@/components/TeamDocumentFiles';
 import { DocumentResponsibility } from '@/components/DocumentResponsibility';
+import { DocumentOwnership } from '@/components/DocumentOwnership';
 import { DocumentLifecycleControls } from '@/components/DocumentLifecycleControls';
 import { DocumentReviewPanel } from '@/components/DocumentReviewPanel';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
@@ -52,6 +53,7 @@ interface Document {
   canEdit?: boolean;
   canManageLifecycle?: boolean;
   canDuplicate?: boolean;
+  canRequestTransfer?: boolean;
   ownershipKind?: 'personal' | 'organization';
   representation?: 'working' | 'published';
   lifecycleState?: string | null;
@@ -488,7 +490,7 @@ function DocumentEditor({ documentId }: { documentId: string }) {
 
   if (!doc) {
     return (
-      <div className="text-center py-20">
+      <><div className="text-center py-20">
         <FileText className="w-12 h-12 text-slate-300 mx-auto mb-4" />
         <h2 role="alert" className="text-xl font-semibold text-slate-900">{loadError || 'Document not found'}</h2>
         <button onClick={() => setLoadAttempt(value => value + 1)} className="btn-secondary mt-3">Retry loading document</button>
@@ -496,11 +498,13 @@ function DocumentEditor({ documentId }: { documentId: string }) {
           Back to documents
         </Link>
       </div>
+      <DocumentOwnership key={`ownership:${documentId}`} documentId={documentId} updatedAt="" userId={draft.userId} canStart={false}
+        blocked={false} verifyAccount={draft.verifyAccount} onBusyChange={setWorkflowBusy} onChanged={() => setLoadAttempt(value => value + 1)} /></>
     );
   }
 
   if (doc.canEdit === false) return (
-    <fieldset disabled={workflowBusy} className="max-w-4xl mx-auto space-y-6 min-w-0 w-full">
+    <><fieldset disabled={workflowBusy} className="max-w-4xl mx-auto space-y-6 min-w-0 w-full">
       <Link href="/dashboard/documents" className="btn-secondary">Back to documents</Link>
       <h1 className="text-2xl font-bold">{doc.title}</h1>
       <p className="text-sm text-slate-500">Read only · Last updated {formatDate(doc.updatedAt)}</p>
@@ -514,6 +518,9 @@ function DocumentEditor({ documentId }: { documentId: string }) {
         documentId={doc.id} updatedAt={doc.updatedAt} blocked={workflowBusy} onBusyChange={setWorkflowBusy} onChanged={() => setLoadAttempt(value => value + 1)} />}
       {doc.snapshotId && <PublishedAttachments key={`${doc.id}:${doc.snapshotId}`} documentId={doc.id} snapshotId={doc.snapshotId} files={doc.attachments || []} />}
     </fieldset>
+    <DocumentOwnership key={`ownership:${doc.id}`} documentId={doc.id} updatedAt={doc.updatedAt} userId={draft.userId} canStart={!!doc.canRequestTransfer}
+      blocked={workflowBusy || !!draft.revoked} verifyAccount={draft.verifyAccount}
+      onBusyChange={setWorkflowBusy} onChanged={() => setLoadAttempt(value => value + 1)} /></>
   );
 
   return (
@@ -915,6 +922,9 @@ function DocumentEditor({ documentId }: { documentId: string }) {
       documentId={doc.id} updatedAt={doc.updatedAt}
       blocked={saving || workflowBusy || hasUnsavedChanges || reviewFeedbackDirty || !!conflict || !!draft.revoked || !!recoveryPreview}
       onBusyChange={setWorkflowBusy} onChanged={() => setLoadAttempt(value => value + 1)} />}
+    <DocumentOwnership key={`ownership:${doc.id}`} documentId={doc.id} updatedAt={doc.updatedAt} userId={draft.userId} canStart={!!doc.canRequestTransfer}
+      blocked={saving || workflowBusy || hasUnsavedChanges || reviewFeedbackDirty || !!conflict || !!draft.revoked || !!recoveryPreview}
+      verifyAccount={draft.verifyAccount} onBusyChange={setWorkflowBusy} onChanged={() => setLoadAttempt(value => value + 1)} />
     {doc.ownershipKind === 'organization' && <TeamDocumentFiles key={`${doc.id}:${doc.updatedAt}`} documentId={doc.id} updatedAt={doc.updatedAt}
       blocked={saving || workflowBusy || hasUnsavedChanges || reviewFeedbackDirty || !!conflict || !!draft.revoked || !!recoveryPreview}
       onBusyChange={setWorkflowBusy} onChanged={() => setLoadAttempt(value => value + 1)} />}</>

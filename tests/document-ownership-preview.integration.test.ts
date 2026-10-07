@@ -7,7 +7,7 @@ vi.mock('@/lib/prisma', async () => {
   return { prisma: new PrismaClient() };
 });
 import { prisma } from '@/lib/prisma';
-import { previewDocumentOwnership } from '@/lib/document-ownership-preview';
+import { previewDocumentOwnership, discoverOwnershipDestinations } from '@/lib/document-ownership-preview';
 import { GET } from '@/app/api/documents/[id]/ownership/preview/route';
 import { changeDocumentationGrant } from '@/lib/documentation-grants';
 
@@ -39,6 +39,12 @@ it.skipIf(process.env.DOCUMENT_TEST_ISOLATED !== '1' || !process.env.DATABASE_UR
     const response = await GET(request(), context);
     expect(response.status).toBe(200);
     expect(response.headers.get('cache-control')).toBe('private, no-store');
+    const destinations = await discoverOwnershipDestinations(ids[0], document.id, version);
+    expect(destinations.items).toEqual([{ id: orgs[1], name: `${token}-1` }]);
+    expect(await discoverOwnershipDestinations(ids[0], document.id, version, 1)).toMatchObject({ items: [], hasMore: false });
+    expect((await discoverOwnershipDestinations(ids[0], document.id, version, 0, 'nonexistent-team')).items).toEqual([]);
+    await expect(discoverOwnershipDestinations(ids[1], document.id, version)).rejects.toMatchObject({ status: 404 });
+    await expect(discoverOwnershipDestinations(ids[0], document.id)).rejects.toMatchObject({ status: 428 });
     const preview = await response.json();
     expect(preview).toMatchObject({ kind: 'personal_to_team', requiresExplicitConsent: true, executionAvailable: true,
       source: { audiencePolicy: 'personal_owner' }, audience: { total: 3, workingCount: 2, publishedOnlyCount: 1 }, blockers: [],

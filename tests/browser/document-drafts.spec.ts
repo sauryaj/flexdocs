@@ -33,6 +33,92 @@ async function openEditor(page: Page) {
 }
 
 let cookies: Parameters<BrowserContext['addCookies']>[0] = [];
+
+for (const lost of ['preparation', 'confirmation'] as const) test(`ownership consent survives a lost ${lost} response and reload without duplicate changes`, async ({ context, page }) => {
+  const id = `browser-ownership-${lost}`;
+  let completed = false, preparations = 0, confirmations = 0;
+  const keys: string[] = [];
+  await context.route(`**/api/documents/${id}**`, async route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/ownership/destinations')) return route.fulfill({ json: { items: [{ id: 'team-target', name: 'Destination Team' }], hasMore: false } });
+    if (url.pathname.endsWith('/ownership/preview')) {
+      const pageNumber = Number(url.searchParams.get('page') || 0);
+      return route.fulfill({ json: { destination: { id: 'team-target', name: 'Destination Team' }, fingerprint: 'a'.repeat(64), blockers: [],
+        audience: { total: 26, workingCount: 25, publishedOnlyCount: 1, page: pageNumber, limit: 25, hasMore: pageNumber === 0,
+          items: [{ id: String(pageNumber), name: pageNumber ? 'Last Reader' : 'First Maintainer', email: 'user@example.invalid', role: pageNumber ? 'reader' : 'administrator', working: !pageNumber }] },
+        exposure: { revisions: 3, reviews: 2, publications: 1, workingFiles: 2 }, effects: {}, requiresExplicitConsent: true, executionAvailable: true } });
+    }
+    if (url.pathname.endsWith('/ownership/requests')) {
+      preparations++; keys.push(route.request().postDataJSON().key);
+      if (lost === 'preparation' && preparations === 1) return route.abort('internetdisconnected');
+      return route.fulfill({ status: preparations === 1 ? 201 : 200, json: { id: 'browser-ownership-request', status: 'pending' } });
+    }
+    if (url.pathname.endsWith('/files')) return route.fulfill({ json: { items: [], total: 0, hasMore: false } });
+    if (completed && lost === 'confirmation') return route.fulfill({ status: 404, json: { error: 'Document not found' } });
+    return route.fulfill({ json: { ...original, id, canEdit: !completed, canRequestTransfer: !completed, ownershipKind: completed ? 'organization' : 'personal',
+      organizationId: completed ? 'team-target' : null, updatedAt: completed ? '2026-10-07T01:00:00.000Z' : original.updatedAt } });
+  });
+  await context.route('**/api/ownership-requests/browser-ownership-request**', async route => {
+    if (route.request().url().endsWith('/confirm')) {
+      confirmations++; expect(route.request().postDataJSON()).toEqual({ expectedUpdatedAt: original.updatedAt, previewFingerprint: 'a'.repeat(64), acknowledgeWorkingHistoryAndFilesExposure: true });
+      completed = true;
+      if (lost === 'confirmation' && confirmations === 1) return route.abort('internetdisconnected');
+    }
+    return route.fulfill({ json: { id: 'browser-ownership-request', status: completed ? 'completed' : 'pending', expired: false } });
+  });
+  page.on('dialog', dialog => dialog.accept());
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/dashboard/documents/${id}`);
+  const panel = page.getByRole('region', { name: 'Document ownership', exact: true });
+  await expect(panel.getByLabel('Destination team', { exact: true })).toBeEnabled();
+  await panel.getByLabel('Destination team', { exact: true }).selectOption('team-target');
+  await panel.getByRole('button', { name: 'Preview ownership change' }).click();
+  const consent = panel.getByRole('checkbox');
+  await expect(consent).toBeDisabled();
+  await panel.getByRole('button', { name: 'Next audience' }).click();
+  await expect(panel.getByText('Last Reader', { exact: false })).toBeVisible();
+  await consent.check();
+  await panel.screenshot({ path: `/tmp/flexdocs-ownership-${lost}.png` });
+  await panel.getByRole('button', { name: 'Confirm ownership change', exact: true }).click();
+  await expect(panel.getByRole('button', { name: 'Retry acknowledged ownership change' })).toBeVisible();
+  await expect(page.locator('textarea')).toBeDisabled();
+  await page.reload();
+  await expect(panel.getByRole('button', { name: 'Retry acknowledged ownership change' })).toBeVisible();
+  if (lost === 'preparation') {
+    await context.route('**/api/profile', route => route.fulfill({ json: { id: 'another-account' } }));
+    await panel.getByRole('button', { name: 'Retry acknowledged ownership change' }).click();
+    await expect(page.getByText('This editor was closed because the account changed or signed out. Reload and sign in before continuing.', { exact: true })).toBeVisible();
+    expect(preparations).toBe(1); expect(confirmations).toBe(0);
+    await context.unroute('**/api/profile'); await page.reload();
+    await panel.getByRole('button', { name: 'Retry acknowledged ownership change' }).click();
+    await expect.poll(() => confirmations).toBe(1);
+    expect(keys).toHaveLength(2); expect(keys[0]).toBe(keys[1]);
+  } else {
+    await panel.getByRole('button', { name: 'Check ownership request' }).click();
+    await expect(panel.getByText('Ownership change completed. Reload the saved document.')).toBeVisible();
+    expect(confirmations).toBe(1);
+  }
+});
+
+test('ownership changes cannot start without durable browser retry storage', async ({ context, page }) => {
+  await context.addInitScript(() => Object.defineProperty(window, 'sessionStorage', { get() { throw new Error('Storage unavailable'); } }));
+  await context.route('**/api/documents/browser-ownership-storage', route => route.fulfill({ json: { ...original, id: 'browser-ownership-storage', canRequestTransfer: true } }));
+  await context.route('**/api/documents/browser-ownership-storage/ownership/destinations?**', route => route.fulfill({ json: { items: [{ id: 'team', name: 'Team' }], hasMore: false } }));
+  await page.goto('/dashboard/documents/browser-ownership-storage');
+  const panel = page.getByRole('region', { name: 'Document ownership', exact: true });
+  await expect(panel.getByRole('alert')).toContainText('retry storage is unavailable');
+  await expect(panel.getByRole('button', { name: 'Preview ownership change' })).toBeDisabled();
+});
+
+test('authorized legacy team readers can review ownership without editing the document', async ({ context, page }) => {
+  await context.route('**/api/documents/browser-ownership-readonly', route => route.fulfill({ json: { ...original, id: 'browser-ownership-readonly', ownershipKind: 'organization', representation: 'working', canEdit: false, canRequestTransfer: true } }));
+  await context.route('**/api/documents/browser-ownership-readonly/files?**', route => route.fulfill({ json: { items: [], total: 0, hasMore: false } }));
+  await context.route('**/api/documents/browser-ownership-readonly/ownership/destinations?**', route => route.fulfill({ json: { items: [{ id: 'team', name: 'Team' }], hasMore: false } }));
+  await page.goto('/dashboard/documents/browser-ownership-readonly');
+  const panel = page.getByRole('region', { name: 'Document ownership', exact: true });
+  await expect(panel.getByLabel('Destination team', { exact: true })).toBeEnabled();
+  await expect(page.locator('textarea')).toHaveCount(0);
+});
 test.beforeAll(async ({ request, baseURL }) => {
   if (!baseURL || !process.env.SMOKE_PASSWORD) throw new Error('Set TEST_BASE_URL and SMOKE_PASSWORD for a disposable test installation.');
   const login = await request.post(`${baseURL}/api/login`, { data: { email: 'admin@flexdocs.local', password: process.env.SMOKE_PASSWORD } });
