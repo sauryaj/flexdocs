@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import type { ImportPreview } from '@/lib/import-preview';
 
 type Tab = 'import' | 'vault' | 'export' | 'backup';
 
@@ -32,6 +33,9 @@ export default function ImportExportPage() {
   const [selectedOrg, setSelectedOrg] = useState('');
   const [backupFile, setBackupFile] = useState<File | null>(null);
   const backupFileRef = useRef<HTMLInputElement>(null);
+  const [restorePreview, setRestorePreview] = useState<ImportPreview | null>(null);
+  const restoreBundle = useRef<unknown>(null);
+  const restoreBusy = useRef(false);
 
   useEffect(() => {
     fetch('/api/me/org-scope')
@@ -113,7 +117,7 @@ export default function ImportExportPage() {
       setExporting(true);
       setError(null);
       const res = await fetch('/api/export');
-      if (!res.ok) throw new Error('Full export failed (admin only)');
+      if (!res.ok) { const failure = await res.json(); throw new Error([failure.error, ...(failure.issues || [])].join(' — ')); }
       const blob = await res.blob();
       download(blob, `flexdocs-backup-${new Date().toISOString().slice(0, 10)}.json`);
     } catch (err) {
@@ -129,7 +133,7 @@ export default function ImportExportPage() {
       setExporting(true);
       setError(null);
       const res = await fetch(`/api/organizations/${selectedOrg}/export`);
-      if (!res.ok) throw new Error('Org export failed');
+      if (!res.ok) { const failure = await res.json(); throw new Error([failure.error, ...(failure.issues || [])].join(' — ')); }
       const blob = await res.blob();
       download(blob, `cap-${selectedOrg.slice(-6)}.json`);
     } catch (err) {
@@ -139,26 +143,35 @@ export default function ImportExportPage() {
     }
   };
 
-  const handleRestore = async () => {
-    if (!backupFile) return;
+  const handleRestore = async (confirm = false) => {
+    if (!backupFile || restoreBusy.current || (confirm && !restorePreview?.valid)) return;
+    restoreBusy.current = true;
     try {
       setImporting(true);
       setError(null);
       setResult(null);
-      const text = await backupFile.text();
-      const bundle = JSON.parse(text);
+      const bundle = confirm ? restoreBundle.current : JSON.parse(await backupFile.text());
+      if (!confirm) { setRestorePreview(null); restoreBundle.current = null; }
       const res = await fetch('/api/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'flexdocs-backup', data: bundle }),
+        body: JSON.stringify({ type: 'flexdocs-backup', data: bundle, preview: !confirm }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Restore failed');
-      setResult(data);
+      if (confirm) {
+        setResult(data);
+        setRestorePreview(null);
+        restoreBundle.current = null;
+      } else {
+        setRestorePreview(data.preview);
+        if (data.preview?.valid) restoreBundle.current = bundle;
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Restore failed (invalid backup file?)');
     } finally {
       setImporting(false);
+      restoreBusy.current = false;
     }
   };
 
@@ -187,7 +200,7 @@ export default function ImportExportPage() {
       <div className="flex gap-2 flex-wrap">
         {tabBtn('import', 'Import')}
         {tabBtn('vault', 'Password Vault')}
-        {tabBtn('backup', 'Full Backup')}
+        {tabBtn('backup', 'Portable Export')}
         {tabBtn('export', 'Domains Export')}
       </div>
 
@@ -284,18 +297,20 @@ export default function ImportExportPage() {
       {activeTab === 'backup' && (
         <div className="space-y-4">
           <div className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Portable Full Backup (JSON)</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-1">Portable Data Export (JSON)</h2>
             <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Everything: tenants, documents (+ attachments), vault (decrypted for portability), domains, assets,
-              checklists, servers, IPAM, contacts, locations, websites, tickets and audit-safe audit trail.
-              Admin only — the bundle contains secret material.
+              Exports organizations, document history and attachments, vault secrets, domains, assets,
+              checklists, servers, IPAM, contacts, locations, websites, tickets and links.
+              This is not a complete system backup: accounts, sessions, audit history and integration settings are excluded.
+              Use database, uploads and configuration backups for disaster recovery.
+              Admin only — vault secrets are decrypted in the downloaded file.
             </p>
             <button
               onClick={handleFullExport}
               disabled={exporting}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 transition-colors"
             >
-              {exporting ? 'Building…' : 'Export Full Backup'}
+              {exporting ? 'Building…' : 'Export Data'}
             </button>
 
             {isAdmin && orgs.length > 0 && (
@@ -336,16 +351,30 @@ export default function ImportExportPage() {
                 ref={backupFileRef}
                 type="file"
                 accept=".json"
-                onChange={(e) => setBackupFile(e.target.files?.[0] || null)}
+                aria-label="Portable backup file"
+                disabled={importing}
+                onChange={(e) => { setBackupFile(e.target.files?.[0] || null); setRestorePreview(null); restoreBundle.current = null; setResult(null); }}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
               <button
-                onClick={handleRestore}
+                onClick={() => void handleRestore()}
                 disabled={!backupFile || importing}
                 className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 transition-colors"
               >
-                {importing ? 'Restoring…' : 'Restore Backup'}
+                {importing ? 'Processing…' : 'Preview Backup'}
               </button>
+              {restorePreview && <section aria-label="Import preview" className="space-y-3">
+                <h3 className="font-semibold">Review before importing</h3>
+                <dl className="grid grid-cols-2 gap-2 text-sm">
+                  {Object.entries(restorePreview.counts).map(([name, count]) => <div key={name}><dt>{name}</dt><dd>{count}</dd></div>)}
+                </dl>
+                <ul className="list-disc pl-5 text-sm space-y-2">{restorePreview.warnings.map(warning => <li key={warning}>{warning}</li>)}</ul>
+                {restorePreview.errors.length > 0 && <ul role="alert" className="list-disc pl-5 text-red-600">{restorePreview.errors.map((issue, index) => <li key={index}>{issue}</li>)}</ul>}
+                <div className="flex gap-3">
+                  <button disabled={importing || !restorePreview.valid} onClick={() => void handleRestore(true)} className="btn-primary">Confirm import</button>
+                  <button disabled={importing} onClick={() => { setRestorePreview(null); restoreBundle.current = null; }} className="btn-secondary">Cancel preview</button>
+                </div>
+              </section>}
             </div>
           </div>
         </div>

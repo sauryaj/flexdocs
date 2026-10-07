@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { UsersRound, Loader2, Plus, Trash2 } from 'lucide-react';
+import { DocumentationGrantsPanel } from '@/components/documentation-grants-panel';
 
 interface Member {
   id: string;
+  userId: string;
   role: string;
   userName: string | null;
   userEmail: string;
@@ -17,6 +19,7 @@ export default function MembersPage() {
   const [orgs, setOrgs] = useState<{ id: string; name: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ email: '', organizationId: '', role: 'client' });
 
@@ -24,9 +27,14 @@ export default function MembersPage() {
     setLoading(true);
     try {
       const [mRes, oRes] = await Promise.all([fetch('/api/org-members'), fetch('/api/organizations')]);
-      setMembers(await mRes.json());
+      const memberData = await mRes.json();
       const orgData = await oRes.json();
+      if (!mRes.ok || !oRes.ok) throw new Error(memberData.error || orgData.error || 'Could not load members');
+      if (!Array.isArray(memberData)) throw new Error('Invalid member response');
+      setMembers(memberData);
       setOrgs(Array.isArray(orgData) ? orgData : []);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not load members');
     } finally {
       setLoading(false);
     }
@@ -58,8 +66,17 @@ export default function MembersPage() {
   };
 
   const removeMember = async (id: string) => {
-    await fetch(`/api/org-members?id=${id}`, { method: 'DELETE' });
-    load();
+    if (removing) return;
+    setRemoving(id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/org-members?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Could not remove member');
+      await load();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not remove member');
+    } finally { setRemoving(null); }
   };
 
   if (loading) {
@@ -77,12 +94,13 @@ export default function MembersPage() {
 
       <div className="card p-4 space-y-3">
         <h3 className="text-sm font-semibold">Grant portal access</h3>
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
           <input
             className="input-field md:col-span-1"
             placeholder="user@email.com"
             type="email"
+            aria-label="Member email"
             spellCheck={false}
             value={form.email}
             onChange={(e) => setForm({ ...form, email: e.target.value })}
@@ -114,13 +132,14 @@ export default function MembersPage() {
                 <p className="text-sm font-medium truncate">{m.userName || m.userEmail}</p>
                 <p className="text-xs text-slate-500 truncate">{m.userEmail} · {m.organizationName} · {m.role}</p>
               </div>
-              <button onClick={() => removeMember(m.id)} aria-label={`Remove ${m.userEmail}`} className="p-1.5 rounded-md hover:bg-red-500/10 text-red-500 transition-colors shrink-0">
+              <button disabled={!!removing} onClick={() => removeMember(m.id)} aria-label={`Remove ${m.userEmail}`} className="p-1.5 rounded-md hover:bg-red-500/10 text-red-500 transition-colors shrink-0">
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
           ))
         )}
       </div>
+      <DocumentationGrantsPanel organizations={orgs} members={members} />
     </div>
   );
 }

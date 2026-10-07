@@ -8,11 +8,13 @@ export async function GET() {
   const user = await auth();
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+  if (!hasPermission(user.role, 'backup.read')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+
   const backups = listBackups().map((b) => ({
     id: b.name,
     filename: b.name,
     size: b.size,
-    type: 'full' as const,
+    type: 'database' as const,
     status: 'completed' as const,
     createdAt: b.created,
   }));
@@ -27,7 +29,7 @@ export async function POST() {
   }
 
   try {
-    const filepath = createBackup();
+    const filepath = await createBackup();
     const filename = filepath.split('/').pop() || 'backup';
     return NextResponse.json({ success: true, filename, filepath });
   } catch {

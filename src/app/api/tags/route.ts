@@ -14,7 +14,7 @@ export async function GET() {
     where: { userId: user.id },
     include: {
       _count: {
-        select: { documents: true, passwords: true, domains: true },
+        select: { documents: { where: { deletedAt: null } }, passwords: true, domains: true },
       },
     },
     orderBy: { name: 'asc' },

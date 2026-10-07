@@ -1,5 +1,6 @@
 'use client';
 
+import { searchEntities } from '@/lib/search-results';
 import { useState, useEffect } from 'react';
 import { Search, FileText, Key, Globe, HardDrive, Server, CheckSquare, X } from 'lucide-react';
 
@@ -23,36 +24,21 @@ export function MentionPicker({ isOpen, onClose, onSelect }: MentionPickerProps)
 
   useEffect(() => {
     if (!isOpen) return;
-    fetchItems(query);
+    const controller = new AbortController();
+    setItems([]);
+    if (!query.trim()) { setLoading(false); return; }
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      try {
+        const res = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { signal: controller.signal });
+        if (!res.ok) throw new Error('Search failed');
+        const entities = searchEntities(await res.json());
+        if (!controller.signal.aborted) setItems(entities.filter((item): item is MentionItem => ['document', 'password', 'asset', 'domain', 'server'].includes(item.type)));
+      } catch { if (!controller.signal.aborted) setItems([]); }
+      finally { if (!controller.signal.aborted) setLoading(false); }
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [isOpen, query]);
-
-  const fetchItems = async (q: string) => {
-    setLoading(true);
-    try {
-      const res = await fetch(`/api/search?q=${encodeURIComponent(q || 'a')}`);
-      if (res.ok) {
-        const data = await res.json();
-        const list: MentionItem[] = [];
-        for (const [typeKey, itemList] of Object.entries(data) as [string, any[]][]) {
-          if (Array.isArray(itemList)) {
-            const singularType = typeKey.slice(0, -1) as MentionItem['type'];
-            for (const i of itemList.slice(0, 4)) {
-              list.push({
-                id: i.id,
-                name: i.name || i.title || i.username || 'Untitled',
-                type: singularType,
-              });
-            }
-          }
-        }
-        setItems(list);
-      }
-    } catch {
-      // Error fetching mentions
-    } finally {
-      setLoading(false);
-    }
-  };
 
   if (!isOpen) return null;
 

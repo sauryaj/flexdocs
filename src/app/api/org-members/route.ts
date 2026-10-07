@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
 import { hasPermission } from '@/lib/rbac';
 import { prisma } from '@/lib/prisma';
+import { DocumentationGrantError, removeOrganizationMember } from '@/lib/documentation-grants';
 
 export async function GET(req: Request) {
   const user = await auth();
@@ -90,6 +91,11 @@ export async function DELETE(req: Request) {
   const id = searchParams.get('id');
   if (!id) return NextResponse.json({ error: 'id required' }, { status: 400 });
 
-  await prisma.organizationMember.deleteMany({ where: { id } });
+  try {
+    await removeOrganizationMember(user.id, id);
+  } catch (error) {
+    if (error instanceof DocumentationGrantError) return NextResponse.json({ error: error.message }, { status: error.status });
+    throw error;
+  }
   return NextResponse.json({ success: true });
 }

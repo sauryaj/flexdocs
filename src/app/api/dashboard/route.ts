@@ -19,7 +19,7 @@ export async function GET(req: Request) {
 
   const [docCount, passCount, domainCount, domains, recentDocs, recentPasswords, recentActivity, staleServerCount] =
     await Promise.all([
-      prisma.document.count({ where }),
+      prisma.document.count({ where: { deletedAt: null, ...where } }),
       prisma.password.count({ where }),
       prisma.domain.count({ where }),
       prisma.domain.findMany({
@@ -28,7 +28,7 @@ export async function GET(req: Request) {
         take: 5,
       }),
       prisma.document.findMany({
-        where,
+        where: { deletedAt: null, ...where },
         orderBy: { updatedAt: 'desc' },
         take: 5,
       }),

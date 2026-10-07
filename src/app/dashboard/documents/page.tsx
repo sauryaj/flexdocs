@@ -15,6 +15,7 @@ import { formatDate, cn } from '@/lib/utils';
 import { EmptyState, ConfirmDialog, Modal } from '@/components/UIComponents';
 import { FolderSidebar } from '@/components/FolderSidebar';
 import { useOrganization } from '@/lib/OrganizationContext';
+import { moveDocument } from '@/lib/document-client';
 
 interface Document {
   id: string;
@@ -51,13 +52,26 @@ const categories = [
 
 export default function DocumentsPage() {
   const { selectedOrg } = useOrganization();
+  return <DocumentList key={selectedOrg?.id || 'all'} />;
+}
+
+function DocumentList() {
+  const { selectedOrg } = useOrganization();
   const [documents, setDocuments] = useState<Document[]>([]);
   const [totalDocs, setTotalDocs] = useState(0);
+  const [totalAvailable, setTotalAvailable] = useState(0);
+  const [page, setPage] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const [listError, setListError] = useState('');
+  const [busy, setBusy] = useState(false);
   const [search, setSearch] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [category, setCategory] = useState('all');
   const [showArchived, setShowArchived] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [error, setError] = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkConfirmOpen, setBulkConfirmOpen] = useState(false);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(null);
@@ -66,21 +80,44 @@ export default function DocumentsPage() {
   const [moveDocId, setMoveDocId] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchDocuments();
-    fetchFolders();
-  }, [selectedOrg]);
+    const timer = setTimeout(() => { setSearchQuery(search); setPage(0); }, 250);
+    return () => clearTimeout(timer);
+  }, [search]);
 
-  const fetchDocuments = async () => {
+  useEffect(() => {
+    const controller = new AbortController();
+    const params = new URLSearchParams({ page: String(page), limit: '50' });
+    if (selectedOrg?.id) params.set('organizationId', selectedOrg.id);
+    if (searchQuery.trim()) params.set('q', searchQuery.trim());
+    if (category !== 'all') params.set('category', category);
+    if (selectedFolderId) params.set('folderId', selectedFolderId);
+    if (!showArchived) params.set('archived', 'false');
+    setLoading(true); setListError(''); setSelectedIds(new Set());
+    fetch(`/api/documents?${params}`, { signal: controller.signal })
+      .then(async res => { if (!res.ok) throw new Error('Could not load documents. Please retry.'); return res.json(); })
+      .then(data => {
+        if (controller.signal.aborted) return;
+        if (page > 0 && page * 50 >= data.total) { setPage(Math.max(0, Math.ceil(data.total / 50) - 1)); return; }
+        setDocuments(data.items); setTotalDocs(data.total); setTotalAvailable(data.totalAvailable); setHasMore(data.hasMore);
+      })
+      .catch(cause => { if (!controller.signal.aborted) setListError(cause.message); })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [selectedOrg?.id, page, searchQuery, category, selectedFolderId, showArchived, refresh]);
+
+  useEffect(() => {
+    const controller = new AbortController();
     const params = new URLSearchParams();
-    if (selectedOrg?.id) {
-      params.set('organizationId', selectedOrg.id);
-    }
-    const res = await fetch(`/api/documents?${params.toString()}`);
-    const data = await res.json();
-    setDocuments(data.items || data);
-    setTotalDocs(typeof data.total === 'number' ? data.total : (data.items || data).length);
-    setLoading(false);
-  };
+    if (selectedOrg?.id) params.set('organizationId', selectedOrg.id);
+    fetch(`/api/folders?${params}`, { signal: controller.signal })
+      .then(async res => { if (!res.ok) throw new Error('Could not load folders. Please reload.'); return res.json(); })
+      .then(data => { if (!controller.signal.aborted) setAllFolders(data); })
+      .catch(cause => { if (!controller.signal.aborted) setError(cause.message); });
+    return () => controller.abort();
+  }, [selectedOrg?.id, folderRefresh]);
+
+  const fetchDocuments = () => setRefresh(value => value + 1);
+  const selectFolder = (id: string | null) => { setSelectedFolderId(id); setPage(0); };
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -91,75 +128,61 @@ export default function DocumentsPage() {
     });
   };
 
-  const runBulk = async (action: 'archive' | 'unarchive' | 'tag', tag?: string) => {
-    await fetch('/api/documents/bulk', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, ids: Array.from(selectedIds), tag }),
-    });
-    setSelectedIds(new Set());
-    fetchDocuments();
+  const runBulk = async (action: 'archive' | 'unarchive' | 'tag' | 'delete', tag?: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch('/api/documents/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, ids: Array.from(selectedIds), tag }),
+      });
+      if (!res.ok) throw new Error('Could not update the selected documents. Please try again.');
+      const result = await res.json();
+      setError(result.updated !== result.requested ? `Updated ${result.updated} of ${result.requested} documents. Some were unavailable or you do not own them.` : '');
+      setFolderRefresh(value => value + 1);
+      fetchDocuments();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not update documents. Please try again.');
+    } finally { setBusy(false); }
   };
 
   const bulkDelete = async (confirmed: boolean) => {
     setBulkConfirmOpen(false);
     if (!confirmed) return;
-    await fetch('/api/documents/bulk', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'delete', ids: Array.from(selectedIds) }),
-    });
-    setSelectedIds(new Set());
-    fetchDocuments();
-  };
-
-  const fetchFolders = async () => {
-    const params = new URLSearchParams();
-    if (selectedOrg?.id) {
-      params.set('organizationId', selectedOrg.id);
-    }
-    const res = await fetch(`/api/folders?${params.toString()}`);
-    const data = await res.json();
-    setAllFolders(data);
+    await runBulk('delete');
   };
 
   const handleDelete = async () => {
-    if (!deleteId) return;
-    await fetch(`/api/documents/${deleteId}`, { method: 'DELETE' });
-    setDocuments(documents.filter((d) => d.id !== deleteId));
-    setDeleteId(null);
+    if (!deleteId || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`/api/documents/${deleteId}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Could not move this document to trash. Please try again.');
+      setError('');
+      setFolderRefresh(value => value + 1);
+      fetchDocuments();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not move this document to trash. Please try again.');
+    } finally { setDeleteId(null); setBusy(false); }
   };
 
   const handleMoveToFolder = async (docId: string, folderId: string | null) => {
-    await fetch(`/api/documents/${docId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title: documents.find((d) => d.id === docId)?.title,
-        content: documents.find((d) => d.id === docId)?.content,
-        category: documents.find((d) => d.id === docId)?.category,
-        folderId: folderId,
-        isPinned: documents.find((d) => d.id === docId)?.isPinned,
-        isArchived: documents.find((d) => d.id === docId)?.isArchived,
-        tags: documents.find((d) => d.id === docId)?.tags.map((t) => t.name),
-      }),
-    });
-
-    setDocuments(
-      documents.map((d) =>
-        d.id === docId
-          ? {
-              ...d,
-              folderId,
-              folder: folderId
-                ? allFolders.find((f) => f.id === folderId) || null
-                : null,
-            }
-          : d
-      )
-    );
-    setMoveDocId(null);
-    setFolderRefresh((r) => r + 1);
+    const document = documents.find(d => d.id === docId);
+    if (!document || busy) return;
+    setBusy(true);
+    try {
+      const updated = await moveDocument(docId, folderId, document.updatedAt) as Document;
+      setDocuments(current => current.map(d => d.id === docId ? updated : d));
+      setError('');
+      setFolderRefresh(r => r + 1);
+      fetchDocuments();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Could not move the document. Please try again.');
+    } finally {
+      setMoveDocId(null);
+      setBusy(false);
+    }
   };
 
   // Build breadcrumb from folder tree
@@ -169,9 +192,11 @@ export default function DocumentsPage() {
     if (!folder) return [];
     const crumbs = [folder];
     let current = folder;
-    while (current.parentId) {
+    const visited = new Set([current.id]);
+    while (current.parentId && !visited.has(current.parentId)) {
       const parent = allFolders.find((f) => f.id === current.parentId);
       if (parent) {
+        visited.add(parent.id);
         crumbs.unshift(parent);
         current = parent;
       } else break;
@@ -181,17 +206,8 @@ export default function DocumentsPage() {
 
   const breadcrumbs = getBreadcrumbs(selectedFolderId);
 
-  const filtered = documents.filter((doc) => {
-    const matchesSearch =
-      doc.title.toLowerCase().includes(search.toLowerCase()) ||
-      doc.content.toLowerCase().includes(search.toLowerCase());
-    const matchesCategory = category === 'all' || doc.category === category;
-    const matchesArchived = showArchived ? true : !doc.isArchived;
-    const matchesFolder = selectedFolderId === null
-      ? true
-      : doc.folderId === selectedFolderId;
-    return matchesSearch && matchesCategory && matchesArchived && matchesFolder;
-  });
+  const filtered = documents;
+  const pending = loading || search !== searchQuery;
 
   const pinned = filtered.filter((d) => d.isPinned);
   const unpinned = filtered.filter((d) => !d.isPinned);
@@ -200,33 +216,28 @@ export default function DocumentsPage() {
     ? allFolders.find((f) => f.id === selectedFolderId)?.name
     : null;
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-20">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
-      </div>
-    );
-  }
-
   return (
     <div className="flex gap-6 h-[calc(100vh-8rem)]">
       {/* Folder Sidebar */}
       <div className="w-64 flex-shrink-0 card p-3 overflow-y-auto h-fit max-h-[calc(100vh-8rem)] sticky top-0">
         <FolderSidebar
           selectedFolderId={selectedFolderId}
-          onSelectFolder={setSelectedFolderId}
+          onSelectFolder={selectFolder}
           refreshTrigger={folderRefresh}
-          totalCount={totalDocs}
+          totalCount={totalAvailable}
+          organizationId={selectedOrg?.id}
+          onFoldersChanged={() => { setFolderRefresh(value => value + 1); fetchDocuments(); }}
         />
       </div>
 
       {/* Main Content */}
       <div className="flex-1 min-w-0 space-y-6">
+        {error && <p role="alert" className="text-red-600">{error}</p>}
         <div className="flex items-center justify-between">
           <div>
             <div className="flex items-center gap-2 text-sm text-slate-500 mb-1">
               <button
-                onClick={() => setSelectedFolderId(null)}
+                onClick={() => selectFolder(null)}
                 className={cn(
                   'hover:text-blue-600 transition-colors',
                   !selectedFolderId && 'text-slate-900 font-medium'
@@ -238,7 +249,7 @@ export default function DocumentsPage() {
                 <span key={crumb.id} className="flex items-center gap-1">
                   <span>/</span>
                   <button
-                    onClick={() => setSelectedFolderId(crumb.id)}
+                    onClick={() => selectFolder(crumb.id)}
                     className={cn(
                       'hover:text-blue-600 transition-colors',
                       selectedFolderId === crumb.id && 'text-slate-900 font-medium'
@@ -253,7 +264,7 @@ export default function DocumentsPage() {
               {selectedFolderName || 'Documents'}
             </h1>
             <p className="text-slate-500">
-              {filtered.length} document{filtered.length !== 1 ? 's' : ''}
+              {pending ? 'Loading documents…' : `${totalDocs} document${totalDocs !== 1 ? 's' : ''}`}
               {selectedFolderName && ` in ${selectedFolderName}`}
             </p>
           </div>
@@ -272,14 +283,17 @@ export default function DocumentsPage() {
             <input
               type="text"
               placeholder="Search documents..."
+              aria-label="Search documents"
+              maxLength={500}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="input-field pl-10"
             />
           </div>
           <select
+            aria-label="Document category"
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onChange={(e) => { setCategory(e.target.value); setPage(0); }}
             className="input-field w-auto"
           >
             <option value="all">All Categories</option>
@@ -290,7 +304,7 @@ export default function DocumentsPage() {
             ))}
           </select>
           <button
-            onClick={() => setShowArchived(!showArchived)}
+            onClick={() => { setShowArchived(!showArchived); setPage(0); }}
             className={cn(
               'btn-secondary flex items-center gap-2',
               showArchived && 'bg-slate-200'
@@ -301,14 +315,15 @@ export default function DocumentsPage() {
           </button>
         </div>
 
-        {filtered.length === 0 ? (
+        <Link href="/dashboard/documents/trash" className="btn-secondary inline-flex items-center gap-2"><Trash2 className="w-4 h-4" />Trash</Link>
+        {pending ? <p role="status">Loading documents…</p> : listError ? <div role="alert"><p>{listError}</p><button className="btn-secondary mt-2" onClick={fetchDocuments}>Retry</button></div> : filtered.length === 0 ? (
           <EmptyState
             icon={<FileText className="w-8 h-8 text-slate-400" />}
             title={selectedFolderName ? `No documents in ${selectedFolderName}` : 'No documents found'}
             description={
               selectedFolderName
                 ? 'Move documents here or create a new one'
-                : 'Create your first document to get started'
+                : 'Try another search or filter, or create a new document.'
             }
             action={
               <Link href={`/dashboard/documents/new${selectedOrg?.id ? `?organizationId=${selectedOrg.id}` : ''}`} className="btn-primary">
@@ -318,7 +333,7 @@ export default function DocumentsPage() {
             }
           />
         ) : (
-          <div className="space-y-6">
+          <fieldset disabled={busy} className="space-y-6 min-w-0">
             {selectedIds.size > 0 && (
               <div
                 className="sticky top-16 z-20 rounded-xl px-4 py-3 flex items-center justify-between gap-3 shadow-lg"
@@ -406,24 +421,29 @@ export default function DocumentsPage() {
                 </div>
               </div>
             )}
-          </div>
+          </fieldset>
         )}
+        {!listError && <nav aria-label="Document pages" className="flex items-center gap-3">
+          <button className="btn-secondary" disabled={pending || busy || page === 0} onClick={() => setPage(value => value - 1)}>Previous</button>
+          <span>Page {page + 1} of {Math.max(1, Math.ceil(totalDocs / 50))}</span>
+          <button className="btn-secondary" disabled={pending || busy || !hasMore} onClick={() => setPage(value => value + 1)}>Next</button>
+        </nav>}
       </div>
 
       <ConfirmDialog
         isOpen={!!deleteId}
         onClose={() => setDeleteId(null)}
         onConfirm={handleDelete}
-        title="Delete Document"
-        message="Are you sure you want to delete this document? This action cannot be undone."
+        title="Move to Trash"
+        message="This document will be hidden from normal views. You can restore it, including its history and attachments, from Trash."
       />
 
       <ConfirmDialog
         isOpen={bulkConfirmOpen}
         onClose={() => setBulkConfirmOpen(false)}
         onConfirm={() => bulkDelete(true)}
-        title="Delete Documents"
-        message={`Are you sure you want to delete ${selectedIds.size} documents? This action cannot be undone.`}
+        title="Move to Trash"
+        message={`Move ${selectedIds.size} documents to Trash? Their history and attachments will be kept so you can restore them.`}
       />
 
       {/* Move Document Modal */}
@@ -455,7 +475,7 @@ const categoryColors: Record<string, { bg: string; text: string; dot: string }> 
 function DocumentCard({
   doc,
   onDelete,
-  onMove: _onMove,
+  onMove,
   folders,
   onMoveConfirm,
   selected,
@@ -531,6 +551,7 @@ function DocumentCard({
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
           <div className="relative">
             <button
+              aria-label={`Move ${doc.title}`}
               onClick={(e) => {
                 e.preventDefault();
                 setShowMenu(!showMenu);
@@ -594,6 +615,7 @@ function DocumentCard({
                         <span className="truncate">{folder.name}</span>
                       </button>
                     ))}
+                  <button onClick={e => { e.preventDefault(); setShowMenu(false); onMove(doc.id); }} className="w-full px-3 py-1.5 text-xs text-left">Choose any folder…</button>
                 </div>
               </>
             )}

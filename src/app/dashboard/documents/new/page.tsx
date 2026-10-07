@@ -23,6 +23,8 @@ import { MentionPicker } from '@/components/MentionPicker';
 import { MarkdownPreview } from '@/components/MarkdownPreview';
 import { MarkdownToolbar } from '@/components/MarkdownToolbar';
 import { useOrganization } from '@/lib/OrganizationContext';
+import { useDocumentDraft } from '@/lib/use-document-draft';
+import { type DocumentDraft } from '@/lib/document-drafts';
 
 const categories = [
   'general',
@@ -187,12 +189,12 @@ Welcome to the team! Follow this setup guide to get your workspace and access co
   },
 ];
 
-const DRAFT_KEY = 'flexdocs_new_doc_draft';
-
 export default function NewDocumentPage() {
+  const { selectedOrg, isLoading } = useOrganization();
+  if (isLoading) return <div className="p-8 text-center text-slate-500">Loading editor...</div>;
   return (
     <Suspense fallback={<div className="p-8 text-center text-slate-500">Loading editor...</div>}>
-      <NewDocumentForm />
+      <NewDocumentForm key={selectedOrg?.id || 'personal'} />
     </Suspense>
   );
 }
@@ -215,11 +217,16 @@ function NewDocumentForm() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [loading, setLoading] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const submittingRef = useRef(false);
+  const createdRef = useRef(false);
+  const [pendingCreation, setPendingCreation] = useState<{ key: string; payload: string } | null>(null);
 
   const [viewMode, setViewMode] = useState<'write' | 'preview' | 'split'>('write');
   const [isMentionOpen, setIsMentionOpen] = useState(false);
-  const [hasDraft, setHasDraft] = useState(false);
-  const [draftSavedAt, setDraftSavedAt] = useState<string | null>(null);
+  const draftFields = { title, content, category, folderId, organizationId, tags,
+    creationKey: pendingCreation?.key, creationPayload: pendingCreation?.payload };
+  const draft = useDocumentDraft(draftFields, !loading && !createdRef.current, 'new', true, !createdRef.current && !!(title || content));
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -234,70 +241,31 @@ function NewDocumentForm() {
     });
   }, []);
 
-  // Check for auto-saved draft on mount
-  useEffect(() => {
-    try {
-      const savedDraft = localStorage.getItem(DRAFT_KEY);
-      if (savedDraft) {
-        const parsed = JSON.parse(savedDraft);
-        if (parsed.title || parsed.content) {
-          setTitle(parsed.title || '');
-          setContent(parsed.content || '');
-          if (parsed.category) setCategory(parsed.category);
-          if (parsed.folderId) setFolderId(parsed.folderId);
-          if (parsed.organizationId) setOrganizationId(parsed.organizationId);
-          if (parsed.tags) setTags(parsed.tags);
-          setHasDraft(true);
-          if (parsed.savedAt) {
-            setDraftSavedAt(new Date(parsed.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-          }
-        }
-      }
-    } catch {
-      // Ignore localStorage read errors
-    }
-  }, []);
-
-  // Auto-save draft on changes
-  useEffect(() => {
-    if (!title && !content) return;
-    const timeout = setTimeout(() => {
-      try {
-        localStorage.setItem(
-          DRAFT_KEY,
-          JSON.stringify({
-            title,
-            content,
-            category,
-            folderId,
-            organizationId,
-            tags,
-            savedAt: new Date().toISOString(),
-          })
-        );
-        setHasDraft(true);
-        setDraftSavedAt(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-      } catch {
-        // Ignore localStorage write errors
-      }
-    }, 1000);
-
-    return () => clearTimeout(timeout);
-  }, [title, content, category, folderId, organizationId, tags]);
+  const restoreDraft = (saved: DocumentDraft) => {
+    if ((title || content) && !confirm('Replace the text in this editor with a copy of the saved draft?')) return;
+    setTitle(saved.fields.title);
+    setContent(saved.fields.content);
+    setCategory(saved.fields.category);
+    setFolderId(saved.fields.folderId);
+    setOrganizationId(saved.fields.organizationId);
+    setTags(saved.fields.tags);
+    setPendingCreation(saved.fields.creationKey && saved.fields.creationPayload ? { key: saved.fields.creationKey, payload: saved.fields.creationPayload } : null);
+  };
 
   const clearDraft = () => {
-    localStorage.removeItem(DRAFT_KEY);
+    if (pendingCreation && !confirm('This request may already have created a document. Clearing abandons its retry link; check your document list before starting another. Clear anyway?')) return;
+    if (!draft.clear()) return;
+    setPendingCreation(null);
     setTitle('');
     setContent('');
     setCategory('general');
     setFolderId(presetFolderId);
-    setOrganizationId('');
+    setOrganizationId(selectedOrg?.id || '');
     setTags('');
-    setHasDraft(false);
-    setDraftSavedAt(null);
   };
 
   const applyTemplate = (tmpl: (typeof TEMPLATES)[0]) => {
+    if (pendingCreation) return;
     if (content && !confirm('Applying a template will overwrite your current document content. Continue?')) {
       return;
     }
@@ -347,35 +315,48 @@ function NewDocumentForm() {
     setIsMentionOpen(false);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (submittingRef.current || createdRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
+    setSaveError('');
 
     const tagList = tags
       .split(',')
       .map((t) => t.trim())
       .filter(Boolean);
 
-    const res = await fetch('/api/documents', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        title,
-        content,
-        category,
-        folderId: folderId || null,
-        organizationId: organizationId || null,
-        tags: tagList,
-      }),
-    });
-
-    if (res.ok) {
-      localStorage.removeItem(DRAFT_KEY);
+    const attempt = pendingCreation || { key: crypto.randomUUID(), payload: JSON.stringify({ title, content, category,
+      folderId: folderId || null, organizationId: organizationId || null, tags: tagList }) };
+    try {
+      if (!await draft.verifyAccount()) return;
+      setPendingCreation(attempt);
+      draft.persist({ ...draftFields, creationKey: attempt.key, creationPayload: attempt.payload });
+      const res = await fetch('/api/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': attempt.key, 'X-Expected-User-Id': draft.userId! },
+        body: attempt.payload,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        setSaveError(data?.error || 'The document could not be saved. Your draft is still here.');
+        if (!pendingCreation && [400, 401, 403, 404, 413, 422, 429].includes(res.status)) setPendingCreation(null);
+        return;
+      }
       const doc = await res.json();
+      createdRef.current = true;
+      draft.clear();
       router.push(`/dashboard/documents/${doc.id}`);
+    } catch {
+      setSaveError('Could not confirm whether the document was saved. Use Retry original save to safely check or complete the same request.');
+    } finally {
+      submittingRef.current = false;
+      if (!createdRef.current) setLoading(false);
     }
-    setLoading(false);
   };
+
+  if (draft.revoked) return <p role="alert">This editor was closed because the account changed or signed out. Reload and sign in before continuing.</p>;
 
   const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
   const charCount = content.length;
@@ -412,13 +393,14 @@ function NewDocumentForm() {
         </div>
 
         {/* Draft Restore & Clear Notification */}
-        {hasDraft && (
+        {draft.savedAt && (
           <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800 px-3 py-1.5 rounded-xl text-xs text-amber-800 dark:text-amber-300">
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>Draft auto-saved {draftSavedAt ? `at ${draftSavedAt}` : ''}</span>
+            <span>Draft saved in this browser at {new Date(draft.savedAt).toLocaleTimeString()}</span>
             <button
               type="button"
               onClick={clearDraft}
+              disabled={loading}
               className="ml-2 underline text-amber-900 dark:text-amber-200 hover:text-red-600 font-semibold"
             >
               Clear
@@ -427,7 +409,24 @@ function NewDocumentForm() {
         )}
       </div>
 
+      {draft.error && <p role="alert" className="text-sm text-red-600">{draft.error}</p>}
+      {draft.candidates.length > 0 && <section aria-label="Recover saved drafts" className="card p-4 space-y-3">
+        <h2 className="font-semibold">Recover a saved draft</h2>
+        <p className="text-sm text-slate-500">Drafts for this account and organization expire after seven days and are cleared on sign-out. Restore opens a copy so another tab is not overwritten.</p>
+        {draft.candidates.map(saved => <div key={saved.instanceId} className="flex flex-wrap items-center gap-3">
+          <span className="text-sm">{saved.fields.title || 'Untitled draft'} · {new Date(saved.savedAt).toLocaleString()}</span>
+          <button type="button" disabled={loading} className="btn-secondary" onClick={() => restoreDraft(saved)}>Restore a copy</button>
+          <button type="button" disabled={loading} className="btn-secondary" onClick={() => { if (confirm('Discard this saved browser draft?')) draft.discard(saved); }}>Discard draft</button>
+        </div>)}
+      </section>}
+
+      {pendingCreation && !loading && <section role="status" className="card p-4 space-y-3">
+        <p>The original save is awaiting confirmation. Editing is paused so retrying sends the same content and cannot create a second document for this request.</p>
+        <button type="button" className="btn-primary" onClick={() => void handleSubmit()}>Retry original save</button>
+      </section>}
       <form onSubmit={handleSubmit} className="space-y-6">
+        {saveError && <p role="alert" className="text-sm text-red-600 dark:text-red-400">{saveError}</p>}
+        <fieldset disabled={loading || !!pendingCreation} className="space-y-6">
         {/* Templates Selector */}
         <div className="card p-4 space-y-3 bg-gradient-to-r from-blue-50/50 via-white to-indigo-50/50 dark:from-slate-900 dark:via-slate-900 dark:to-slate-900/80 border border-blue-100 dark:border-slate-800">
           <div className="flex items-center gap-2 text-xs font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wider">
@@ -668,8 +667,8 @@ function NewDocumentForm() {
             </div>
           </div>
         </div>
+        </fieldset>
       </form>
     </div>
   );
 }
-

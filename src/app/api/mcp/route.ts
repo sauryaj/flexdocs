@@ -1,12 +1,16 @@
 import { NextResponse } from 'next/server';
-import { auth } from '@/lib/auth';
+import { extractAuth } from '@/lib/api-keys';
+import { canUseMcpTool } from '@/lib/mcp-access';
 import { prisma } from '@/lib/prisma';
-import { getOrgScope } from '@/lib/org-scope';
+import { getOrgScope, scopeOrgWhere } from '@/lib/org-scope';
+import { discoverDocuments } from '@/lib/document-discovery';
+import { readDocumentDetail } from '@/lib/document-detail-read';
+import { DocumentWriteError } from '@/lib/document-write';
 
 /**
  * Minimal MCP (Model Context Protocol) server over Streamable HTTP (JSON-RPC 2.0).
- * Authenticate with an API key via the X-API-Key header — the key's permissions
- * and the caller's org scope apply to every tool call.
+ * Authenticate with an API key via the X-API-Key header.
+ * Document visibility follows the shared read policy.
  *
  * Tools:
  *   flexdocs_search      { query, organizationId? }
@@ -29,43 +33,20 @@ function rpcError(id: RpcRequest['id'], code: number, message: string) {
   return { jsonrpc: '2.0', id, error: { code, message } };
 }
 
-async function resolveUser(req: Request) {
-  // API key first (machine clients), cookie session as fallback
-  const apiKey = req.headers.get('x-api-key');
-  if (apiKey) {
-    const { extractAuth } = await import('@/lib/api-keys');
-    const authData = await extractAuth(req);
-    if (authData) return authData.user;
-    return null;
-  }
-  return auth();
-}
-
 async function toolSearch(user: { id: string; role: string }, args: Record<string, unknown>) {
   const q = String(args.query ?? '').trim();
   if (!q) return { error: 'query is required' };
+  if (q.length > 500) return { error: 'query is limited to 500 characters' };
   const organizationId = args.organizationId ? String(args.organizationId) : undefined;
 
   const scope = await getOrgScope(user.id, user.role);
-  const isStaff = scope.mode === 'all';
-  const orgWhere = isStaff
-    ? (organizationId ? { organizationId } : {})
-    : { organizationId: scope.orgIds.length ? { in: scope.orgIds } : { in: ['__none__'] } };
+  const orgWhere = scopeOrgWhere(scope, organizationId);
   const terms = q.split(/\s+/).filter((t: string) => t.length > 2).slice(0, 8);
-  const docContains = terms.length
-    ? { OR: terms.flatMap((t: string) => [{ title: { contains: t, mode: 'insensitive' as const } }, { content: { contains: t, mode: 'insensitive' as const } }]) }
-    : undefined;
   const firstTerm = terms[0] ?? q;
   const simpleContains = { contains: firstTerm, mode: 'insensitive' as const };
 
   const [documents, servers, assets] = await Promise.all([
-    prisma.document.findMany({
-      where: isStaff
-        ? { userId: user.id, isArchived: false, ...orgWhere, ...(docContains ? { OR: docContains.OR } : {}) }
-        : { ...orgWhere, isArchived: false, visibility: 'org', ...(docContains ? { OR: docContains.OR } : {}) },
-      select: { id: true, title: true, category: true, content: true },
-      take: 8,
-    }),
+    discoverDocuments(user.id, { terms, organizationId, excludeArchived: true, page: 0, limit: 8 }).then(result => result.items),
     prisma.server.findMany({
       where: { ...orgWhere, OR: [{ name: simpleContains }, { hostname: simpleContains }] },
       select: { id: true, name: true, hostname: true, ipAddress: true },
@@ -87,17 +68,13 @@ async function toolSearch(user: { id: string; role: string }, args: Record<strin
 
 async function toolGetDocument(user: { id: string; role: string }, args: Record<string, unknown>) {
   const id = String(args.id ?? '');
-  const doc = await prisma.document.findUnique({ where: { id } });
-  if (!doc) return { error: 'not found' };
-
-  const scope = await getOrgScope(user.id, user.role);
-  const allowed =
-    doc.userId === user.id ||
-    scope.mode === 'all' ||
-    (scope.mode === 'limited' && doc.visibility === 'org' && doc.organizationId && scope.orgIds.includes(doc.organizationId));
-  if (!allowed) return { error: 'not found' };
-
-  return { id: doc.id, title: doc.title, category: doc.category, content: doc.content, updatedAt: doc.updatedAt };
+  try {
+    const doc = await readDocumentDetail(user.id, id);
+    return { id: doc.id, title: doc.title, category: doc.category, content: doc.content, updatedAt: doc.updatedAt };
+  } catch (error) {
+    if (error instanceof DocumentWriteError) return { error: error.status === 404 ? 'not found' : 'document unavailable' };
+    throw error;
+  }
 }
 
 async function toolListOrgs(user: { id: string; role: string }) {
@@ -119,7 +96,7 @@ async function toolOrgPulse(user: { id: string; role: string }, args: Record<str
     prisma.domain.count({ where: { organizationId } }),
     prisma.server.count({ where: { organizationId } }),
     prisma.ticket.count({ where: { organizationId, status: { in: ['open', 'pending'] } } }),
-    prisma.document.count({ where: { organizationId, isArchived: false } }),
+    discoverDocuments(user.id, { organizationId, excludeArchived: true, page: 0, limit: 1 }).then(result => result.total),
   ]);
   return { organizationId, domains, servers, openTickets: tickets, documents: docs };
 }
@@ -175,7 +152,8 @@ export async function POST(req: Request) {
     return new NextResponse(null, { status: 202 });
   }
 
-  const user = await resolveUser(req);
+  const authData = await extractAuth(req);
+  const user = authData?.user;
   if (!user?.id) {
     return NextResponse.json(rpcError(rpc.id, -32001, 'Unauthorized: provide X-API-Key'), { status: 401 });
   }
@@ -184,9 +162,12 @@ export async function POST(req: Request) {
   try {
     switch (rpc.method) {
       case 'tools/list':
-        return NextResponse.json(rpcResult(rpc.id, { tools: TOOLS }));
+        return NextResponse.json(rpcResult(rpc.id, { tools: TOOLS.filter(tool => canUseMcpTool(user.role, authData!.permissions, tool.name)) }));
       case 'tools/call': {
         const name = String(rpc.params?.name ?? '');
+        if (TOOLS.some(tool => tool.name === name) && !canUseMcpTool(user.role, authData!.permissions, name)) {
+          return NextResponse.json(rpcError(rpc.id, -32003, 'Forbidden: insufficient tool permissions'), { status: 403 });
+        }
         const args = (rpc.params?.arguments ?? {}) as Record<string, unknown>;
         let out: unknown;
         switch (name) {

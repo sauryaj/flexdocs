@@ -7,6 +7,7 @@ import {
   Building2, Command as CommandIcon, CornerDownLeft,
 } from 'lucide-react';
 import { useOrganization } from '@/lib/OrganizationContext';
+import { requestNavigation } from '@/lib/navigation-request';
 
 interface SearchItem {
   id: string;
@@ -89,6 +90,7 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
 
   const go = useCallback(
     (url: string) => {
+      if (!requestNavigation()) return;
       onClose();
       router.push(url);
     },

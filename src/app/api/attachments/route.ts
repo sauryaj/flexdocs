@@ -1,9 +1,12 @@
+import { z } from 'zod';
 import { NextResponse } from 'next/server';
 import { auth } from '@/lib/auth';
-import { storeFile } from '@/lib/file-storage';
+import { storeFile, storeFileBytes } from '@/lib/file-storage';
+import { AttachmentUploadError, parseMultipartAttachment, parseLegacyAttachmentBody } from '@/lib/attachment-upload';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/rbac';
 import { type UserRole } from '@prisma/client';
+import { DocumentWriteError } from '@/lib/document-write';
 
 export async function GET(req: Request) {
   const user = await auth();
@@ -16,7 +19,7 @@ export async function GET(req: Request) {
   if (documentId) where.documentId = documentId;
 
   const attachments = await prisma.attachment.findMany({
-    where,
+    where: { ...where, OR: [{ documentId: null }, { document: { deletedAt: null, ownershipKind: 'personal' } }] },
     orderBy: { createdAt: 'desc' },
     select: {
       id: true,
@@ -37,15 +40,36 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
   }
 
-  const { filename, mimeType, size, data, documentId } = await req.json();
-
-  if (!filename || !mimeType || !data) {
-    return NextResponse.json(
-      { error: 'filename, mimeType, and data are required' },
-      { status: 400 }
-    );
+  if (req.headers.get('content-type')?.toLowerCase().startsWith('multipart/form-data')) {
+    try {
+      const { buffer, filename, mimeType, documentId } = await parseMultipartAttachment(req);
+      if (req.signal.aborted) return NextResponse.json({ error: 'Upload interrupted' }, { status: 400 });
+      const attachment = await storeFileBytes(buffer, filename, mimeType, user.id, documentId);
+      return NextResponse.json({ id: attachment.id, filename, mimeType, size: attachment.size, createdAt: attachment.createdAt }, { status: 201 });
+    } catch (error) {
+      if (error instanceof AttachmentUploadError || error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
+      return NextResponse.json({ error: 'Upload could not be confirmed. Refresh attachments before retrying.' }, { status: 500 });
+    }
   }
 
-  const attachment = await storeFile(data, filename, mimeType, size || 0, user.id, documentId);
-  return NextResponse.json(attachment, { status: 201 });
+  let body: unknown;
+  try { body = await parseLegacyAttachmentBody(req); }
+  catch (error) {
+    return NextResponse.json({ error: error instanceof AttachmentUploadError ? error.message : 'Upload interrupted' }, { status: error instanceof AttachmentUploadError ? error.status : 400 });
+  }
+  const parsed = z.object({
+    filename: z.string().min(1).max(255), mimeType: z.string().min(1).max(255),
+    data: z.string().min(1).max(14_000_000), size: z.number().nonnegative().optional(),
+    documentId: z.string().nullable().optional(),
+  }).safeParse(body);
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid attachment (maximum encoded size: 14 MB)' }, { status: 400 });
+  const { filename, mimeType, size, data, documentId } = parsed.data;
+
+  try {
+    const attachment = await storeFile(data, filename, mimeType, size || 0, user.id, documentId || undefined);
+    return NextResponse.json({ id: attachment.id, filename, mimeType, size: attachment.size, createdAt: attachment.createdAt }, { status: 201 });
+  } catch (error) {
+    if (error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json({ error: 'Upload could not be confirmed. Refresh attachments before retrying.' }, { status: 500 });
+  }
 }
