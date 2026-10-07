@@ -368,7 +368,7 @@ try {
   check((await call('/relationships', sessions.viewer, 'POST', { sourceType: 'document', sourceId: shared.id, targetType: 'password', targetId: passwords[1] })).status === 403, 'viewer cannot create links');
   check((await call('/relationships', null)).status === 401, 'anonymous relationships blocked');
   const file = await call('/attachments', sessions.admin, 'POST', { documentId: shared.id, filename: 'fixture.txt', mimeType: 'text/plain', data: Buffer.from('portable file bytes').toString('base64') });
-  check(file.status === 201, 'create portable attachment'); uploads.push(file.body.id);
+  check(file.status === 201 && !('filePath' in file.body) && !('data' in file.body), 'create portable attachment without exposing storage details'); uploads.push(file.body.id);
   const multipartBytes = Buffer.from([0, 255, 128, 10]);
   async function multipart(cookie, documentId) {
     const form = new FormData();

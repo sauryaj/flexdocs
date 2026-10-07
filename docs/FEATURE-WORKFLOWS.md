@@ -1,5 +1,9 @@
 # Export, linking, and onboarding reliability
 
+## Personal upload concurrency
+
+Multipart and legacy upload APIs recheck the current actor role and personal document ownership while holding the shared administration and document locks through byte storage and attachment creation. Ownership changes therefore include completed uploads or cause queued uploads to be denied before storage. Admin imports explicitly permit restoring attachments to personal documents in Trash. Both HTTP upload formats return metadata only. Storage failure before the database write cleans partial bytes; once a database write starts, an uncertain failure retains bytes for reference-aware inspection. Duplicate-safe retries and automated orphan removal remain incomplete; refresh attachments before retrying an uncertain upload.
+
 ## Document Trash
 
 Single and bulk document deletion set `deletedAt` rather than removing rows. The owner can list Trash from Documents and restore a document with editing permission. Trashed documents are excluded from normal lists, search, AI/MCP queries, organization views, knowledge-base pages, reports, reminders, related items, and attachment access. Revision and attachment records remain intact. Restore makes the document private to avoid silently republishing it; existing archive status is preserved.

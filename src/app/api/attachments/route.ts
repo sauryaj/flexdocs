@@ -6,6 +6,7 @@ import { AttachmentUploadError, parseMultipartAttachment, parseLegacyAttachmentB
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/rbac';
 import { type UserRole } from '@prisma/client';
+import { DocumentWriteError } from '@/lib/document-write';
 
 export async function GET(req: Request) {
   const user = await auth();
@@ -42,14 +43,11 @@ export async function POST(req: Request) {
   if (req.headers.get('content-type')?.toLowerCase().startsWith('multipart/form-data')) {
     try {
       const { buffer, filename, mimeType, documentId } = await parseMultipartAttachment(req);
-      if (documentId && !await prisma.document.findFirst({ where: { id: documentId, userId: user.id, deletedAt: null, ownershipKind: 'personal' } })) {
-        return NextResponse.json({ error: 'Document not found' }, { status: 404 });
-      }
       if (req.signal.aborted) return NextResponse.json({ error: 'Upload interrupted' }, { status: 400 });
       const attachment = await storeFileBytes(buffer, filename, mimeType, user.id, documentId);
       return NextResponse.json({ id: attachment.id, filename, mimeType, size: attachment.size, createdAt: attachment.createdAt }, { status: 201 });
     } catch (error) {
-      if (error instanceof AttachmentUploadError) return NextResponse.json({ error: error.message }, { status: error.status });
+      if (error instanceof AttachmentUploadError || error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
       return NextResponse.json({ error: 'Upload could not be confirmed. Refresh attachments before retrying.' }, { status: 500 });
     }
   }
@@ -67,10 +65,11 @@ export async function POST(req: Request) {
   if (!parsed.success) return NextResponse.json({ error: 'Invalid attachment (maximum encoded size: 14 MB)' }, { status: 400 });
   const { filename, mimeType, size, data, documentId } = parsed.data;
 
-  if (documentId && (typeof documentId !== 'string' || !await prisma.document.findFirst({ where: { deletedAt: null, id: documentId, userId: user.id, ownershipKind: 'personal' } }))) {
-    return NextResponse.json({ error: 'Document not found' }, { status: 404 });
+  try {
+    const attachment = await storeFile(data, filename, mimeType, size || 0, user.id, documentId || undefined);
+    return NextResponse.json({ id: attachment.id, filename, mimeType, size: attachment.size, createdAt: attachment.createdAt }, { status: 201 });
+  } catch (error) {
+    if (error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json({ error: 'Upload could not be confirmed. Refresh attachments before retrying.' }, { status: 500 });
   }
-
-  const attachment = await storeFile(data, filename, mimeType, size || 0, user.id, documentId || undefined);
-  return NextResponse.json(attachment, { status: 201 });
 }

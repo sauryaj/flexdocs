@@ -3,6 +3,10 @@ import { randomBytes } from 'crypto';
 import { join } from 'path';
 import { existsSync, mkdirSync, writeFileSync, readFileSync, unlinkSync } from 'fs';
 import logger from '@/lib/logger';
+import { writeFile } from 'node:fs/promises';
+import { lockDocumentationAdministration } from '@/lib/documentation-grants';
+import { DocumentWriteError } from '@/lib/document-write';
+import { hasPermission } from '@/lib/rbac';
 
 const UPLOAD_DIR = process.env.UPLOAD_DIR || join(process.cwd(), 'uploads');
 
@@ -29,29 +33,49 @@ export async function storeFile(
   mimeType: string,
   _size: number,
   userId: string,
-  documentId?: string
+  documentId?: string,
+  options: PersonalUploadOptions = {},
 ) {
-  return storeFileBytes(Buffer.from(data, 'base64'), filename, mimeType, userId, documentId);
+  return storeFileBytes(Buffer.from(data, 'base64'), filename, mimeType, userId, documentId, options);
 }
 
-export async function storeFileBytes(buffer: Buffer, filename: string, mimeType: string, userId: string, documentId?: string) {
-  ensureUploadDir();
-  const filePath = getFilePath(filename, userId);
+type PersonalUploadOptions = { restoreTrashed?: boolean; writeBytes?: (path: string, bytes: Buffer) => Promise<void> };
+
+export async function storeFileBytes(buffer: Buffer, filename: string, mimeType: string, userId: string, documentId?: string,
+  options: PersonalUploadOptions = {}) {
+  let filePath: string | undefined;
+  let databaseWriteStarted = false;
   try {
-    writeFileSync(filePath, buffer);
-    return await prisma.attachment.create({
-      data: {
-        filename,
-        mimeType,
-        size: buffer.length,
-        filePath,
-        storageType: 'filesystem',
-        documentId: documentId || null,
-        userId,
-      },
+    return await prisma.$transaction(async tx => {
+      await lockDocumentationAdministration(tx);
+      const actor = await tx.user.findUnique({ where: { id: userId }, select: { role: true } });
+      if (!actor || !hasPermission(actor.role, 'document.update')) throw new DocumentWriteError(403, 'Forbidden');
+      if (options.restoreTrashed && actor.role !== 'admin') throw new DocumentWriteError(403, 'Forbidden');
+      if (documentId) {
+        await tx.$queryRaw`SELECT "id" FROM "Document" WHERE "id" = ${documentId} FOR UPDATE`;
+        const document = await tx.document.findFirst({ where: { id: documentId, userId, ownershipKind: 'personal',
+          ...(options.restoreTrashed ? {} : { deletedAt: null }) } });
+        if (!document) throw new DocumentWriteError(404, 'Document not found');
+      }
+      ensureUploadDir();
+      filePath = getFilePath(filename, userId);
+      await (options.writeBytes || writeFile)(filePath, buffer);
+      databaseWriteStarted = true;
+      return tx.attachment.create({
+        data: {
+          filename,
+          mimeType,
+          size: buffer.length,
+          filePath,
+          storageType: 'filesystem',
+          documentId: documentId || null,
+          userId,
+        },
+      });
     });
   } catch (error) {
-    try { unlinkSync(filePath); } catch { /* Preserve the original database error if cleanup fails. */ }
+    // A failed response may follow a committed transaction. Retain bytes once the database write starts.
+    if (filePath && !databaseWriteStarted) try { unlinkSync(filePath); } catch { /* Preserve the original storage error if cleanup fails. */ }
     throw error;
   }
 }

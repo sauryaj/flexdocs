@@ -164,7 +164,7 @@ export async function restoreBackup(bundle: BackupBundle, adminId: string): Prom
         try {
           const dataUrl = a.data as string | undefined;
           if (typeof dataUrl === 'string') {
-            await storeFile(dataUrl, String(a.filename), String(a.mimeType || 'application/octet-stream'), Number(a.size || 0), adminId, String(doc.id));
+            await storeFile(dataUrl, String(a.filename), String(a.mimeType || 'application/octet-stream'), Number(a.size || 0), adminId, String(doc.id), { restoreTrashed: true });
             inc('attachments');
           } else {
             report.errors.push(`attachment ${a.filename}: content missing from backup`);

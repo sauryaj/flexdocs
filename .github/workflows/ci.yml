@@ -83,7 +83,8 @@ jobs:
       - name: AI context and documentation grant access boundaries
         env:
           DOCUMENT_TEST_ISOLATED: '1'
-        run: npx vitest run tests/ai-context.integration.test.ts tests/document-responsibility.integration.test.ts tests/document-ownership-preview.integration.test.ts tests/document-ownership-requests.integration.test.ts
+          UPLOAD_DIR: /tmp/flexdocs-upload-integration
+        run: npx vitest run tests/ai-context.integration.test.ts tests/document-responsibility.integration.test.ts tests/document-ownership-preview.integration.test.ts tests/document-ownership-requests.integration.test.ts tests/personal-upload.integration.test.ts
 
       - name: Concurrent Redis request limits and account lockout
         env:
