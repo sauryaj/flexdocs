@@ -13,6 +13,24 @@ enum UserRole {
   viewer
 }
 
+enum DocumentOwnership {
+  personal
+  organization
+}
+
+enum DocumentationRole {
+  reader
+  contributor
+  reviewer
+  administrator
+}
+
+enum DocumentOwnershipRequestStatus {
+  pending
+  cancelled
+  completed
+}
+
 model User {
   id            String    @id @default(cuid())
   email         String    @unique
@@ -30,7 +48,11 @@ model User {
   themePrefs   Json?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
-  documents     Document[]
+  documents     Document[] @relation("DocumentOwner")
+  responsibleDocuments Document[] @relation("DocumentResponsibility")
+  documentationGrants OrganizationDocumentationGrant[]
+  documentCreations DocumentCreationRequest[]
+  documentOwnershipRequests DocumentOwnershipRequest[]
   passwords     Password[]
   domains       Domain[]
   folders       Folder[]
@@ -86,6 +108,7 @@ model Folder {
   parent    Folder?    @relation("FolderTree", fields: [parentId], references: [id])
   children  Folder[]   @relation("FolderTree")
   userId    String
+  ownershipKind DocumentOwnership @default(personal)
   user      User       @relation(fields: [userId], references: [id])
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id])
@@ -106,18 +129,29 @@ model Document {
   category    String   @default("general")
   isPinned    Boolean  @default(false)
   isArchived  Boolean  @default(false)
+  deletedAt   DateTime?
   reviewDate     DateTime?
   lastReviewedAt DateTime?
   visibility     String   @default("private") // private | org (client-facing KB)
+  lifecycleState DocumentLifecycle?
+  publishedSnapshotId String? @unique
+  publishedSnapshot DocumentPublication? @relation("CurrentPublication", fields: [publishedSnapshotId], references: [id], onDelete: Restrict)
+  publications DocumentPublication[] @relation("DocumentPublications")
+  reviews DocumentReview[]
   folderId    String?
   folder      Folder?  @relation(fields: [folderId], references: [id])
   userId         String
-  user           User     @relation(fields: [userId], references: [id])
+  user           User     @relation("DocumentOwner", fields: [userId], references: [id])
+  ownershipKind DocumentOwnership @default(personal)
+  responsibleUserId String?
+  responsibleUser User? @relation("DocumentResponsibility", fields: [responsibleUserId], references: [id], onDelete: SetNull)
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id])
   tags           Tag[]
   revisions      DocumentRevision[]
   attachments    Attachment[]
+  creationRequest DocumentCreationRequest?
+  ownershipRequests DocumentOwnershipRequest[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -126,7 +160,119 @@ model Document {
   @@index([category])
   @@index([isPinned])
   @@index([isArchived])
+  @@index([userId, deletedAt])
   @@index([createdAt])
+  @@index([responsibleUserId])
+}
+
+enum DocumentLifecycle {
+  draft
+  in_review
+  published
+  archived
+  trashed
+}
+
+enum DocumentReviewDecision {
+  pending
+  approved
+  rejected
+  withdrawn
+}
+
+model DocumentPublication {
+  id String @id @default(cuid())
+  documentId String
+  document Document @relation("DocumentPublications", fields: [documentId], references: [id], onDelete: Restrict)
+  sourceRevisionId String
+  sourceRevision DocumentRevision @relation(fields: [documentId, sourceRevisionId], references: [documentId, id], onDelete: Restrict)
+  currentFor Document? @relation("CurrentPublication")
+  title String
+  content String
+  category String
+  tags Json
+  attachmentManifest Json @default("[]")
+  publisherId String
+  publishedAt DateTime @default(now())
+
+  @@unique([documentId, sourceRevisionId])
+  @@index([documentId, publishedAt])
+}
+
+model DocumentReview {
+  id String @id @default(cuid())
+  documentId String
+  document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  sourceRevisionId String
+  sourceRevision DocumentRevision @relation(fields: [documentId, sourceRevisionId], references: [documentId, id], onDelete: Restrict)
+  tags Json @default("[]")
+  attachmentManifest Json @default("[]")
+  submittedById String
+  reviewerIds String[]
+  decision DocumentReviewDecision @default(pending)
+  decidedById String?
+  feedback String?
+  submittedAt DateTime @default(now())
+  decidedAt DateTime?
+
+  @@index([documentId, decision])
+}
+
+model OrganizationDocumentationGrant {
+  id String @id @default(cuid())
+  organizationId String
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId String
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role DocumentationRole
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model DocumentCreationRequest {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  key         String
+  payloadHash String
+  documentId  String?  @unique
+  document    Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, key])
+}
+
+model DocumentOwnershipRequest {
+  id String @id @default(cuid())
+  actorId String
+  actor User @relation(fields: [actorId], references: [id], onDelete: Restrict)
+  key String
+  payloadHash String
+  sourceDocumentId String
+  documentId String?
+  document Document? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+  sourceOwnershipKind DocumentOwnership
+  sourceOrganizationId String?
+  sourceOwnerId String
+  destinationOrganizationId String
+  destinationOrganization Organization @relation(fields: [destinationOrganizationId], references: [id], onDelete: Restrict)
+  expectedUpdatedAt DateTime
+  previewFingerprint String
+  status DocumentOwnershipRequestStatus @default(pending)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  cancelledAt DateTime?
+  consentedAt DateTime?
+  completedAt DateTime?
+  resultUpdatedAt DateTime?
+
+  @@unique([actorId, key])
+  @@index([documentId, status])
+  @@index([actorId, createdAt])
+  @@index([status, expiresAt])
 }
 
 model Password {
@@ -399,7 +545,10 @@ model Organization {
   logo        String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  invitations Invitation[]
   members     OrganizationMember[]
+  documentationGrants OrganizationDocumentationGrant[]
+  documentOwnershipRequests DocumentOwnershipRequest[]
   tickets     Ticket[]
   renewalItems RenewalItem[]
 
@@ -549,6 +698,10 @@ model DocumentRevision {
   createdAt  DateTime @default(now())
 
   document Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  publications DocumentPublication[]
+  reviews DocumentReview[]
+
+  @@unique([documentId, id])
 
   @@index([documentId])
   @@index([createdAt])
@@ -705,6 +858,8 @@ model ApiKey {
 }
 
 model Invitation {
+  organizationId String?
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   id        String   @id @default(cuid())
   email     String
   role      UserRole @default(editor)

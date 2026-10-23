@@ -11,7 +11,7 @@ export default async function PortalKbList() {
 
   const scope = await getOrgScope(user.id, user.role);
   const articles = await prisma.document.findMany({
-    where: {
+    where: { deletedAt: null,
       visibility: 'org',
       isArchived: false,
       ...(scope.mode === 'limited' ? { organizationId: { in: scope.orgIds } } : {}),

@@ -51,7 +51,7 @@ async function buildStructuredReport(userId: string, type: ReportType): Promise<
   }
 
   if (type === 'documents') {
-    const items = await prisma.document.findMany({ where: { userId }, orderBy: { updatedAt: 'desc' }, include: { tags: true } });
+    const items = await prisma.document.findMany({ where: { deletedAt: null, userId }, orderBy: { updatedAt: 'desc' }, include: { tags: true } });
     const rows: Cell[][] = items.map((d) => [d.title, d.type, d.category, (d.tags || []).map((t) => t.name).join('; '), String(d.isArchived), toIso(d.updatedAt)]);
     return {
       title: 'Documents Report',

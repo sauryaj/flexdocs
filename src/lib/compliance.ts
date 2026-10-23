@@ -47,7 +47,7 @@ export async function generateComplianceReport(userId: string): Promise<ReportDa
     docCount, passCount, domainCount, assetCount, checkCount, sslCount,
     domains, passwords, sslCerts, activity,
   ] = await Promise.all([
-    prisma.document.count({ where: { userId } }),
+    prisma.document.count({ where: { deletedAt: null, userId } }),
     prisma.password.count({ where: { userId } }),
     prisma.domain.count({ where: { userId } }),
     prisma.flexibleAsset.count({ where: { userId } }),

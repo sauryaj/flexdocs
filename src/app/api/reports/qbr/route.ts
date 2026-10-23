@@ -36,7 +36,7 @@ export async function GET(req: Request) {
     docCount, passCount, assetCount,
     domains, certs, servers, renewals,
   ] = await Promise.all([
-    prisma.document.count({ where: { organizationId } }),
+    prisma.document.count({ where: { deletedAt: null, organizationId } }),
     prisma.password.count({ where: { organizationId } }),
     prisma.flexibleAsset.count({ where: { organizationId } }),
     prisma.domain.findMany({

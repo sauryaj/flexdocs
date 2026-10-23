@@ -3,6 +3,8 @@ import { auth } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { hasPermission } from '@/lib/rbac';
 import { type UserRole } from '@prisma/client';
+import { listVisibleOrganizations } from '@/lib/organization-read';
+import { DocumentWriteError } from '@/lib/document-write';
 
 export async function GET() {
   const user = await auth();
@@ -10,22 +12,12 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const organizations = await prisma.organization.findMany({
-    include: {
-      _count: {
-        select: {
-          documents: true,
-          passwords: true,
-          domains: true,
-          assets: true,
-          checklists: true,
-        },
-      },
-    },
-    orderBy: { name: 'asc' },
-  });
-
-  return NextResponse.json(organizations);
+  try {
+    return NextResponse.json(await listVisibleOrganizations(user.id), { headers: { 'Cache-Control': 'private, no-store' } });
+  } catch (error) {
+    if (error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json({ error: 'Unable to load organizations' }, { status: 500 });
+  }
 }
 
 export async function POST(req: Request) {
@@ -56,7 +48,7 @@ export async function POST(req: Request) {
     include: {
       _count: {
         select: {
-          documents: true,
+          documents: { where: { deletedAt: null } },
           passwords: true,
           domains: true,
           assets: true,

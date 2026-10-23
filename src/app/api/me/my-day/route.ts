@@ -54,13 +54,13 @@ export async function GET() {
         : Promise.resolve([]),
       isStaff
         ? prisma.document.findMany({
-            where: { userId: user.id, isArchived: false, reviewDate: { lte: now } },
+            where: { deletedAt: null, userId: user.id, isArchived: false, reviewDate: { lte: now } },
             select: { id: true, title: true, reviewDate: true },
             orderBy: { reviewDate: 'asc' },
             take: 15,
           })
         : prisma.document.findMany({
-            where: { ...orgWhere, isArchived: false, visibility: 'org', reviewDate: { lte: now } },
+            where: { deletedAt: null, ...orgWhere, isArchived: false, visibility: 'org', reviewDate: { lte: now } },
             select: { id: true, title: true, reviewDate: true },
             orderBy: { reviewDate: 'asc' },
             take: 15,

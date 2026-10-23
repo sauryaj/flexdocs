@@ -1,5 +1,7 @@
+import { hasPermission } from '@/lib/rbac';
+import { revisionSchema, DocumentWriteError } from '@/lib/document-write';
+import { readDocumentHistory, createDocumentRevision } from '@/lib/document-history';
 import { NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
 import { auth } from '@/lib/auth';
 
 export async function GET(
@@ -13,69 +15,25 @@ export async function GET(
 
   const { id } = await params;
 
-  const document = await prisma.document.findFirst({
-    where: { id, userId: user.id },
-  });
-
-  if (!document) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try { return NextResponse.json(await readDocumentHistory(user.id, id)); }
+  catch (error) {
+    if (error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
+    throw error;
   }
-
-  const revisions = await prisma.documentRevision.findMany({
-    where: { documentId: id, userId: user.id },
-    orderBy: { version: 'desc' },
-  });
-
-  return NextResponse.json(revisions);
 }
 
-export async function POST(
-  req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await auth();
-  if (!user?.id) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
+  if (!user?.id) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!hasPermission(user.role, 'document.update')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  const parsed = revisionSchema.safeParse(await req.json().catch(() => null));
+  if (!parsed.success) return NextResponse.json({ error: 'Invalid revision' }, { status: 400 });
   const { id } = await params;
-  const { title, content, category, message } = await req.json();
-
-  const document = await prisma.document.findFirst({
-    where: { id, userId: user.id },
-  });
-
-  if (!document) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  try {
+    const result = await createDocumentRevision(user.id, id, parsed.data);
+    return NextResponse.json(result, { status: 201 });
+  } catch (error) {
+    if (error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
+    throw error;
   }
-
-  const latestRevision = await prisma.documentRevision.findFirst({
-    where: { documentId: id },
-    orderBy: { version: 'desc' },
-  });
-
-  const nextVersion = (latestRevision?.version || 0) + 1;
-
-  const revision = await prisma.documentRevision.create({
-    data: {
-      documentId: id,
-      title: title ?? document.title,
-      content: content ?? document.content,
-      category: category ?? document.category,
-      version: nextVersion,
-      message: message || null,
-      userId: user.id,
-    },
-  });
-
-  await prisma.document.update({
-    where: { id },
-    data: {
-      title: title ?? document.title,
-      content: content ?? document.content,
-      category: category ?? document.category,
-    },
-  });
-
-  return NextResponse.json(revision, { status: 201 });
 }

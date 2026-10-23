@@ -21,6 +21,7 @@ interface Invitation {
   role: string;
   status: string;
   expiresAt: string;
+  organizationId?: string | null;
   createdAt: string;
   invitedBy: { name: string | null; email: string };
 }
@@ -31,11 +32,15 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('editor');
+  const [organizations, setOrganizations] = useState<{ id: string; name: string }[]>([]);
+  const [inviteOrganization, setInviteOrganization] = useState('');
+  const [delivery, setDelivery] = useState<{ message: string; url: string } | null>(null);
   const [inviting, setInviting] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
     loadData();
+    fetch('/api/organizations').then(r => r.ok ? r.json() : []).then(setOrganizations).catch(() => {});
   }, []);
 
   const loadData = async () => {
@@ -63,27 +68,30 @@ export default function UsersPage() {
     loadData();
   };
 
-  const sendInvite = async () => {
-    if (!inviteEmail) return;
-    setInviting(true);
-    setError('');
-    const res = await fetch('/api/rbac/invitations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: inviteEmail, role: inviteRole }),
-    });
-    if (res.ok) {
-      setInviteEmail('');
-      loadData();
-    } else {
-      setError('Failed to send invitation');
-    }
-    setInviting(false);
+  const sendInvite = async (previous?: Invitation) => {
+    const email = previous?.email || inviteEmail;
+    if (!email) return;
+    setInviting(true); setError(''); setDelivery(null);
+    try {
+      const res = await fetch('/api/rbac/invitations', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, role: previous?.role || inviteRole, organizationId: previous ? previous.organizationId : inviteOrganization || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Could not create invitation');
+      setInviteEmail(''); setDelivery({ message: data.message, url: data.invitationUrl });
+      await loadData();
+    } catch (error) { setError(error instanceof Error ? error.message : 'Could not create invitation'); }
+    finally { setInviting(false); }
   };
 
   const revokeInvite = async (id: string) => {
-    await fetch(`/api/rbac/invitations?id=${id}`, { method: 'DELETE' });
-    loadData();
+    setError('');
+    try {
+      const res = await fetch(`/api/rbac/invitations?id=${id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Could not revoke invitation');
+      setDelivery(null); await loadData();
+    } catch { setError('Could not revoke invitation. Refresh and try again.'); }
   };
 
   if (loading) {
@@ -115,7 +123,7 @@ export default function UsersPage() {
         <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <UserPlus className="w-5 h-5" /> Invite User
         </h2>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap gap-3">
           <input
             type="email"
             value={inviteEmail}
@@ -128,12 +136,16 @@ export default function UsersPage() {
             <option value="viewer">Viewer</option>
             <option value="admin">Admin</option>
           </select>
-          <button onClick={sendInvite} disabled={inviting} className="btn-primary flex items-center gap-2">
+          <select aria-label="Invitation organization" value={inviteOrganization} onChange={e => setInviteOrganization(e.target.value)} className="input-field w-48">
+            <option value="">No organization</option>{organizations.map(org => <option key={org.id} value={org.id}>{org.name}</option>)}
+          </select>
+          <button onClick={() => void sendInvite()} disabled={inviting} className="btn-primary flex items-center gap-2">
             {inviting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
             Send Invite
           </button>
         </div>
-        {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+        {error && <p role="alert" className="text-red-500 text-sm mt-2">{error}</p>}
+        {delivery && <div role="status" className="mt-3 space-y-2"><p className="text-sm">{delivery.message}</p><label className="text-sm block">Invitation link<input readOnly value={delivery.url} onFocus={e => e.target.select()} className="input-field w-full mt-1" /></label><p className="text-xs text-slate-500">Only share with the invited recipient. Resending invalidates the previous link.</p></div>}
       </div>
 
       {/* Users Table */}
@@ -201,14 +213,15 @@ export default function UsersPage() {
         <div className="card p-6">
           <h2 className="text-lg font-semibold mb-4">Pending Invitations</h2>
           <div className="space-y-3">
-            {invitations.filter((i) => i.status === 'pending').map((inv) => (
+            {invitations.filter((i) => ['pending', 'expired'].includes(i.status)).map((inv) => (
               <div key={inv.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
                 <div>
                   <p className="font-medium">{inv.email}</p>
                   <p className="text-xs text-slate-500">
-                    Invited by {inv.invitedBy.name || inv.invitedBy.email} as {inv.role}
+                    Invited by {inv.invitedBy.name || inv.invitedBy.email} as {inv.role} · {inv.status} · Expires {new Date(inv.expiresAt).toLocaleDateString()}
                   </p>
                 </div>
+                <button disabled={inviting} onClick={() => void sendInvite(inv)} className="text-sm underline">Resend</button>
                 <button onClick={() => revokeInvite(inv.id)} className="text-red-500 hover:text-red-700 text-sm">
                   Revoke
                 </button>

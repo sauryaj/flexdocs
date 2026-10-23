@@ -5,7 +5,7 @@
 set -u
 BASE="${1:-http://localhost:3001}"
 EMAIL="${SMOKE_EMAIL:-admin@flexdocs.local}"
-PASSWORD="${SMOKE_PASSWORD:-admin12345}"
+PASSWORD="${SMOKE_PASSWORD:?Set SMOKE_PASSWORD to the test admin password}"
 JAR="$(mktemp)"
 PASS=0; FAIL=0
 

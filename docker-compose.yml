@@ -8,6 +8,7 @@ services:
       - DATABASE_URL=postgresql://flexdocs:${DB_PASSWORD:-flexdocs}@db:5432/flexdocs
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - BOOTSTRAP_ADMIN_PASSWORD=${BOOTSTRAP_ADMIN_PASSWORD:-}
     depends_on:
       db:
         condition: service_healthy
@@ -15,14 +16,12 @@ services:
   app:
     build: .
     restart: unless-stopped
-    group_add:
-      - "${DOCKER_GROUP_GID:-991}"
     ports:
-      - "3001:3000"
+      - "${PORT:-3001}:3000"
     environment:
       - DATABASE_URL=postgresql://flexdocs:${DB_PASSWORD:-flexdocs}@db:5432/flexdocs
       - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
-      - NEXTAUTH_URL=http://localhost:3001
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3001}
       - ENCRYPTION_KEY=${ENCRYPTION_KEY}
       - REDIS_URL=redis://redis:6379
       - SMTP_HOST=${SMTP_HOST:-}
@@ -35,7 +34,7 @@ services:
       - AI_API_KEY=${AI_API_KEY:-}
       - AI_MODEL=${AI_MODEL:-gpt-4o-mini}
       - AI_BASE_URL=${AI_BASE_URL:-https://api.openai.com/v1}
-      - BACKUP_DIR=${BACKUP_DIR:-/backups}
+      - BACKUP_DIR=/backups
       - BACKUP_RETENTION_DAYS=${BACKUP_RETENTION_DAYS:-30}
     depends_on:
       db:
@@ -47,13 +46,12 @@ services:
     volumes:
       - uploads:/app/uploads
       - backups:/backups
-      - /var/run/docker.sock:/var/run/docker.sock:ro
 
   db:
     image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     environment:
       - POSTGRES_DB=flexdocs
       - POSTGRES_USER=flexdocs
@@ -70,7 +68,7 @@ services:
     image: redis:7-alpine@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:

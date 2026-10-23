@@ -9,7 +9,7 @@ const VALID_TYPES = ['document', 'password', 'domain', 'asset', 'checklist', 'fo
 async function unlinkResource(resourceType: string, resourceId: string, organizationId: string, userId: string) {
   switch (resourceType) {
     case 'document': {
-      const r = await prisma.document.findUnique({ where: { id: resourceId } });
+      const r = await prisma.document.findUnique({ where: { deletedAt: null, id: resourceId } });
       if (!r || r.userId !== userId) return null;
       if (r.organizationId !== organizationId) return { error: 'not_linked' };
       return prisma.document.update({ where: { id: resourceId }, data: { organizationId: null } });

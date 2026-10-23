@@ -23,7 +23,7 @@ export async function GET() {
       createdAt: true,
       _count: {
         select: {
-          documents: true,
+          documents: { where: { deletedAt: null } },
           passwords: true,
           domains: true,
           tags: true,

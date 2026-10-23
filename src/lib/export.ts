@@ -1,8 +1,12 @@
 import { prisma } from '@/lib/prisma';
 import { decrypt } from '@/lib/encryption';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 
-const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const MAX_ATTACHMENT_BYTES = 14_000_000;
+
+export class ExportIncompleteError extends Error {
+  constructor(public issues: string[]) { super('Export could not include all requested records'); }
+}
 
 export interface BackupBundle {
   schema: 'flexdocs-backup';
@@ -14,6 +18,7 @@ export interface BackupBundle {
   members: unknown[];
   folders: unknown[];
   documents: unknown[];
+  completeness?: { complete: true; includesDocumentHistory: true };
   assets: unknown[];
   assetTypes: unknown[];
   checklists: unknown[];
@@ -51,14 +56,13 @@ export async function buildBackup(filter?: { organizationId?: string }): Promise
   const orgId = filter?.organizationId;
   const orgWhere = orgId ? { organizationId: orgId } : {};
 
-  const docWhere = orgId
-    ? { OR: [{ organizationId: orgId }, { organizationId: null }] }
-    : {};
+  const docWhere = orgWhere;
+  const issues: string[] = [];
 
-  const [organizations, documents, passwords, domains, sslCertificates, assets, assetTypes, checklists, checklistItems, renewals, servers, ipamNetworks, contacts, locations, websites, tickets, replies, relationships, folders, members] =
+  const [organizations, documents, passwords, domains, sslCertificates, assets, assetTypes, checklists, checklistItems, renewals, servers, ipamNetworks, contacts, locations, websites, tickets, replies, relationships, folders, members, grants] =
     await Promise.all([
       prisma.organization.findMany(orgId ? { where: { id: orgId } } : undefined),
-      prisma.document.findMany({ where: docWhere, include: { attachments: true, tags: true } }),
+      prisma.document.findMany({ where: docWhere, include: { attachments: true, tags: true, revisions: { orderBy: { version: 'asc' } }, publications: { select: { id: true } }, reviews: { select: { id: true } } } }),
       prisma.password.findMany({ where: orgWhere, include: { tags: true } }),
       prisma.domain.findMany({ where: orgWhere, include: { tags: true } }),
       orgId
@@ -81,7 +85,17 @@ export async function buildBackup(filter?: { organizationId?: string }): Promise
       orgId
         ? prisma.organizationMember.findMany({ where: { organizationId: orgId }, include: { user: { select: { email: true } } } })
         : prisma.organizationMember.findMany({ include: { user: { select: { email: true } } } }),
+      prisma.organizationDocumentationGrant.findMany({ where: orgWhere, select: { id: true } }),
     ]);
+
+  // Version 1 import cannot restore team policy or immutable publications. Never label that lossy bundle complete.
+  for (const document of documents) {
+    if (document.ownershipKind === 'organization' || document.lifecycleState != null || document.publishedSnapshotId || document.publications?.length || document.reviews?.length) {
+      issues.push(`Document ${document.id}: portable format v1 cannot preserve ownership/publication state; use database/uploads/configuration/key recovery`);
+    }
+  }
+  if (folders.some(folder => folder.ownershipKind === 'organization') || grants.length) issues.push('Portable format v1 cannot preserve team folders or documentation grants; use database/uploads/configuration/key recovery');
+  if (issues.length) throw new ExportIncompleteError(issues);
 
   // Decrypt secret material so the backup is truly portable
   const passwordsOut = passwords.map((p) => {
@@ -94,25 +108,36 @@ export async function buildBackup(filter?: { organizationId?: string }): Promise
         tagNames: p.tags.map((t) => t.name),
       };
     } catch {
-      return { ...rest, password: '', totpSecret: null, tagNames: [] };
+      issues.push(`Password ${p.id}: decryption failed`);
+      return { ...rest, password: null, totpSecret: null, tagNames: [] };
     }
   });
 
   const docsOut = documents.map((d) => {
-    const plain = pluck([d])[0];
+    const plain: Record<string, unknown> = pluck([d])[0];
+    delete plain.publications;
+    delete plain.reviews;
     const attachments = d.attachments.map((a) => {
       const out: Record<string, unknown> = {
         filename: a.filename,
         mimeType: a.mimeType,
         size: a.size,
       };
-      if (a.storageType === 'filesystem' && a.filePath && existsSync(a.filePath)) {
-        const buf = readFileSync(a.filePath);
-        if (buf.length <= MAX_ATTACHMENT_BYTES) out.data = buf.toString('base64');
-      }
+      try {
+        if (a.storageType === 'filesystem' && a.filePath && existsSync(a.filePath) && statSync(a.filePath).size > MAX_ATTACHMENT_BYTES) {
+          issues.push(`Attachment ${a.id}: exceeds portable export limit; use database/files recovery`);
+          return out;
+        }
+        const bytes = a.storageType === 'filesystem'
+          ? (a.filePath && existsSync(a.filePath) ? readFileSync(a.filePath) : null)
+          : (a.data !== null ? Buffer.from(a.data, 'base64') : null);
+        if (!bytes) issues.push(`Attachment ${a.id}: file content is missing`);
+        else if (bytes.length > MAX_ATTACHMENT_BYTES) issues.push(`Attachment ${a.id}: exceeds portable export limit; use database/files recovery`);
+        else out.data = bytes.toString('base64');
+      } catch { issues.push(`Attachment ${a.id}: file could not be read`); }
       return out;
     });
-    return { ...plain, attachments, tagNames: d.tags.map((t) => t.name) };
+    return { ...plain, attachments, revisions: pluck(d.revisions), tagNames: d.tags.map((t) => t.name) };
   });
 
   const checklistItemsByChecklist = new Map<string, unknown[]>();
@@ -148,18 +173,29 @@ export async function buildBackup(filter?: { organizationId?: string }): Promise
   for (const p of passwords) p.tags.forEach((t) => tagSet.add(t.name));
   for (const d of domains) d.tags.forEach((t) => tagSet.add(t.name));
 
+  if (issues.length) throw new ExportIncompleteError(issues);
+  const included = new Map<string, Set<string>>([
+    ['document', new Set(documents.map(r => r.id))], ['password', new Set(passwords.map(r => r.id))],
+    ['domain', new Set(domains.map(r => r.id))], ['asset', new Set(assets.map(r => r.id))],
+    ['server', new Set(servers.map(r => r.id))], ['checklist', new Set(checklists.map(r => r.id))],
+    ['ssl', new Set(sslCertificates.map(r => r.id))], ['organization', new Set(organizations.map(r => r.id))],
+  ]);
+  const scopedRelationships = relationships.filter(r => included.get(r.sourceType)?.has(r.sourceId) && included.get(r.targetType)?.has(r.targetId));
+  const scopedAssetTypes = orgId ? assetTypes.filter(t => assets.some(a => a.userId === t.userId && a.assetType === t.name)) : assetTypes;
+  const folderIds = new Set(folders.map(f => f.id));
   return {
     schema: 'flexdocs-backup',
     version: 1,
+    completeness: { complete: true, includesDocumentHistory: true },
     exportedAt: new Date().toISOString(),
     scope: orgId ? 'organization' : 'full',
     organizationId: orgId || undefined,
     organizations: pluck(organizations),
     members: membersOut,
-    folders: pluck(folders),
+    folders: pluck(folders.map(f => ({ ...f, parentId: f.parentId && folderIds.has(f.parentId) ? f.parentId : null }))),
     documents: docsOut,
     assets: pluck(assets),
-    assetTypes: pluck(assetTypes),
+    assetTypes: pluck(scopedAssetTypes),
     checklists: checklistsOut,
     checklistItems: [],
     passwords: passwordsOut,
@@ -172,7 +208,7 @@ export async function buildBackup(filter?: { organizationId?: string }): Promise
     locations: pluck(locations),
     websites: pluck(websites),
     tickets: ticketsOut,
-    relationships: pluck(relationships),
+    relationships: pluck(scopedRelationships),
     tags: [...tagSet],
   };
 }

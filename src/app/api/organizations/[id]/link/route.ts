@@ -11,7 +11,7 @@ async function getUnlinkedResources(userId: string, resourceType: string) {
 
   switch (resourceType) {
     case 'document':
-      return prisma.document.findMany({ where: common, orderBy, select: { id: true, title: true, createdAt: true } });
+      return prisma.document.findMany({ where: { deletedAt: null, ...common }, orderBy, select: { id: true, title: true, createdAt: true } });
     case 'password':
       return prisma.password.findMany({ where: common, orderBy, select: { id: true, name: true, createdAt: true } });
     case 'domain':
@@ -30,7 +30,7 @@ async function getUnlinkedResources(userId: string, resourceType: string) {
 async function linkResource(resourceType: string, resourceId: string, organizationId: string, userId: string) {
   switch (resourceType) {
     case 'document': {
-      const r = await prisma.document.findUnique({ where: { id: resourceId } });
+      const r = await prisma.document.findUnique({ where: { deletedAt: null, id: resourceId } });
       if (!r || r.userId !== userId) return null;
       return prisma.document.update({ where: { id: resourceId }, data: { organizationId } });
     }

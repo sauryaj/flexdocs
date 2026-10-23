@@ -4,8 +4,6 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   LayoutDashboard,
-  ListTodo,
-  Sparkles,
   Building2,
   FileText,
   Key,
@@ -54,11 +52,7 @@ interface NavGroup {
 const navigation: NavGroup[] = [
   {
     label: 'Overview',
-    items: [
-      { name: 'My Day', href: '/dashboard/my-day', icon: ListTodo },
-      { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-      { name: 'Ask the Docs', href: '/dashboard/assistant', icon: Sparkles },
-    ],
+      items: [{ name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard }],
   },
   {
     label: 'Resources',
@@ -201,9 +195,7 @@ export function Sidebar() {
         {
           label: 'Overview',
           items: [
-            { name: 'My Day', href: '/dashboard/my-day', icon: ListTodo },
             { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
-            { name: 'Ask the Docs', href: '/dashboard/assistant', icon: Sparkles },
             { name: selectedOrg.name, href: `/dashboard/organizations/${selectedOrg.id}`, icon: Building2 },
           ],
         },

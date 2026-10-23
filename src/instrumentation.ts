@@ -1,55 +1,6 @@
 export async function register() {
-  if (process.env.NEXT_RUNTIME !== 'nodejs') return;
-
-  // Delay boot work so the DB (which may start alongside us in compose) is ready.
-  setTimeout(() => {
-    void (async () => {
-      try {
-        const { initializeAllScans } = await import('@/lib/scan-runner');
-        await initializeAllScans();
-      } catch (err) {
-        console.error('[instrumentation] failed to initialize scheduled scans', err);
-      }
-
-      try {
-        const cron = (await import('node-cron')).default;
-        const { runDailyMaintenance } = await import('@/lib/maintenance-jobs');
-
-        cron.schedule('0 8 * * *', () => {
-          void runDailyMaintenance().catch((err) => {
-            console.error('[instrumentation] daily maintenance failed', err);
-          });
-        });
-
-        // Website uptime checks every 5 minutes
-        cron.schedule('*/5 * * * *', () => {
-          void (async () => {
-            const { checkAllWebsites } = await import('@/lib/uptime');
-            const r = await checkAllWebsites();
-            if (r.down > 0) console.log(`[uptime] ${r.down}/${r.checked} sites down`);
-          })().catch((err) => {
-            console.error('[instrumentation] uptime check failed', err);
-          });
-        });
-
-        // Password rotation for overdue auto-rotate credentials (3am daily)
-        cron.schedule('0 3 * * *', () => {
-          void (async () => {
-            const { rotateOverduePasswords } = await import('@/lib/password-rotation');
-            await rotateOverduePasswords();
-          })().catch((err) => {
-            console.error('[instrumentation] password rotation failed', err);
-          });
-        });
-
-        if (process.env.MAINTENANCE_ON_BOOT === 'true') {
-          void runDailyMaintenance().catch((err) => {
-            console.error('[instrumentation] on-boot maintenance failed', err);
-          });
-        }
-      } catch (err) {
-        console.error('[instrumentation] failed to schedule maintenance', err);
-      }
-    })();
-  }, 8000);
+  if (process.env.NEXT_RUNTIME === 'nodejs') {
+    const { registerNodeJobs } = await import('@/lib/register-jobs');
+    await registerNodeJobs();
+  }
 }

@@ -21,12 +21,17 @@ vi.mock('@/lib/notifications', () => ({ createNotification: vi.fn() }));
 import { prisma } from '@/lib/prisma';
 
 describe('generatePassword', () => {
+  it('rejects lengths that cannot meet the character-class contract', () => {
+    for (const length of [0, 3, 4.5, 1025]) expect(() => generatePassword(length)).toThrow();
+    expect(generatePassword(4)).toMatch(/^[a-zA-Z0-9!@#$%^&*_=+-]{4}$/);
+  });
   it('creates a 24-char password with mixed classes', () => {
     const pw = generatePassword();
     expect(pw.length).toBe(24);
     expect(/[a-z]/.test(pw)).toBe(true);
     expect(/[A-Z]/.test(pw)).toBe(true);
     expect(/[0-9]/.test(pw)).toBe(true);
+    expect(/[!@#$%^&*_=+-]/.test(pw)).toBe(true);
   });
 });
 

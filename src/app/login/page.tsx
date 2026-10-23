@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Lock, Mail, Key, Loader2, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Lock, Mail, Key, Loader2, ArrowRight } from 'lucide-react';
+import { invalidateBrowserDraftEditors } from '@/lib/document-drafts';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -45,6 +46,7 @@ export default function LoginPage() {
         return;
       }
 
+      try { invalidateBrowserDraftEditors(); } catch { /* Identity revalidation remains active if storage is blocked. */ }
       router.push('/dashboard');
       router.refresh();
     } catch (err: any) {
@@ -52,11 +54,6 @@ export default function LoginPage() {
     } finally {
       setLoading(false);
     }
-  };
-
-  const fillDemoAdmin = () => {
-    setEmail('admin@flexdocs.local');
-    setPassword('admin12345');
   };
 
   return (
@@ -164,16 +161,7 @@ export default function LoginPage() {
         </form>
 
         <div className="pt-2 border-t border-slate-800 text-center space-y-2">
-          {!mfaRequired ? (
-            <button
-              type="button"
-              onClick={fillDemoAdmin}
-              className="text-xs text-blue-400 hover:text-blue-300 font-medium hover:underline flex items-center justify-center gap-1 mx-auto"
-            >
-              <ShieldCheck className="w-3.5 h-3.5" />
-              Auto-Fill Admin Credentials (`admin@flexdocs.local`)
-            </button>
-          ) : (
+          {mfaRequired && (
             <button
               type="button"
               onClick={() => setMfaRequired(false)}

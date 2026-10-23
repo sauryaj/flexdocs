@@ -48,7 +48,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       orderBy: { createdAt: 'asc' },
     }),
     prisma.document.findMany({
-      where: {
+      where: { deletedAt: null,
         organizationId: id,
         isArchived: false,
         updatedAt: { lt: new Date(now - STALE_DOC_DAYS * 86400000) },
@@ -60,20 +60,20 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     prisma.password.count({ where: { organizationId: id } }),
     prisma.flexibleAsset.count({ where: { organizationId: id, isArchived: false } }),
     prisma.document.count({
-      where: { organizationId: id, isArchived: false, category: { in: ['network', 'infrastructure'] } },
+      where: { deletedAt: null, organizationId: id, isArchived: false, category: { in: ['network', 'infrastructure'] } },
     }),
     prisma.document.count({
-      where: { organizationId: id, isArchived: false, category: { in: ['runbook', 'procedure'] } },
+      where: { deletedAt: null, organizationId: id, isArchived: false, category: { in: ['runbook', 'procedure'] } },
     }),
     prisma.document.count({
-      where: {
+      where: { deletedAt: null,
         organizationId: id,
         isArchived: false,
         OR: [{ category: 'backup' }, { title: { contains: 'backup', mode: 'insensitive' } }],
       },
     }),
     prisma.document.count({
-      where: { organizationId: id, isArchived: false, updatedAt: { gte: ninetyDaysAgo } },
+      where: { deletedAt: null, organizationId: id, isArchived: false, updatedAt: { gte: ninetyDaysAgo } },
     }),
     prisma.organization.findUnique({
       where: { id },

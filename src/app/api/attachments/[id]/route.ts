@@ -3,6 +3,7 @@ import { auth } from '@/lib/auth';
 import { getAttachmentData, deleteFile } from '@/lib/file-storage';
 import { hasPermission } from '@/lib/rbac';
 import { type UserRole } from '@prisma/client';
+import { DocumentWriteError } from '@/lib/document-write';
 
 export async function GET(
   req: Request,
@@ -13,7 +14,7 @@ export async function GET(
 
   const { id } = await params;
   const attachment = await getAttachmentData(id, user.id);
-  if (!attachment || !attachment.data) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+  if (!attachment || attachment.data === null) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   const buffer = Buffer.from(attachment.data, 'base64');
   const safeName = attachment.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -22,6 +23,8 @@ export async function GET(
       'Content-Type': attachment.mimeType,
       'Content-Disposition': `attachment; filename="${safeName}"`,
       'Content-Length': String(buffer.length),
+      'Cache-Control': 'private, no-store',
+      'X-Content-Type-Options': 'nosniff',
     },
   });
 }
@@ -37,8 +40,12 @@ export async function DELETE(
   }
 
   const { id } = await params;
-  const deleted = await deleteFile(id, user.id);
-  if (!deleted) return NextResponse.json({ error: 'Not found' }, { status: 404 });
-
-  return NextResponse.json({ success: true });
+  try {
+    const deleted = await deleteFile(id, user.id);
+    if (!deleted) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    return NextResponse.json({ success: true, cleanupPending: deleted.cleanupPending, bytesRetained: deleted.bytesRetained });
+  } catch (error) {
+    if (error instanceof DocumentWriteError) return NextResponse.json({ error: error.message }, { status: error.status });
+    return NextResponse.json({ error: 'Removal could not be confirmed. Refresh attachments before retrying.' }, { status: 500 });
+  }
 }

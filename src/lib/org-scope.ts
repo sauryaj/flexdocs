@@ -1,4 +1,5 @@
 import { prisma } from './prisma';
+import { type Prisma } from '@prisma/client';
 
 export type OrgScope = { mode: 'all' } | { mode: 'limited'; orgIds: string[] };
 
@@ -7,9 +8,9 @@ export type OrgScope = { mode: 'all' } | { mode: 'limited'; orgIds: string[] };
  * is limited to those orgs (that's the client-portal contract). Editors with
  * no memberships retain legacy staff-wide access; everyone else sees nothing shared.
  */
-export async function getOrgScope(userId: string, role?: string): Promise<OrgScope> {
+export async function getOrgScope(userId: string, role?: string, db: Pick<Prisma.TransactionClient, 'organizationMember'> = prisma): Promise<OrgScope> {
   if (role === 'admin') return { mode: 'all' };
-  const memberships = await prisma.organizationMember.findMany({
+  const memberships = await db.organizationMember.findMany({
     where: { userId },
     select: { organizationId: true },
   });

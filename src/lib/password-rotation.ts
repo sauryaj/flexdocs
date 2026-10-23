@@ -1,3 +1,4 @@
+import { randomInt } from 'node:crypto';
 import { Client } from 'ssh2';
 import { prisma } from '@/lib/prisma';
 import { encrypt, decrypt } from '@/lib/encryption';
@@ -8,12 +9,17 @@ const DEFAULT_ROTATION_WINDOW_DAYS = 90;
 
 const CHARS = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*_-+=';
 export function generatePassword(length = 24): string {
-  const buf = new Uint32Array(length);
-  // crypto.getRandomValues is available in Node 19+ global scope
-  crypto.getRandomValues(buf);
-  let out = '';
-  for (let i = 0; i < length; i++) out += CHARS[buf[i] % CHARS.length];
-  return out;
+  if (!Number.isInteger(length) || length < 4 || length > 1024) {
+    throw new Error('Password length must be an integer between 4 and 1024');
+  }
+  const groups = ['abcdefghijklmnopqrstuvwxyz', 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', '0123456789', '!@#$%^&*_-+='];
+  const characters = groups.map(group => group[randomInt(group.length)]);
+  while (characters.length < length) characters.push(CHARS[randomInt(CHARS.length)]);
+  for (let i = characters.length - 1; i > 0; i--) {
+    const j = randomInt(i + 1);
+    [characters[i], characters[j]] = [characters[j], characters[i]];
+  }
+  return characters.join('');
 }
 
 /** Apply the new secret on a remote Linux host over SSH and report whether the change landed. */
