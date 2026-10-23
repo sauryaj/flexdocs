@@ -86,7 +86,7 @@ Open http://localhost:3001 and log in with the bootstrap admin:
 
 > Setup generates a unique bootstrap password. Manual installation must set `BOOTSTRAP_ADMIN_PASSWORD` to at least 16 characters. Existing accounts are never reset by seeding. Older installations must rotate both legacy admin accounts if they still use the old public password.
 
-The setup and update scripts run schema migrations (`prisma migrate deploy`) through the initializer before starting the app. Restarting only the app does not apply migrations. See [DEPLOY.md](DEPLOY.md) for the full guide.
+The setup and update scripts run schema migrations (`prisma migrate deploy`) and bootstrap the first admin through the initializer before starting the app. They do not load demo data. Restarting only the app does not apply migrations. For Unraid, use the explicit bind-mount overlay in [docs/UNRAID.md](docs/UNRAID.md).
 
 ### Updating a homelab install
 
@@ -97,7 +97,7 @@ make update
 ```
 
 The update command creates a database backup, rebuilds the app and migration
-images, applies migrations and seeds, restarts the app, and checks health. Keep
+images, applies migrations and preserves or creates the bootstrap admin, restarts the app, and checks health. Keep
 the database backup, the `uploads` volume, and the `ENCRYPTION_KEY` from `.env`;
 all three are needed for a complete recovery.
 
@@ -116,6 +116,8 @@ npm install
 cp .env.example .env
 # Set BOOTSTRAP_ADMIN_PASSWORD to a unique 16+ character value in .env
 npx prisma migrate deploy     # or: npx prisma migrate dev (fresh DB applies baseline)
+npx tsx prisma/bootstrap-admin.ts
+# Optional development fixtures only:
 npx tsx prisma/seed.ts
 npx tsx prisma/seed-orgs.ts
 

@@ -12,6 +12,8 @@ Portable JSON format v1 cannot restore team ownership/grants, lifecycle states, 
 
 ## Routine backup
 
+Run `make backup-full` for a consistent recovery set. It briefly stops the app, leaves PostgreSQL running, and captures the SQL dump, uploaded bytes, protected environment/effective Compose configuration, exact source commit, and SHA-256 checksums. It restarts the app even when backup creation fails. Store the resulting directory on independently protected storage; the local copy alone is not disaster recovery.
+
 Run `make backup` from the repository root. The command fails if `pg_dump` fails and only renames a nonempty dump from `.partial` to `.sql` after successful completion. Local command-line backups live in `./backups`; UI backups use the configured `BACKUP_DIR` in the app container, normally the backups volume. These can be different locations.
 
 Copy completed SQL files, a snapshot/archive of uploads, and separately protected configuration to another machine or storage system. To capture a consistent database/files pair, stop application writes while taking both copies, leaving PostgreSQL running. Restrict backup access: SQL dumps contain password hashes and sensitive organization data even when vault secrets are encrypted.

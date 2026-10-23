@@ -14,7 +14,7 @@ phase='database backup'
 bash scripts/database-backup.sh
 phase='image build'
 bash scripts/compose.sh build init app
-phase='database migration and seed'
+phase='database migration and bootstrap admin'
 bash scripts/compose.sh run --rm init
 phase='application startup'
 bash scripts/compose.sh up -d redis

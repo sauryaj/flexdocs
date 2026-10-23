@@ -1,4 +1,4 @@
-.PHONY: help deploy update rebuild stop restart logs logs-all status clean reset dev seed health backup restore restore-drill shell-db shell-app
+.PHONY: help deploy update rebuild stop restart logs logs-all status clean reset dev bootstrap-admin seed-demo health backup backup-full restore restore-drill shell-db shell-app
 
 # Default port (change if 3001 is taken)
 PORT ?= 3001
@@ -46,14 +46,21 @@ reset: ## Nuclear option: clean + rebuild from scratch
 dev: ## Run locally in dev mode (requires local PostgreSQL)
 	npx prisma generate && npm run dev -- -p $(PORT)
 
-seed: ## Re-run database seed (app must be running)
+bootstrap-admin: ## Create the bootstrap admin if it does not exist
 	$(COMPOSE) build init
 	$(COMPOSE) run --rm init
+
+seed-demo: ## Explicitly load development/demo content
+	$(COMPOSE) build init
+	$(COMPOSE) run --rm init "npx tsx prisma/seed.ts && npx tsx prisma/seed-orgs.ts"
 
 backup: ## Create a database backup
 	@mkdir -p backups
 	bash scripts/database-backup.sh
 	@echo "✅ Backup saved to backups/"
+
+backup-full: ## Stop app writes briefly and capture database, uploads, config, and checksums
+	bash scripts/full-backup.sh
 
 restore: ## Restore from backup: make restore FILE=backups/flexdocs-XXXX.sql
 	@if [ -z "$(FILE)" ]; then echo "Usage: make restore FILE=backups/flexdocs-XXXX.sql"; exit 1; fi
